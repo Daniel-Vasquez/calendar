@@ -1,8 +1,11 @@
+import { DEFAULT_COLOR, isColorId, type ColorId } from './palette';
+
 export const STORAGE_KEY = 'calendar_2026_q4_data';
 
 export type DayEntry = {
   marked: boolean;
   note: string;
+  color?: ColorId;
 };
 
 export type CalendarData = Record<string, DayEntry>;
@@ -21,7 +24,10 @@ function sanitize(raw: unknown): CalendarData {
     const note = typeof entry.note === 'string' ? entry.note : '';
     if (!marked && !note) continue;
 
-    clean[key] = { marked, note };
+    // Datos anteriores a los colores no traen `color`: se asume el teal base.
+    const color = isColorId(entry.color) ? entry.color : DEFAULT_COLOR;
+
+    clean[key] = { marked, note, color };
   }
   return clean;
 }

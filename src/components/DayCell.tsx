@@ -1,3 +1,4 @@
+import { colorHex } from '../lib/palette';
 import type { DayEntry } from '../lib/storage';
 
 type Props = {
@@ -13,15 +14,17 @@ export default function DayCell({ day, isWeekend, entry, label, onSelect }: Prop
   const hasNote = Boolean(entry?.note);
 
   const base =
-    'group relative flex aspect-square w-full items-center justify-center rounded-lg text-sm font-medium ' +
-    'transition-colors duration-150 outline-none focus-visible:ring-2 focus-visible:ring-accent ' +
+    'group relative flex aspect-square w-full items-center justify-center rounded-lg text-sm font-semibold ' +
+    'transition duration-150 outline-none focus-visible:ring-2 focus-visible:ring-accent ' +
     'focus-visible:ring-offset-2 focus-visible:ring-offset-surface';
 
+  // El color marcado es dinámico por día, así que va como estilo en línea:
+  // Tailwind no puede generar utilidades para valores decididos en runtime.
   const state = marked
-    ? 'bg-accent text-white shadow-sm hover:bg-accent-strong'
+    ? 'text-white shadow-sm hover:brightness-90'
     : isWeekend
-      ? 'bg-white/40 text-ink-muted hover:bg-edge'
-      : 'bg-white text-ink-soft hover:bg-edge';
+      ? 'bg-white/40 font-medium text-ink-muted hover:bg-edge'
+      : 'bg-white font-medium text-ink-soft hover:bg-edge';
 
   return (
     <button
@@ -30,6 +33,7 @@ export default function DayCell({ day, isWeekend, entry, label, onSelect }: Prop
       aria-label={label}
       aria-pressed={marked}
       className={`${base} ${state}`}
+      style={marked ? { backgroundColor: colorHex(entry?.color) } : undefined}
     >
       <span className={hasNote ? '-translate-y-0.5' : undefined}>{day}</span>
 
@@ -38,7 +42,9 @@ export default function DayCell({ day, isWeekend, entry, label, onSelect }: Prop
           aria-hidden="true"
           className={
             'absolute bottom-1.5 h-1.5 w-1.5 rounded-full bg-highlight ' +
-            (marked ? 'ring-2 ring-white/70' : '')
+            // Sobre un día coloreado el ámbar puede fundirse con el fondo:
+            // el aro blanco lo mantiene visible sea cual sea el color.
+            (marked ? 'ring-2 ring-white' : '')
           }
         />
       )}

@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { formatLongDate, formatWeekday } from '../lib/calendar';
+import { DAY_COLORS, DEFAULT_COLOR, colorHex, colorName, type ColorId } from '../lib/palette';
 import type { DayEntry } from '../lib/storage';
 
 type Props = {
@@ -13,6 +14,7 @@ type Props = {
 export default function DayModal({ dateKey, entry, onSave, onClear, onClose }: Props) {
   const [marked, setMarked] = useState(entry?.marked ?? false);
   const [note, setNote] = useState(entry?.note ?? '');
+  const [color, setColor] = useState<ColorId>(entry?.color ?? DEFAULT_COLOR);
   const noteId = useId();
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
@@ -24,7 +26,8 @@ export default function DayModal({ dateKey, entry, onSave, onClear, onClose }: P
   useEffect(() => {
     setMarked(entry?.marked ?? false);
     setNote(entry?.note ?? '');
-  }, [dateKey, entry?.marked, entry?.note]);
+    setColor(entry?.color ?? DEFAULT_COLOR);
+  }, [dateKey, entry?.marked, entry?.note, entry?.color]);
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -41,7 +44,7 @@ export default function DayModal({ dateKey, entry, onSave, onClear, onClose }: P
       if (event.key !== 'Tab' || !panelRef.current) return;
 
       const focusables = panelRef.current.querySelectorAll<HTMLElement>(
-        'button, textarea, input, [href], [tabindex]:not([tabindex="-1"])',
+        'button:not([disabled]), textarea, input, [href], [tabindex]:not([tabindex="-1"])',
       );
       if (focusables.length === 0) return;
 
@@ -69,6 +72,12 @@ export default function DayModal({ dateKey, entry, onSave, onClear, onClose }: P
     };
   }, []);
 
+  // Elegir un color implica querer el día marcado.
+  function pickColor(next: ColorId) {
+    setColor(next);
+    setMarked(true);
+  }
+
   return (
     <div
       className="animate-overlay-in fixed inset-0 z-50 flex items-end justify-center bg-ink/40 p-4 backdrop-blur-sm sm:items-center"
@@ -81,7 +90,7 @@ export default function DayModal({ dateKey, entry, onSave, onClear, onClose }: P
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="animate-panel-in w-full max-w-md rounded-2xl border border-edge bg-canvas p-6 shadow-2xl"
+        className="animate-panel-in max-h-full w-full max-w-md overflow-y-auto rounded-2xl border border-edge bg-canvas p-6 shadow-2xl"
       >
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
@@ -124,6 +133,55 @@ export default function DayModal({ dateKey, entry, onSave, onClear, onClose }: P
           </span>
         </label>
 
+        <fieldset className="mt-4">
+          <legend className="mb-2 flex w-full items-baseline justify-between text-sm font-medium text-ink-soft">
+            <span>Color del recuadro</span>
+            <span className="text-xs font-normal text-ink-muted">{colorName(color)}</span>
+          </legend>
+          <div role="radiogroup" aria-label="Color del recuadro" className="grid grid-cols-9 gap-2">
+            {DAY_COLORS.map((option) => {
+              const selected = option.id === color;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  aria-label={option.name}
+                  title={option.name}
+                  onClick={() => pickColor(option.id)}
+                  style={{ backgroundColor: option.hex }}
+                  className={
+                    'flex aspect-square w-full items-center justify-center rounded-lg transition ' +
+                    'focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 focus-visible:outline-none ' +
+                    (selected
+                      ? 'ring-2 ring-ink ring-offset-2 ring-offset-canvas'
+                      : 'hover:brightness-90') +
+                    (marked ? '' : ' opacity-60')
+                  }
+                >
+                  {selected && (
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                      <path
+                        d="M2.5 6.3l2.4 2.4L9.6 4"
+                        stroke="#ffffff"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+          {!marked && (
+            <p className="mt-2 text-xs text-ink-muted">
+              Elegir un color marcará el día automáticamente.
+            </p>
+          )}
+        </fieldset>
+
         <div className="mt-4">
           <label htmlFor={noteId} className="mb-2 block text-sm font-medium text-ink-soft">
             Nota del día
@@ -141,8 +199,12 @@ export default function DayModal({ dateKey, entry, onSave, onClear, onClose }: P
         <div className="mt-6 flex flex-col gap-2 sm:flex-row-reverse">
           <button
             type="button"
-            onClick={() => onSave(dateKey, { marked, note: note.trim() })}
-            className="flex-1 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-accent-strong focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none"
+            onClick={() => onSave(dateKey, { marked, note: note.trim(), color })}
+            style={marked ? { backgroundColor: colorHex(color) } : undefined}
+            className={
+              'flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none ' +
+              (marked ? 'hover:brightness-90' : 'bg-accent hover:bg-accent-strong')
+            }
           >
             Guardar
           </button>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import MonthCard from './MonthCard';
 import DayModal from './DayModal';
 import { QUARTER_MONTHS } from '../lib/calendar';
+import { DAY_COLORS } from '../lib/palette';
 import { loadData, saveData, type CalendarData, type DayEntry } from '../lib/storage';
 
 export default function CalendarDashboard() {
@@ -108,8 +109,16 @@ export default function CalendarDashboard() {
 
       <footer className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-ink-muted">
         <span className="flex items-center gap-2">
-          <span className="h-3 w-3 rounded bg-accent" aria-hidden="true" />
-          Día marcado
+          <span className="flex gap-1" aria-hidden="true">
+            {DAY_COLORS.map((color) => (
+              <span
+                key={color.id}
+                className="h-3 w-3 rounded"
+                style={{ backgroundColor: color.hex }}
+              />
+            ))}
+          </span>
+          Día marcado (9 colores)
         </span>
         <span className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-highlight" aria-hidden="true" />
