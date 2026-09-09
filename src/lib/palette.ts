@@ -2,12 +2,15 @@
  * Colores disponibles para marcar un día. Salvo el teal por defecto —fijado
  * por la paleta base de la app— todos alcanzan contraste AA (>= 4.5:1) con
  * el texto blanco del número de día.
+ *
+ * El violeta (#7e22ce) no está en la lista a propósito: queda reservado al día
+ * actual, que lo toma del token `--color-today` en global.css. Si cualquier día
+ * pudiera llevarlo dejaría de identificar a "hoy" de un vistazo.
  */
 export const DAY_COLORS = [
   { id: 'teal', name: 'Teal', hex: '#0d9488' },
   { id: 'sky', name: 'Azul', hex: '#0369a1' },
   { id: 'indigo', name: 'Índigo', hex: '#4338ca' },
-  { id: 'purple', name: 'Violeta', hex: '#7e22ce' },
   { id: 'rose', name: 'Rosa', hex: '#be123c' },
   { id: 'orange', name: 'Naranja', hex: '#c2410c' },
   { id: 'amber', name: 'Ámbar', hex: '#b45309' },
@@ -25,7 +28,10 @@ export function isColorId(value: unknown): value is ColorId {
   return typeof value === 'string' && BY_ID.has(value as ColorId);
 }
 
-/** Hex de un color guardado; cae al teal por defecto si falta o no existe. */
+/**
+ * Hex de un color guardado; cae al teal por defecto si falta o no existe.
+ * Ahí aterrizan también los días que guardaron el violeta antes de reservarse.
+ */
 export function colorHex(id?: string): string {
   return (BY_ID.get(id as ColorId) ?? BY_ID.get(DEFAULT_COLOR)!).hex;
 }

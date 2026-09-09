@@ -107,3 +107,28 @@ export function formatWeekday(key: string): string {
   const [year, month, day] = key.split('-').map(Number);
   return WEEKDAY_LABELS[mondayIndex(new Date(year, month - 1, day))];
 }
+
+/** Clave `YYYY-MM-DD` del día de hoy, en hora local y sin horas/minutos. */
+export function todayKey(now: Date = new Date()): string {
+  return dateKey(now.getFullYear(), now.getMonth(), now.getDate());
+}
+
+export type DayTimeState = 'past' | 'today' | 'future';
+
+/**
+ * Sitúa una celda respecto a hoy. `YYYY-MM-DD` es de ancho fijo, así que el
+ * orden lexicográfico coincide con el cronológico y basta comparar cadenas.
+ *
+ * Antes de hidratar no hay fecha de cliente (`today` vacío): todo se trata
+ * como futuro, es decir, sin estilos especiales.
+ */
+export function dayTimeState(key: string, today: string): DayTimeState {
+  if (!today || key > today) return 'future';
+  return key === today ? 'today' : 'past';
+}
+
+/** Milisegundos hasta la próxima medianoche local. */
+export function msUntilNextMidnight(now: Date = new Date()): number {
+  const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  return midnight.getTime() - now.getTime();
+}

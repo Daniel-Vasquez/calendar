@@ -1,15 +1,33 @@
 import DayCell from './DayCell';
-import { buildMonthGrid, formatLongDate, formatWeekday, WEEKDAYS, WEEKDAY_LABELS, YEAR } from '../lib/calendar';
+import {
+  buildMonthGrid,
+  dayTimeState,
+  formatLongDate,
+  formatWeekday,
+  WEEKDAYS,
+  WEEKDAY_LABELS,
+  YEAR,
+  type DayTimeState,
+} from '../lib/calendar';
 import type { CalendarData } from '../lib/storage';
 
 type Props = {
   monthIndex: number;
   name: string;
   data: CalendarData;
+  /** Clave `YYYY-MM-DD` de hoy; vacía hasta que el cliente hidrata. */
+  today: string;
   onSelectDay: (key: string) => void;
 };
 
-export default function MonthCard({ monthIndex, name, data, onSelectDay }: Props) {
+/** Sufijo del `aria-label`: el estado temporal solo se ve, hay que decirlo. */
+const STATE_SUFFIX: Record<DayTimeState, string> = {
+  past: ', día pasado',
+  today: ', hoy',
+  future: '',
+};
+
+export default function MonthCard({ monthIndex, name, data, today, onSelectDay }: Props) {
   const slots = buildMonthGrid(YEAR, monthIndex);
 
   const markedCount = slots.filter(
@@ -45,20 +63,28 @@ export default function MonthCard({ monthIndex, name, data, onSelectDay }: Props
       </div>
 
       <div className="grid grid-cols-7 gap-1.5">
-        {slots.map((slot) =>
-          slot.type === 'blank' ? (
-            <div key={slot.id} aria-hidden="true" className="aspect-square rounded-lg bg-edge/50" />
-          ) : (
+        {slots.map((slot) => {
+          if (slot.type === 'blank') {
+            return (
+              <div key={slot.id} aria-hidden="true" className="aspect-square rounded-lg bg-edge/50" />
+            );
+          }
+
+          const timeState = dayTimeState(slot.key, today);
+          return (
             <DayCell
               key={slot.id}
               day={slot.day}
               isWeekend={slot.isWeekend}
               entry={data[slot.key]}
-              label={`${formatWeekday(slot.key)} ${formatLongDate(slot.key)}`}
+              timeState={timeState}
+              label={
+                `${formatWeekday(slot.key)} ${formatLongDate(slot.key)}` + STATE_SUFFIX[timeState]
+              }
               onSelect={() => onSelectDay(slot.key)}
             />
-          ),
-        )}
+          );
+        })}
       </div>
     </section>
   );

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import MonthCard from './MonthCard';
 import DayModal from './DayModal';
-import { QUARTER_MONTHS } from '../lib/calendar';
+import { msUntilNextMidnight, QUARTER_MONTHS, todayKey } from '../lib/calendar';
 import { DAY_COLORS } from '../lib/palette';
 import { loadData, saveData, type CalendarData, type DayEntry } from '../lib/storage';
 
@@ -9,6 +9,7 @@ export default function CalendarDashboard() {
   const [data, setData] = useState<CalendarData>({});
   const [hydrated, setHydrated] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [today, setToday] = useState('');
 
   // El primer render debe coincidir con el HTML del servidor, así que
   // localStorage se lee después de montar.
@@ -21,6 +22,32 @@ export default function CalendarDashboard() {
     if (!hydrated) return;
     saveData(data);
   }, [data, hydrated]);
+
+  // La fecha del cliente puede no ser la del servidor, así que "hoy" también
+  // se resuelve tras montar. Se reprograma en cada medianoche para que el día
+  // actual ceda su marca al siguiente sin recargar, y se revalida al volver a
+  // la pestaña: un equipo suspendido despierta con el temporizador atrasado.
+  useEffect(() => {
+    let timer = 0;
+
+    function refresh() {
+      setToday(todayKey());
+      window.clearTimeout(timer);
+      // El segundo extra evita disparar justo en el borde y leer aún el día previo.
+      timer = window.setTimeout(refresh, msUntilNextMidnight() + 1000);
+    }
+
+    function onVisible() {
+      if (document.visibilityState === 'visible') refresh();
+    }
+
+    refresh();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, []);
 
   // Mantiene el calendario en sincronía con otras pestañas abiertas.
   useEffect(() => {
@@ -102,6 +129,7 @@ export default function CalendarDashboard() {
             monthIndex={month.index}
             name={month.name}
             data={data}
+            today={today}
             onSelectDay={setSelectedKey}
           />
         ))}
@@ -118,11 +146,19 @@ export default function CalendarDashboard() {
               />
             ))}
           </span>
-          Día marcado (9 colores)
+          Día marcado ({DAY_COLORS.length} colores)
         </span>
         <span className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full bg-highlight" aria-hidden="true" />
           Contiene una nota
+        </span>
+        <span className="flex items-center gap-2">
+          <span className="h-3 w-3 rounded bg-today" aria-hidden="true" />
+          Día actual (violeta reservado)
+        </span>
+        <span className="flex items-center gap-2">
+          <span className="h-3 w-3 rounded bg-accent opacity-60" aria-hidden="true" />
+          Día pasado
         </span>
         <span>Haz clic en cualquier día para editarlo.</span>
       </footer>

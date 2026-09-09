@@ -12,6 +12,7 @@
   --color-accent-strong: #0f766e;
   --color-highlight: #d97706; /* Amber - badges, notas, acciones */
   --color-highlight-soft: #fef3c7;
+  --color-today: #7e22ce; /* Violeta - reservado al día actual (ver palette.ts) */
 
   /* Texto */
   --color-ink: #1e293b;

@@ -138,7 +138,7 @@ export default function DayModal({ dateKey, entry, onSave, onClear, onClose }: P
             <span>Color del recuadro</span>
             <span className="text-xs font-normal text-ink-muted">{colorName(color)}</span>
           </legend>
-          <div role="radiogroup" aria-label="Color del recuadro" className="grid grid-cols-9 gap-2">
+          <div role="radiogroup" aria-label="Color del recuadro" className="grid grid-cols-8 gap-2">
             {DAY_COLORS.map((option) => {
               const selected = option.id === color;
               return (
