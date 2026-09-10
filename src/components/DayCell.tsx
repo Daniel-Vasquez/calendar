@@ -16,7 +16,8 @@ type Props = {
   weekday: number;
   /** 0 en la única casilla tabulable del mes, -1 en el resto (ver MonthCard). */
   tabIndex: number;
-  onSelect: () => void;
+  /** `extend` avisa de que el clic traía Shift: marcar rango, no abrir el día. */
+  onSelect: (extend: boolean) => void;
 };
 
 const BASE =
@@ -112,10 +113,10 @@ export default function DayCell({
   // El popover vive fuera del botón: los días pasados atenúan el suyo con
   // `opacity`, y anidado heredaría ese desvanecido.
   return (
-    <div className="group relative">
+    <div role="gridcell" className="group relative">
       <button
         type="button"
-        onClick={onSelect}
+        onClick={(event) => onSelect(event.shiftKey)}
         data-date={dateKey}
         tabIndex={tabIndex}
         aria-label={label}

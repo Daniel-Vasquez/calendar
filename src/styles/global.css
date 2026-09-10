@@ -49,3 +49,45 @@ html {
   .animate-overlay-in,
   .animate-panel-in { animation: none; }
 }
+
+/* ── Impresión ───────────────────────────────────────────────────────
+   El planificador se imprime como referencia de escritorio: fuera los
+   controles, y los colores de los días son información, no adorno. */
+@media print {
+  @page {
+    margin: 12mm;
+  }
+
+  html {
+    background-color: #fff;
+  }
+
+  /* Sin esto el navegador descarta los fondos y todos los días salen iguales. */
+  *,
+  *::before,
+  *::after {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Botones, filtros y avisos: no hay dónde pulsarlos en el papel. */
+  .print-hidden {
+    display: none !important;
+  }
+
+  /* La rejilla de meses depende de un `min-width` que el papel no cumple. */
+  .print-grid-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  section {
+    break-inside: avoid;
+    box-shadow: none !important;
+  }
+
+  /* La agenda se lee entera: en pantalla tiene scroll propio, aquí no cabría. */
+  .max-h-96 {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+}

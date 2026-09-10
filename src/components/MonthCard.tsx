@@ -1,12 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import DayCell from './DayCell';
 import {
-  buildMonthGrid,
+  buildMonthWeeks,
   dateKey,
   dayTimeState,
   daysInMonth,
   formatLongDate,
   formatWeekday,
+  isInQuarter,
+  shiftKey,
   WEEKDAYS,
   WEEKDAY_LABELS,
   YEAR,
@@ -20,7 +22,8 @@ type Props = {
   data: CalendarData;
   /** Clave `YYYY-MM-DD` de hoy; vacía hasta que el cliente hidrata. */
   today: string;
-  onSelectDay: (key: string) => void;
+  /** `extend` llega de un clic con Shift: marca el rango desde el último día. */
+  onSelectDay: (key: string, extend: boolean) => void;
 };
 
 /** Días que avanza cada flecha: la cuadrícula tiene una semana por fila. */
@@ -39,53 +42,50 @@ const STATE_SUFFIX: Record<DayTimeState, string> = {
 };
 
 export default function MonthCard({ monthIndex, name, data, today, onSelectDay }: Props) {
-  const slots = buildMonthGrid(YEAR, monthIndex);
+  const weeks = buildMonthWeeks(YEAR, monthIndex);
   const total = daysInMonth(YEAR, monthIndex);
   const monthPrefix = `${YEAR}-${String(monthIndex + 1).padStart(2, '0')}-`;
 
-  const markedCount = slots.filter(
-    (slot) => slot.type === 'day' && data[slot.key]?.marked,
-  ).length;
+  const markedCount = weeks
+    .flat()
+    .filter((slot) => slot.type === 'day' && data[slot.key]?.marked).length;
 
   // Tabulación itinerante: un mes entero son ~30 paradas de tab, así que solo
-  // una casilla es tabulable y las flechas mueven el foco dentro de la rejilla.
-  const gridRef = useRef<HTMLDivElement>(null);
-  const [focusedDay, setFocusedDay] = useState(1);
+  // una casilla es tabulable y las flechas mueven el foco por la rejilla.
+  const [focusedKey, setFocusedKey] = useState(() => dateKey(YEAR, monthIndex, 1));
 
   // Hoy es la entrada natural a su propio mes. `today` llega vacío hasta que
   // el cliente hidrata y vuelve a cambiar en cada medianoche.
   useEffect(() => {
-    if (!today.startsWith(monthPrefix)) return;
-    setFocusedDay(Number(today.slice(8, 10)));
+    if (today.startsWith(monthPrefix)) setFocusedKey(today);
   }, [today, monthPrefix]);
 
   function moveFocus(event: React.KeyboardEvent<HTMLDivElement>) {
     const step = STEP.get(event.key);
     const target =
       step !== undefined
-        ? focusedDay + step
+        ? shiftKey(focusedKey, step)
         : event.key === 'Home'
-          ? 1
+          ? dateKey(YEAR, monthIndex, 1)
           : event.key === 'End'
-            ? total
+            ? dateKey(YEAR, monthIndex, total)
             : undefined;
 
-    if (target === undefined) return;
+    if (!target) return;
     // Evita que las flechas desplacen la página mientras se recorre el mes.
     event.preventDefault();
 
-    // Los bordes del mes retienen el foco en lugar de dejarlo caer fuera.
-    const day = Math.min(Math.max(target, 1), total);
-    gridRef.current
-      ?.querySelector<HTMLButtonElement>(`[data-date="${dateKey(YEAR, monthIndex, day)}"]`)
-      ?.focus();
+    // La búsqueda es global, así que las flechas pasan de un mes al siguiente.
+    // Fuera del trimestre no hay casilla y el foco se queda donde está.
+    if (!isInQuarter(target)) return;
+    document.querySelector<HTMLButtonElement>(`[data-date="${target}"]`)?.focus();
   }
 
   // El foco burbujea: basta un manejador en la rejilla para que la parada de
   // tabulación siga al último día visitado, se llegue con teclado o con ratón.
   function trackFocus(event: React.FocusEvent<HTMLDivElement>) {
     const date = (event.target as HTMLElement).dataset.date;
-    if (date) setFocusedDay(Number(date.slice(8, 10)));
+    if (date) setFocusedKey(date);
   }
 
   return (
@@ -104,49 +104,64 @@ export default function MonthCard({ monthIndex, name, data, today, onSelectDay }
         )}
       </header>
 
-      <div className="mb-2 grid grid-cols-7 gap-1.5">
-        {WEEKDAYS.map((initial, i) => (
-          <abbr
-            key={WEEKDAY_LABELS[i]}
-            title={WEEKDAY_LABELS[i]}
-            className="text-center text-xs font-semibold text-ink-muted no-underline"
-          >
-            {initial}
-          </abbr>
-        ))}
-      </div>
-
+      {/* Una fila por semana: la rejilla plana se pintaba igual, pero `grid`
+          solo es una tabla accesible si las filas existen en el DOM. */}
       <div
-        ref={gridRef}
+        role="grid"
+        aria-label={`Días de ${name}`}
         onKeyDown={moveFocus}
         onFocus={trackFocus}
-        className="grid grid-cols-7 gap-1.5"
+        className="flex flex-col gap-1.5"
       >
-        {slots.map((slot) => {
-          if (slot.type === 'blank') {
-            return (
-              <div key={slot.id} aria-hidden="true" className="aspect-square rounded-lg bg-edge/50" />
-            );
-          }
+        <div role="row" className="mb-0.5 grid grid-cols-7 gap-1.5">
+          {WEEKDAYS.map((initial, i) => (
+            <abbr
+              key={WEEKDAY_LABELS[i]}
+              role="columnheader"
+              title={WEEKDAY_LABELS[i]}
+              className="text-center text-xs font-semibold text-ink-muted no-underline"
+            >
+              {initial}
+            </abbr>
+          ))}
+        </div>
 
-          const timeState = dayTimeState(slot.key, today);
-          const dateLabel = `${formatWeekday(slot.key)} ${formatLongDate(slot.key)}`;
-          return (
-            <DayCell
-              key={slot.id}
-              day={slot.day}
-              isWeekend={slot.isWeekend}
-              entry={data[slot.key]}
-              timeState={timeState}
-              dateKey={slot.key}
-              label={dateLabel + STATE_SUFFIX[timeState]}
-              dateLabel={dateLabel}
-              weekday={slot.weekday}
-              tabIndex={slot.day === focusedDay ? 0 : -1}
-              onSelect={() => onSelectDay(slot.key)}
-            />
-          );
-        })}
+        {weeks.map((week) => (
+          <div key={week[0].id} role="row" className="grid grid-cols-7 gap-1.5">
+            {week.map((slot) => {
+              if (slot.type === 'blank') {
+                // Sin `aria-hidden`: una casilla vacía sigue contando como
+                // columna, y ocultarla descuadraría la fila para el lector.
+                return (
+                  <div
+                    key={slot.id}
+                    role="gridcell"
+                    className="aspect-square rounded-lg bg-edge/50"
+                  />
+                );
+              }
+
+              const timeState = dayTimeState(slot.key, today);
+              const dateLabel = `${formatWeekday(slot.key)} ${formatLongDate(slot.key)}`;
+
+              return (
+                <DayCell
+                  key={slot.id}
+                  day={slot.day}
+                  isWeekend={slot.isWeekend}
+                  entry={data[slot.key]}
+                  timeState={timeState}
+                  dateKey={slot.key}
+                  label={dateLabel + STATE_SUFFIX[timeState]}
+                  dateLabel={dateLabel}
+                  weekday={slot.weekday}
+                  tabIndex={slot.key === focusedKey ? 0 : -1}
+                  onSelect={(extend) => onSelectDay(slot.key, extend)}
+                />
+              );
+            })}
+          </div>
+        ))}
       </div>
     </section>
   );

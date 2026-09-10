@@ -10,8 +10,12 @@ export type DayEntry = {
 
 export type CalendarData = Record<string, DayEntry>;
 
-/** Descarta claves/valores corruptos en lugar de dejar caer todo el estado. */
-function sanitize(raw: unknown): CalendarData {
+/**
+ * Descarta claves/valores corruptos en lugar de dejar caer todo el estado.
+ * Se exporta porque un archivo importado merece la misma desconfianza que
+ * lo que haya quedado en localStorage.
+ */
+export function sanitizeData(raw: unknown): CalendarData {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
 
   const clean: CalendarData = {};
@@ -36,7 +40,7 @@ export function loadData(): CalendarData {
   if (typeof window === 'undefined') return {};
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    return raw ? sanitize(JSON.parse(raw)) : {};
+    return raw ? sanitizeData(JSON.parse(raw)) : {};
   } catch {
     return {};
   }

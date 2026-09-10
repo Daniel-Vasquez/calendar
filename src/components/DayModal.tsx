@@ -1,17 +1,20 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { formatLongDate, formatWeekday } from '../lib/calendar';
-import { DAY_COLORS, DEFAULT_COLOR, colorHex, colorName, type ColorId } from '../lib/palette';
+import { DAY_COLORS, DEFAULT_COLOR, colorHex, type ColorId } from '../lib/palette';
+import { labelFor, type ColorLabels } from '../lib/labels';
 import type { DayEntry } from '../lib/storage';
 
 type Props = {
   dateKey: string;
   entry?: DayEntry;
+  /** Nombres que el usuario le ha puesto a los colores (ver SettingsPanel). */
+  labels: ColorLabels;
   onSave: (key: string, entry: DayEntry) => void;
   onClear: (key: string) => void;
   onClose: () => void;
 };
 
-export default function DayModal({ dateKey, entry, onSave, onClear, onClose }: Props) {
+export default function DayModal({ dateKey, entry, labels, onSave, onClear, onClose }: Props) {
   const [marked, setMarked] = useState(entry?.marked ?? false);
   const [note, setNote] = useState(entry?.note ?? '');
   const [color, setColor] = useState<ColorId>(entry?.color ?? DEFAULT_COLOR);
@@ -136,19 +139,20 @@ export default function DayModal({ dateKey, entry, onSave, onClear, onClose }: P
         <fieldset className="mt-4">
           <legend className="mb-2 flex w-full items-baseline justify-between text-sm font-medium text-ink-soft">
             <span>Color del recuadro</span>
-            <span className="text-xs font-normal text-ink-muted">{colorName(color)}</span>
+            <span className="text-xs font-normal text-ink-muted">{labelFor(labels, color)}</span>
           </legend>
           <div role="radiogroup" aria-label="Color del recuadro" className="grid grid-cols-8 gap-2">
             {DAY_COLORS.map((option) => {
               const selected = option.id === color;
+              const name = labelFor(labels, option.id);
               return (
                 <button
                   key={option.id}
                   type="button"
                   role="radio"
                   aria-checked={selected}
-                  aria-label={option.name}
-                  title={option.name}
+                  aria-label={name}
+                  title={name}
                   onClick={() => pickColor(option.id)}
                   style={{ backgroundColor: option.hex }}
                   className={

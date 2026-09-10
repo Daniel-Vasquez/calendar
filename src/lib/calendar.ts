@@ -96,6 +96,32 @@ export function buildMonthGrid(year: number, monthIndex: number): CalendarSlot[]
   return slots;
 }
 
+/**
+ * Agrupa la cuadrícula en semanas de siete. La rejilla plana bastaba para
+ * pintarla, pero marcarla como `grid` accesible exige filas de verdad.
+ */
+export function buildMonthWeeks(year: number, monthIndex: number): CalendarSlot[][] {
+  const slots = buildMonthGrid(year, monthIndex);
+  const weeks: CalendarSlot[][] = [];
+  for (let i = 0; i < slots.length; i += 7) weeks.push(slots.slice(i, i + 7));
+  return weeks;
+}
+
+/** Clave desplazada `days` días. `Date` cruza el cambio de mes por su cuenta. */
+export function shiftKey(key: string, days: number): string {
+  const [year, month, day] = key.split('-').map(Number);
+  const moved = new Date(year, month - 1, day + days);
+  return dateKey(moved.getFullYear(), moved.getMonth(), moved.getDate());
+}
+
+/** Claves entre dos días, ambos incluidos y en orden cronológico. */
+export function keysBetween(a: string, b: string): string[] {
+  const [from, to] = a <= b ? [a, b] : [b, a];
+  const keys: string[] = [];
+  for (let key = from; key <= to; key = shiftKey(key, 1)) keys.push(key);
+  return keys;
+}
+
 /** "15 de Octubre, 2026" a partir de una clave `YYYY-MM-DD`. */
 export function formatLongDate(key: string): string {
   const [year, month, day] = key.split('-').map(Number);
