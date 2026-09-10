@@ -71,6 +71,7 @@ export default function MonthCard({ monthIndex, name, data, today, onSelectDay }
           }
 
           const timeState = dayTimeState(slot.key, today);
+          const dateLabel = `${formatWeekday(slot.key)} ${formatLongDate(slot.key)}`;
           return (
             <DayCell
               key={slot.id}
@@ -78,9 +79,9 @@ export default function MonthCard({ monthIndex, name, data, today, onSelectDay }
               isWeekend={slot.isWeekend}
               entry={data[slot.key]}
               timeState={timeState}
-              label={
-                `${formatWeekday(slot.key)} ${formatLongDate(slot.key)}` + STATE_SUFFIX[timeState]
-              }
+              label={dateLabel + STATE_SUFFIX[timeState]}
+              dateLabel={dateLabel}
+              weekday={slot.weekday}
               onSelect={() => onSelectDay(slot.key)}
             />
           );
