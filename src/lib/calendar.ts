@@ -108,6 +108,13 @@ export function formatWeekday(key: string): string {
   return WEEKDAY_LABELS[mondayIndex(new Date(year, month - 1, day))];
 }
 
+/** ¿La clave cae dentro de alguno de los meses que el calendario dibuja? */
+export function isInQuarter(key: string): boolean {
+  return QUARTER_MONTHS.some((month) =>
+    key.startsWith(`${YEAR}-${String(month.index + 1).padStart(2, '0')}-`),
+  );
+}
+
 /** Clave `YYYY-MM-DD` del día de hoy, en hora local y sin horas/minutos. */
 export function todayKey(now: Date = new Date()): string {
   return dateKey(now.getFullYear(), now.getMonth(), now.getDate());

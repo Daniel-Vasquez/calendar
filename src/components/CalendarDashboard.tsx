@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import MonthCard from './MonthCard';
 import DayModal from './DayModal';
-import { msUntilNextMidnight, QUARTER_MONTHS, todayKey } from '../lib/calendar';
+import AgendaPanel from './AgendaPanel';
+import {
+  formatLongDate,
+  isInQuarter,
+  msUntilNextMidnight,
+  QUARTER_MONTHS,
+  todayKey,
+} from '../lib/calendar';
 import { DAY_COLORS } from '../lib/palette';
 import { loadData, saveData, type CalendarData, type DayEntry } from '../lib/storage';
 
@@ -10,6 +17,8 @@ export default function CalendarDashboard() {
   const [hydrated, setHydrated] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [today, setToday] = useState('');
+  /** Último día borrado, a la espera de que el aviso caduque o se deshaga. */
+  const [undo, setUndo] = useState<{ key: string; entry: DayEntry } | null>(null);
 
   // El primer render debe coincidir con el HTML del servidor, así que
   // localStorage se lee después de montar.
@@ -60,28 +69,70 @@ export default function CalendarDashboard() {
     return () => window.removeEventListener('storage', onStorage);
   }, []);
 
-  const handleSave = useCallback((key: string, entry: DayEntry) => {
-    setData((current) => {
-      const next = { ...current };
+  const handleSave = useCallback(
+    (key: string, entry: DayEntry) => {
       // Un día sin marca ni nota no se guarda: mantiene el almacenamiento limpio.
-      if (!entry.marked && !entry.note) {
-        delete next[key];
-      } else {
-        next[key] = entry;
-      }
-      return next;
-    });
-    setSelectedKey(null);
-  }, []);
+      const removes = !entry.marked && !entry.note;
+      const previous = data[key];
 
-  const handleClear = useCallback((key: string) => {
-    setData((current) => {
-      const next = { ...current };
-      delete next[key];
-      return next;
-    });
-    setSelectedKey(null);
-  }, []);
+      setData((current) => {
+        const next = { ...current };
+        if (removes) {
+          delete next[key];
+        } else {
+          next[key] = entry;
+        }
+        return next;
+      });
+
+      // Vaciar el formulario borra igual que el botón de eliminar; cualquier
+      // otro guardado invalida el aviso pendiente, que ya hablaría de otro día.
+      setUndo(removes && previous ? { key, entry: previous } : null);
+      setSelectedKey(null);
+    },
+    [data],
+  );
+
+  const handleClear = useCallback(
+    (key: string) => {
+      const previous = data[key];
+      setData((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+      if (previous) setUndo({ key, entry: previous });
+      setSelectedKey(null);
+    },
+    [data],
+  );
+
+  const handleUndo = useCallback(() => {
+    if (!undo) return;
+    setData((current) => ({ ...current, [undo.key]: undo.entry }));
+    setUndo(null);
+  }, [undo]);
+
+  // El aviso caduca solo. Cada borrado crea un objeto nuevo, así que el
+  // temporizador se reinicia con él en lugar de heredar la cuenta anterior.
+  useEffect(() => {
+    if (!undo) return;
+    const timer = window.setTimeout(() => setUndo(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [undo]);
+
+  // Un calendario de cuatro meses no cabe en pantalla: este atajo devuelve a
+  // hoy y le deja el foco, listo para seguir moviéndose con las flechas.
+  const canJumpToToday = Boolean(today) && isInQuarter(today);
+
+  const goToToday = useCallback(() => {
+    const cell = document.querySelector<HTMLElement>(`[data-date="${today}"]`);
+    if (!cell) return;
+
+    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    cell.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'center' });
+    cell.focus({ preventScroll: true });
+  }, [today]);
 
   const summary = useMemo(() => {
     const entries = Object.values(data);
@@ -107,18 +158,30 @@ export default function CalendarDashboard() {
             </p>
           </div>
 
-          <dl className="flex gap-3" aria-live="polite">
-            <SummaryTile
-              value={summary.marked}
-              label={summary.marked === 1 ? 'día marcado' : 'días marcados'}
-              tone="accent"
-            />
-            <SummaryTile
-              value={summary.notes}
-              label={summary.notes === 1 ? 'nota guardada' : 'notas guardadas'}
-              tone="highlight"
-            />
-          </dl>
+          <div className="flex flex-wrap items-center gap-3">
+            {canJumpToToday && (
+              <button
+                type="button"
+                onClick={goToToday}
+                className="rounded-xl border border-today/30 bg-today/10 px-4 py-2.5 text-sm font-semibold text-today transition-colors hover:bg-today/20 focus-visible:ring-2 focus-visible:ring-today focus-visible:ring-offset-2 focus-visible:outline-none"
+              >
+                Ir a hoy
+              </button>
+            )}
+
+            <dl className="flex gap-3" aria-live="polite">
+              <SummaryTile
+                value={summary.marked}
+                label={summary.marked === 1 ? 'día marcado' : 'días marcados'}
+                tone="accent"
+              />
+              <SummaryTile
+                value={summary.notes}
+                label={summary.notes === 1 ? 'nota guardada' : 'notas guardadas'}
+                tone="highlight"
+              />
+            </dl>
+          </div>
         </div>
       </header>
 
@@ -134,6 +197,8 @@ export default function CalendarDashboard() {
           />
         ))}
       </div>
+
+      <AgendaPanel data={data} today={today} onSelectDay={setSelectedKey} />
 
       <footer className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-ink-muted">
         <span className="flex items-center gap-2">
@@ -160,8 +225,44 @@ export default function CalendarDashboard() {
           <span className="h-3 w-3 rounded bg-accent opacity-60" aria-hidden="true" />
           Día pasado
         </span>
-        <span>Haz clic en cualquier día para editarlo.</span>
+        <span>Haz clic en cualquier día para editarlo, o recorre el mes con las flechas.</span>
       </footer>
+
+      {undo && (
+        // Bajo el modal (z-50) y sin capturar el cursor salvo en la tarjeta:
+        // la banda ocupa todo el ancho y bloquearía el pie de página.
+        <div
+          role="status"
+          aria-live="polite"
+          className="animate-panel-in pointer-events-none fixed inset-x-0 bottom-6 z-40 flex justify-center px-4"
+        >
+          <div className="pointer-events-auto flex flex-wrap items-center gap-3 rounded-xl bg-ink px-4 py-3 text-sm text-white shadow-2xl">
+            <span>Se borró {formatLongDate(undo.key)}.</span>
+            <button
+              type="button"
+              onClick={handleUndo}
+              className="rounded-lg bg-white/15 px-3 py-1 text-sm font-semibold transition-colors hover:bg-white/25 focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
+            >
+              Deshacer
+            </button>
+            <button
+              type="button"
+              onClick={() => setUndo(null)}
+              aria-label="Descartar aviso"
+              className="rounded-lg p-1 text-white/70 transition-colors hover:text-white focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path
+                  d="M4 4l8 8M12 4l-8 8"
+                  stroke="currentColor"
+                  strokeWidth="1.75"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
 
       {selectedKey && (
         <DayModal

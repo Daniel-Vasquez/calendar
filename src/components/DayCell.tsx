@@ -7,11 +7,15 @@ type Props = {
   isWeekend: boolean;
   entry?: DayEntry;
   timeState: DayTimeState;
+  /** Clave `YYYY-MM-DD`; queda en el DOM para localizar la casilla al navegar. */
+  dateKey: string;
   label: string;
   /** Encabezado del popover de nota; `label` añade además el estado temporal. */
   dateLabel: string;
   /** 0 = lunes … 6 = domingo. Decide hacia dónde se ancla el popover. */
   weekday: number;
+  /** 0 en la única casilla tabulable del mes, -1 en el resto (ver MonthCard). */
+  tabIndex: number;
   onSelect: () => void;
 };
 
@@ -91,9 +95,11 @@ export default function DayCell({
   isWeekend,
   entry,
   timeState,
+  dateKey,
   label,
   dateLabel,
   weekday,
+  tabIndex,
   onSelect,
 }: Props) {
   const marked = entry?.marked ?? false;
@@ -110,6 +116,8 @@ export default function DayCell({
       <button
         type="button"
         onClick={onSelect}
+        data-date={dateKey}
+        tabIndex={tabIndex}
         aria-label={label}
         aria-pressed={marked}
         aria-current={isToday ? 'date' : undefined}
