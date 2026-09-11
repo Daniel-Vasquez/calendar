@@ -101,7 +101,7 @@ export default function DayModal({ dateKey, entry, labels, onSave, onClear, onCl
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="animate-panel-in max-h-full w-full max-w-md overflow-y-auto rounded-2xl border border-edge bg-canvas p-6 shadow-2xl"
+        className="animate-panel-in max-h-full w-11/12 max-w-2xl overflow-y-auto rounded-2xl md:w-[70%] border border-edge bg-canvas p-6 shadow-2xl"
       >
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>

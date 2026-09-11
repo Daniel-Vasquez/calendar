@@ -43,7 +43,7 @@ export default function Lightbox({ image, triggerRef, onClose }: Props) {
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="animate-panel-in flex max-h-full w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-edge bg-canvas shadow-2xl"
+        className="animate-panel-in flex max-h-full w-11/12 max-w-4xl flex-col md:w-[70%] overflow-hidden rounded-2xl border border-edge bg-canvas shadow-2xl"
       >
         <header className="flex items-start justify-between gap-4 px-5 pt-5 pb-4">
           <div>

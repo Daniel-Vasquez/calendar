@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Lightbox from './Lightbox';
+import NavBar from './NavBar';
 import { formatLongDate } from '../lib/calendar';
 import { collectImages } from '../lib/gallery';
 import { loadData, STORAGE_KEY, type CalendarData } from '../lib/storage';
@@ -43,90 +44,72 @@ export default function GalleryView() {
 
   return (
     <>
-      <header className="mb-8">
-        <div className="flex flex-wrap items-end justify-between gap-6">
-          <div>
-            <p className="text-xs font-semibold tracking-[0.18em] text-highlight uppercase">
-              Imágenes adjuntas
-            </p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-ink sm:text-4xl">
-              Galería
-            </h1>
-            <p className="mt-2 text-sm text-ink-soft">
-              {/* El recuento espera a la hidratación: en el servidor siempre sería cero. */}
-              {hydrated && images.length > 0
-                ? `${images.length} ${images.length === 1 ? 'imagen' : 'imágenes'} en tus notas del año.`
-                : 'Las imágenes que adjuntes a tus notas aparecen aquí.'}
-            </p>
+      <NavBar current="gallery" />
+
+      <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
+        <header className="mb-8">
+          <div className="flex flex-wrap items-end justify-between gap-6">
+            <div>
+              <p className="text-xs font-semibold tracking-[0.18em] text-highlight uppercase">
+                Imágenes adjuntas
+              </p>
+              <h1 className="mt-2 text-3xl font-semibold tracking-tight text-ink sm:text-4xl">
+                Galería
+              </h1>
+              <p className="mt-2 text-sm text-ink-soft">
+                {/* El recuento espera a la hidratación: en el servidor siempre sería cero. */}
+                {hydrated && images.length > 0
+                  ? `${images.length} ${images.length === 1 ? 'imagen' : 'imágenes'} en tus notas del año.`
+                  : 'Las imágenes que adjuntes a tus notas aparecen aquí.'}
+              </p>
+            </div>
           </div>
+        </header>
 
-          <a
-            href="/"
-            className="flex items-center gap-2 rounded-xl border border-edge bg-white px-4 py-2.5 text-sm font-semibold text-ink-soft transition-colors hover:bg-edge hover:text-ink focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none"
-          >
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M19 12H5M12 19l-7-7 7-7" />
-            </svg>
-            Volver al calendario
-          </a>
-        </div>
-      </header>
-
-      {/* Hasta hidratar no se sabe si hay imágenes: mejor un hueco que un
+        {/* Hasta hidratar no se sabe si hay imágenes: mejor un hueco que un
           estado vacío que desaparece al instante. */}
-      {!hydrated ? (
-        <div className="min-h-64" aria-busy="true" />
-      ) : images.length === 0 ? (
-        <EmptyState />
-      ) : (
-        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5">
-          {images.map((image) => {
-            const date = formatLongDate(image.key);
-            return (
-              <li key={image.key}>
-                <button
-                  type="button"
-                  onClick={(event) => {
-                    triggerRef.current = event.currentTarget;
-                    setOpenKey(image.key);
-                  }}
-                  aria-haspopup="dialog"
-                  aria-label={`Ampliar imagen del ${date}`}
-                  className="group block w-full overflow-hidden rounded-xl border border-edge bg-surface text-left shadow-sm transition-shadow hover:shadow-md focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none"
-                >
-                  {/* Cuadrada y recortada con `object-cover`: la proporción
+        {!hydrated ? (
+          <div className="min-h-64" aria-busy="true" />
+        ) : images.length === 0 ? (
+          <EmptyState />
+        ) : (
+          <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5">
+            {images.map((image) => {
+              const date = formatLongDate(image.key);
+              return (
+                <li key={image.key}>
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      triggerRef.current = event.currentTarget;
+                      setOpenKey(image.key);
+                    }}
+                    aria-haspopup="dialog"
+                    aria-label={`Ampliar imagen del ${date}`}
+                    className="group block w-full overflow-hidden rounded-xl border border-edge bg-surface text-left shadow-sm transition-shadow hover:shadow-md focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none"
+                  >
+                    {/* Cuadrada y recortada con `object-cover`: la proporción
                       original se ve entera en el visor, aquí manda la rejilla. */}
-                  <span className="block aspect-square overflow-hidden">
-                    <img
-                      src={image.dataUrl}
-                      alt=""
-                      loading="lazy"
-                      className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100"
-                    />
-                  </span>
-                  <span className="block truncate px-3 py-2 text-xs font-medium text-ink-soft transition-colors group-hover:text-ink">
-                    {date}
-                  </span>
-                </button>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+                    <span className="block aspect-square overflow-hidden">
+                      <img
+                        src={image.dataUrl}
+                        alt=""
+                        loading="lazy"
+                        className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100"
+                      />
+                    </span>
+                    <span className="block truncate px-3 py-2 text-xs font-medium text-ink-soft transition-colors group-hover:text-ink">
+                      {date}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
 
-      {open && (
-        <Lightbox image={open} triggerRef={triggerRef} onClose={() => setOpenKey(null)} />
-      )}
+        {open && <Lightbox image={open} triggerRef={triggerRef} onClose={() => setOpenKey(null)} />}
+      </main>
     </>
   );
 }
@@ -143,15 +126,7 @@ function EmptyState() {
         aria-hidden="true"
         className="text-ink-muted"
       >
-        <rect
-          x="8"
-          y="14"
-          width="48"
-          height="36"
-          rx="6"
-          stroke="currentColor"
-          strokeWidth="2.5"
-        />
+        <rect x="8" y="14" width="48" height="36" rx="6" stroke="currentColor" strokeWidth="2.5" />
         <path
           d="M10 44l13-13a4 4 0 015.6 0L40 42l5.2-5.2a4 4 0 015.6 0L54 40"
           stroke="currentColor"
@@ -163,8 +138,8 @@ function EmptyState() {
       </svg>
       <h2 className="mt-5 text-lg font-semibold text-ink">Todavía no hay imágenes</h2>
       <p className="mt-2 max-w-sm text-sm text-ink-soft">
-        Abre cualquier día del calendario y usa «Adjuntar imagen» en su nota. Todo lo que
-        adjuntes se reunirá aquí, ordenado por fecha.
+        Abre cualquier día del calendario y usa «Adjuntar imagen» en su nota. Todo lo que adjuntes
+        se reunirá aquí, ordenado por fecha.
       </p>
       <a
         href="/"

@@ -110,7 +110,7 @@ export default function MonthCard({
       aria-label={`${name} de ${YEAR}`}
       data-month={monthKey(monthIndex)}
       data-open={expanded || undefined}
-      className="rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5"
+      className="scroll-mt-20 rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5"
     >
       {/* El margen negativo devuelve el relleno del botón al borde de la
           tarjeta: la zona de pulsado crece sin mover el título. */}

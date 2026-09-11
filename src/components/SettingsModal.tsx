@@ -55,7 +55,7 @@ export default function SettingsModal({ triggerRef, onClose, ...panelProps }: Pr
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="animate-pop-in my-auto w-full max-w-3xl rounded-2xl border border-edge bg-canvas p-6 shadow-2xl"
+        className="animate-pop-in my-auto w-11/12 max-w-3xl rounded-2xl md:w-[70%] border border-edge bg-canvas p-6 shadow-2xl"
       >
         <header className="mb-5 flex items-start justify-between gap-4">
           <div>

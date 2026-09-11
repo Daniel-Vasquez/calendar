@@ -4,6 +4,7 @@ import MonthCard from './MonthCard';
 import DayModal from './DayModal';
 import AgendaPanel from './AgendaPanel';
 import SettingsModal from './SettingsModal';
+import NavBar from './NavBar';
 import {
   formatLongDate,
   isInQuarter,
@@ -34,13 +35,7 @@ import {
   MAX_LABEL_LENGTH,
   type ColorLabels,
 } from '../lib/labels';
-import {
-  downloadFile,
-  exportFilename,
-  parseImport,
-  toIcs,
-  toJson,
-} from '../lib/transfer';
+import { downloadFile, exportFilename, parseImport, toIcs, toJson } from '../lib/transfer';
 import {
   hasContent,
   loadData,
@@ -231,7 +226,10 @@ export default function CalendarDashboard() {
 
     if (!/^\d{4}-\d{2}-\d{2}$/.test(key) || !isInQuarter(key)) return;
 
-    setExpansion((current) => ({ ...current, [monthKey(monthIndexOf(key))]: true }));
+    setExpansion((current) => ({
+      ...current,
+      [monthKey(monthIndexOf(key))]: true,
+    }));
     openDay(key);
     document
       .querySelector<HTMLElement>(`[data-date="${key}"]`)
@@ -366,151 +364,121 @@ export default function CalendarDashboard() {
       marked: entries.filter((entry) => entry.marked).length,
       // Una imagen sola también cuenta como nota: es contenido del día.
       notes: entries.filter((entry) => entry.note || entry.image).length,
-      images: entries.filter((entry) => entry.image).length,
     };
   }, [data]);
 
   return (
     <>
-      <header className="mb-8">
-        <div className="flex flex-wrap items-end justify-between gap-6">
-          <div>
-            <p className="text-xs font-semibold tracking-[0.18em] text-highlight uppercase">
-              Enero — Diciembre
-            </p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-ink sm:text-4xl">
-              Planificador 2026
-            </h1>
-            <p className="mt-2 text-sm text-ink-soft">
-              Marca días clave y guarda notas. Todo se conserva en este navegador.
-            </p>
-          </div>
+      <NavBar
+        current="calendar"
+        settings={{
+          buttonRef: settingsButtonRef,
+          open: settingsOpen,
+          onOpen: () => setSettingsOpen(true),
+        }}
+      />
 
-          <div className="flex flex-wrap items-center gap-3">
-            <dl className="flex gap-3" aria-live="polite">
-              {canJumpToToday && (
-                <button
-                  type="button"
-                  onClick={goToToday}
-                  className="print-hidden rounded-xl border border-today/30 bg-today/10 px-4 py-2.5 text-sm font-semibold text-today transition-colors hover:bg-today/20 focus-visible:ring-2 focus-visible:ring-today focus-visible:ring-offset-2 focus-visible:outline-none"
-                >
-                  Ir a hoy
-                </button>
-              )}
-              <SummaryTile
-                value={summary.marked}
-                label={summary.marked === 1 ? 'día marcado' : 'días marcados'}
-                tone="accent"
-              />
-              <SummaryTile
-                value={summary.notes}
-                label={summary.notes === 1 ? 'nota guardada' : 'notas guardadas'}
-                tone="highlight"
-              />
-            </dl>
-
-            <div className="print-hidden flex gap-2">
-              <IconButton
-                label="Colapsar todos"
-                disabled={allCollapsed}
-                onClick={() => setExpansion(expansionOf(false))}
-              >
-                <ChevronsIcon direction="up" />
-              </IconButton>
-              <IconButton
-                label="Expandir todos"
-                disabled={allExpanded}
-                onClick={() => setExpansion(expansionOf(true))}
-              >
-                <ChevronsIcon direction="down" />
-              </IconButton>
+      <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
+        <header className="mb-8">
+          <div className="flex flex-wrap items-start justify-between gap-6">
+            <div>
+              <h1 className="text-2xl font-serif tracking-tight text-ink sm:text-4xl">
+                Enero — Diciembre 2026
+              </h1>
             </div>
 
-            <a
-              href="/galeria"
-              aria-label={
-                summary.images > 0
-                  ? `Galería, ${summary.images} ${summary.images === 1 ? 'imagen' : 'imágenes'}`
-                  : 'Galería'
-              }
-              title="Galería de imágenes"
-              className="print-hidden relative rounded-xl border border-edge bg-white p-2.5 text-ink-soft transition-colors hover:bg-edge hover:text-ink focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none"
-            >
-              <ImageIcon />
-              {summary.images > 0 && (
-                <span
-                  aria-hidden="true"
-                  className="absolute -top-1.5 -right-1.5 min-w-5 rounded-full bg-highlight px-1 text-center text-[10px] leading-5 font-semibold text-white tabular-nums"
+            <div className="flex flex-wrap items-center gap-3">
+              <dl className="flex gap-3" aria-live="polite">
+                {canJumpToToday && (
+                  <button
+                    type="button"
+                    onClick={goToToday}
+                    className="print-hidden rounded-xl border border-today/30 bg-today/10 px-4 py-2.5 text-sm font-semibold text-today transition-colors hover:bg-today/20 focus-visible:ring-2 focus-visible:ring-today focus-visible:ring-offset-2 focus-visible:outline-none"
+                  >
+                    Ir a hoy
+                  </button>
+                )}
+                <SummaryTile
+                  value={summary.marked}
+                  label={summary.marked === 1 ? 'día marcado' : 'días marcados'}
+                  tone="accent"
+                />
+                <SummaryTile
+                  value={summary.notes}
+                  label={summary.notes === 1 ? 'nota guardada' : 'notas guardadas'}
+                  tone="highlight"
+                />
+              </dl>
+
+              <div className="print-hidden flex gap-2">
+                <IconButton
+                  label="Colapsar todos"
+                  disabled={allCollapsed}
+                  onClick={() => setExpansion(expansionOf(false))}
                 >
-                  {summary.images}
-                </span>
-              )}
-            </a>
-
-            <button
-              ref={settingsButtonRef}
-              type="button"
-              onClick={() => setSettingsOpen(true)}
-              aria-haspopup="dialog"
-              aria-expanded={settingsOpen}
-              aria-label="Categorías y datos"
-              title="Categorías y datos"
-              className="print-hidden rounded-xl border border-edge bg-white p-2.5 text-ink-soft transition-colors hover:bg-edge hover:text-ink focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none"
-            >
-              <GearIcon />
-            </button>
+                  <ChevronsIcon direction="up" />
+                </IconButton>
+                <IconButton
+                  label="Expandir todos"
+                  disabled={allExpanded}
+                  onClick={() => setExpansion(expansionOf(true))}
+                >
+                  <ChevronsIcon direction="down" />
+                </IconButton>
+              </div>
+            </div>
           </div>
+        </header>
+
+        <div className="print-grid-2 grid grid-cols-1 gap-5 md:grid-cols-2">
+          {QUARTER_MONTHS.map((month) => (
+            <MonthCard
+              key={month.index}
+              monthIndex={month.index}
+              name={month.name}
+              data={data}
+              today={today}
+              onSelectDay={handleSelectDay}
+              expanded={expansion[monthKey(month.index)]}
+              onToggle={() => toggleMonth(monthKey(month.index))}
+            />
+          ))}
         </div>
-      </header>
 
-      <div className="print-grid-2 grid grid-cols-1 gap-5 md:grid-cols-2">
-        {QUARTER_MONTHS.map((month) => (
-          <MonthCard
-            key={month.index}
-            monthIndex={month.index}
-            name={month.name}
-            data={data}
-            today={today}
-            onSelectDay={handleSelectDay}
-            expanded={expansion[monthKey(month.index)]}
-            onToggle={() => toggleMonth(monthKey(month.index))}
-          />
-        ))}
-      </div>
+        <AgendaPanel data={data} labels={labels} today={today} onSelectDay={openDay} />
 
-      <AgendaPanel data={data} labels={labels} today={today} onSelectDay={openDay} />
-
-      <footer className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-ink-muted">
-        <span className="flex items-center gap-2">
-          <span className="flex gap-1" aria-hidden="true">
-            {DAY_COLORS.map((color) => (
-              <span
-                key={color.id}
-                title={labelFor(labels, color.id)}
-                className="h-3 w-3 rounded"
-                style={{ backgroundColor: color.hex }}
-              />
-            ))}
+        <footer className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-ink-muted">
+          <span className="flex items-center gap-2">
+            <span className="flex gap-1" aria-hidden="true">
+              {DAY_COLORS.map((color) => (
+                <span
+                  key={color.id}
+                  title={labelFor(labels, color.id)}
+                  className="h-3 w-3 rounded"
+                  style={{ backgroundColor: color.hex }}
+                />
+              ))}
+            </span>
+            Día marcado ({DAY_COLORS.length} colores)
           </span>
-          Día marcado ({DAY_COLORS.length} colores)
-        </span>
-        <span className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full bg-highlight" aria-hidden="true" />
-          Contiene una nota
-        </span>
-        <span className="flex items-center gap-2">
-          <span className="h-3 w-3 rounded bg-today" aria-hidden="true" />
-          Día actual (violeta reservado)
-        </span>
-        <span className="flex items-center gap-2">
-          <span className="h-3 w-3 rounded bg-accent opacity-60" aria-hidden="true" />
-          Día pasado
-        </span>
-        <span className="print-hidden">
-          Haz clic en un día para editarlo, Shift+clic para marcar el tramo desde el anterior, o
-          recorre el año con las flechas.
-        </span>
-      </footer>
+          <span className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-highlight" aria-hidden="true" />
+            Contiene una nota
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="h-3 w-3 rounded bg-today" aria-hidden="true" />
+            Día actual (violeta reservado)
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="h-3 w-3 rounded bg-accent opacity-60" aria-hidden="true" />
+            Día pasado
+          </span>
+          <span className="print-hidden">
+            Haz clic en un día para editarlo, Shift+clic para marcar el tramo desde el anterior, o
+            recorre el año con las flechas.
+          </span>
+        </footer>
+      </main>
 
       {notice && (
         // Bajo el modal (z-50) y sin capturar el cursor salvo en la tarjeta:
@@ -618,47 +586,6 @@ function ChevronsIcon({ direction }: { direction: 'up' | 'down' }) {
       className={direction === 'up' ? 'rotate-180' : undefined}
     >
       <path d="M7 6l5 5 5-5M7 13l5 5 5-5" />
-    </svg>
-  );
-}
-
-/** Imagen con montaña: el enlace a la galería de adjuntos. */
-function ImageIcon() {
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <rect x="3" y="5" width="18" height="14" rx="2.5" />
-      <path d="M3.5 17l5-5a1.5 1.5 0 012.1 0l4.9 4.9 2-2a1.5 1.5 0 012.1 0L21 16" />
-      <circle cx="15.5" cy="9.5" r="1.25" fill="currentColor" />
-    </svg>
-  );
-}
-
-/** Engrane de ajustes, trazado a mano como el resto de iconos del proyecto. */
-function GearIcon() {
-  return (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-      <circle cx="12" cy="12" r="3" />
     </svg>
   );
 }
