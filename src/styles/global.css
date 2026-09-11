@@ -42,12 +42,22 @@ html {
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
+/* El panel de ajustes brota desde el engrane que lo abre: SettingsModal
+   fija `transform-origin` en la posición del botón y esta escala hace el
+   resto. Sin desplazamiento: crecer desde el origen ya dibuja la trayectoria. */
+@keyframes pop-in {
+  from { opacity: 0; transform: scale(0.35); }
+  to { opacity: 1; transform: scale(1); }
+}
+
 .animate-overlay-in { animation: overlay-in 150ms ease-out; }
 .animate-panel-in { animation: panel-in 180ms cubic-bezier(0.22, 1, 0.36, 1); }
+.animate-pop-in { animation: pop-in 260ms cubic-bezier(0.22, 1, 0.36, 1); }
 
 @media (prefers-reduced-motion: reduce) {
   .animate-overlay-in,
-  .animate-panel-in { animation: none; }
+  .animate-panel-in,
+  .animate-pop-in { animation: none; }
 }
 
 /* ── Impresión ───────────────────────────────────────────────────────

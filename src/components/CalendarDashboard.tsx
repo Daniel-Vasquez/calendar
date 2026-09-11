@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import MonthCard from './MonthCard';
 import DayModal from './DayModal';
 import AgendaPanel from './AgendaPanel';
-import SettingsPanel from './SettingsPanel';
+import SettingsModal from './SettingsModal';
 import {
   formatLongDate,
   isInQuarter,
@@ -47,6 +47,9 @@ export default function CalendarDashboard() {
   const [labels, setLabels] = useState<ColorLabels>({});
   const [hydrated, setHydrated] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  /** Engrane de la cabecera: de él brota el modal de ajustes y a él vuelve el foco. */
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const [today, setToday] = useState('');
   const [notice, setNotice] = useState<Notice | null>(null);
   /** Último día abierto: ancla del rango que dibuja un clic con Shift. */
@@ -307,17 +310,16 @@ export default function CalendarDashboard() {
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {canJumpToToday && (
-              <button
-                type="button"
-                onClick={goToToday}
-                className="print-hidden rounded-xl border border-today/30 bg-today/10 px-4 py-2.5 text-sm font-semibold text-today transition-colors hover:bg-today/20 focus-visible:ring-2 focus-visible:ring-today focus-visible:ring-offset-2 focus-visible:outline-none"
-              >
-                Ir a hoy
-              </button>
-            )}
-
             <dl className="flex gap-3" aria-live="polite">
+              {canJumpToToday && (
+                <button
+                  type="button"
+                  onClick={goToToday}
+                  className="print-hidden rounded-xl border border-today/30 bg-today/10 px-4 py-2.5 text-sm font-semibold text-today transition-colors hover:bg-today/20 focus-visible:ring-2 focus-visible:ring-today focus-visible:ring-offset-2 focus-visible:outline-none"
+                >
+                  Ir a hoy
+                </button>
+              )}
               <SummaryTile
                 value={summary.marked}
                 label={summary.marked === 1 ? 'día marcado' : 'días marcados'}
@@ -329,6 +331,19 @@ export default function CalendarDashboard() {
                 tone="highlight"
               />
             </dl>
+            
+            <button
+              ref={settingsButtonRef}
+              type="button"
+              onClick={() => setSettingsOpen(true)}
+              aria-haspopup="dialog"
+              aria-expanded={settingsOpen}
+              aria-label="Categorías y datos"
+              title="Categorías y datos"
+              className="print-hidden rounded-xl border border-edge bg-white p-2.5 text-ink-soft transition-colors hover:bg-edge hover:text-ink focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none"
+            >
+              <GearIcon />
+            </button>
           </div>
         </div>
       </header>
@@ -347,15 +362,6 @@ export default function CalendarDashboard() {
       </div>
 
       <AgendaPanel data={data} labels={labels} today={today} onSelectDay={openDay} />
-
-      <SettingsPanel
-        labels={labels}
-        hasData={Object.keys(data).length > 0}
-        onRenameColor={handleRenameColor}
-        onExportJson={handleExportJson}
-        onExportIcs={handleExportIcs}
-        onImport={handleImport}
-      />
 
       <footer className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-ink-muted">
         <span className="flex items-center gap-2">
@@ -426,6 +432,19 @@ export default function CalendarDashboard() {
         </div>
       )}
 
+      {settingsOpen && (
+        <SettingsModal
+          triggerRef={settingsButtonRef}
+          onClose={() => setSettingsOpen(false)}
+          labels={labels}
+          hasData={Object.keys(data).length > 0}
+          onRenameColor={handleRenameColor}
+          onExportJson={handleExportJson}
+          onExportIcs={handleExportIcs}
+          onImport={handleImport}
+        />
+      )}
+
       {selectedKey && (
         <DayModal
           dateKey={selectedKey}
@@ -437,6 +456,26 @@ export default function CalendarDashboard() {
         />
       )}
     </>
+  );
+}
+
+/** Engrane de ajustes, trazado a mano como el resto de iconos del proyecto. */
+function GearIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+      <circle cx="12" cy="12" r="3" />
+    </svg>
   );
 }
 

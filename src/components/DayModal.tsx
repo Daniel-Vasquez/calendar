@@ -4,6 +4,7 @@ import { DAY_COLORS, DEFAULT_COLOR, colorHex, type ColorId } from '../lib/palett
 import { labelFor, type ColorLabels } from '../lib/labels';
 import { dataUrlBytes, IMAGE_ACCEPT, prepareImage } from '../lib/image';
 import { hasContent, type DayEntry } from '../lib/storage';
+import { useDialog } from './useDialog';
 
 type Props = {
   dateKey: string;
@@ -56,44 +57,8 @@ export default function DayModal({ dateKey, entry, labels, onSave, onClear, onCl
     closeRef.current?.focus();
   }, [dateKey]);
 
-  // Escape cierra; Tab queda atrapado dentro del panel.
-  useEffect(() => {
-    function onKeyDown(event: KeyboardEvent) {
-      if (event.key === 'Escape') {
-        event.preventDefault();
-        onClose();
-        return;
-      }
-      if (event.key !== 'Tab' || !panelRef.current) return;
-
-      const focusables = panelRef.current.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), textarea, input:not([tabindex="-1"]), [href], [tabindex]:not([tabindex="-1"])',
-      );
-      if (focusables.length === 0) return;
-
-      const first = focusables[0];
-      const last = focusables[focusables.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    }
-
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
-
-  // Bloquea el scroll de fondo mientras el modal está abierto.
-  useEffect(() => {
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = previous;
-    };
-  }, []);
+  // Escape cierra, Tab queda atrapado y el fondo no hace scroll.
+  useDialog(panelRef, onClose);
 
   // Elegir un color implica querer el día marcado.
   function pickColor(next: ColorId) {
