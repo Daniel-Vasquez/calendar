@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import MonthCard from './MonthCard';
 import DayModal from './DayModal';
 import AgendaPanel from './AgendaPanel';
@@ -7,10 +8,22 @@ import {
   formatLongDate,
   isInQuarter,
   keysBetween,
+  monthIndexOf,
   msUntilNextMidnight,
   QUARTER_MONTHS,
   todayKey,
 } from '../lib/calendar';
+import {
+  DEFAULT_EXPANSION,
+  everyMonth,
+  expansionOf,
+  EXPANSION_KEY,
+  loadExpansion,
+  monthKey,
+  removeBootStyle,
+  saveExpansion,
+  type MonthExpansion,
+} from '../lib/collapse';
 import { DAY_COLORS, DEFAULT_COLOR, type ColorId } from '../lib/palette';
 import {
   labelFor,
@@ -56,6 +69,9 @@ export default function CalendarDashboard() {
   const [anchorKey, setAnchorKey] = useState<string | null>(null);
   /** Color del último día guardado, que es el que hereda un rango marcado. */
   const [lastColor, setLastColor] = useState<ColorId>(DEFAULT_COLOR);
+  /** Qué meses están desplegados. El servidor los dibuja todos abiertos. */
+  const [expansion, setExpansion] = useState<MonthExpansion>(DEFAULT_EXPANSION);
+  const [expansionLoaded, setExpansionLoaded] = useState(false);
 
   // El primer render debe coincidir con el HTML del servidor, así que
   // localStorage se lee después de montar.
@@ -64,6 +80,23 @@ export default function CalendarDashboard() {
     setLabels(loadLabels());
     setHydrated(true);
   }, []);
+
+  // Los meses plegados se leen en un efecto de layout: el cambio de estado se
+  // pinta en el mismo cuadro que la hidratación. Hasta entonces la hoja de
+  // arranque de index.astro los mantiene cerrados por CSS, y solo se retira
+  // —también antes de pintar— cuando el DOM ya refleja el estado guardado.
+  useLayoutEffect(() => {
+    setExpansion(loadExpansion());
+    setExpansionLoaded(true);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (expansionLoaded) removeBootStyle();
+  }, [expansionLoaded]);
+
+  useEffect(() => {
+    if (expansionLoaded) saveExpansion(expansion);
+  }, [expansion, expansionLoaded]);
 
   // Si el navegador rechaza el guardado (cuota llena, casi siempre por las
   // imágenes adjuntas) el estado sigue en memoria, pero hay que decirlo: al
@@ -113,6 +146,7 @@ export default function CalendarDashboard() {
     function onStorage(event: StorageEvent) {
       if (event.key === null || event.key === STORAGE_KEY) setData(loadData());
       if (event.key === null || event.key === LABELS_KEY) setLabels(loadLabels());
+      if (event.key === null || event.key === EXPANSION_KEY) setExpansion(loadExpansion());
     }
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
@@ -271,6 +305,13 @@ export default function CalendarDashboard() {
     [data],
   );
 
+  const toggleMonth = useCallback((key: string) => {
+    setExpansion((current) => ({ ...current, [key]: !current[key] }));
+  }, []);
+
+  const allExpanded = everyMonth(expansion, true);
+  const allCollapsed = everyMonth(expansion, false);
+
   // Un calendario de doce meses no cabe en pantalla: este atajo devuelve a
   // hoy y le deja el foco, listo para seguir moviéndose con las flechas.
   const canJumpToToday = Boolean(today) && isInQuarter(today);
@@ -279,10 +320,21 @@ export default function CalendarDashboard() {
     const cell = document.querySelector<HTMLElement>(`[data-date="${today}"]`);
     if (!cell) return;
 
+    // Un mes plegado se abre antes de saltar, de forma síncrona para que la
+    // casilla deje de ser `inert` y acepte el foco. Mientras se despliega su
+    // altura cambia, así que se desplaza a la cabecera del mes y no al día.
+    const key = monthKey(monthIndexOf(today));
+    const wasCollapsed = !expansion[key];
+    if (wasCollapsed) flushSync(() => setExpansion((current) => ({ ...current, [key]: true })));
+
+    const target = wasCollapsed ? (cell.closest('section') ?? cell) : cell;
     const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    cell.scrollIntoView({ behavior: still ? 'auto' : 'smooth', block: 'center' });
+    target.scrollIntoView({
+      behavior: still ? 'auto' : 'smooth',
+      block: wasCollapsed ? 'start' : 'center',
+    });
     cell.focus({ preventScroll: true });
-  }, [today]);
+  }, [today, expansion]);
 
   const summary = useMemo(() => {
     const entries = Object.values(data);
@@ -331,7 +383,24 @@ export default function CalendarDashboard() {
                 tone="highlight"
               />
             </dl>
-            
+
+            <div className="print-hidden flex gap-2">
+              <IconButton
+                label="Colapsar todos"
+                disabled={allCollapsed}
+                onClick={() => setExpansion(expansionOf(false))}
+              >
+                <ChevronsIcon direction="up" />
+              </IconButton>
+              <IconButton
+                label="Expandir todos"
+                disabled={allExpanded}
+                onClick={() => setExpansion(expansionOf(true))}
+              >
+                <ChevronsIcon direction="down" />
+              </IconButton>
+            </div>
+
             <button
               ref={settingsButtonRef}
               type="button"
@@ -357,6 +426,8 @@ export default function CalendarDashboard() {
             data={data}
             today={today}
             onSelectDay={handleSelectDay}
+            expanded={expansion[monthKey(month.index)]}
+            onToggle={() => toggleMonth(monthKey(month.index))}
           />
         ))}
       </div>
@@ -456,6 +527,52 @@ export default function CalendarDashboard() {
         />
       )}
     </>
+  );
+}
+
+/** Botón cuadrado de la cabecera; el icono es su único contenido visible. */
+function IconButton({
+  label,
+  disabled,
+  onClick,
+  children,
+}: {
+  label: string;
+  disabled: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={label}
+      title={label}
+      className="rounded-xl border border-edge bg-white p-2.5 text-ink-soft transition-colors enabled:hover:bg-edge enabled:hover:text-ink focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-40"
+    >
+      {children}
+    </button>
+  );
+}
+
+/** Doble chevron: plegar (arriba) o desplegar (abajo) todos los meses. */
+function ChevronsIcon({ direction }: { direction: 'up' | 'down' }) {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className={direction === 'up' ? 'rotate-180' : undefined}
+    >
+      <path d="M7 6l5 5 5-5M7 13l5 5 5-5" />
+    </svg>
   );
 }
 

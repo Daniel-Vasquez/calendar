@@ -19,6 +19,7 @@ const { title, description = 'Dashboard de planificación para el año 2026.' } 
     <meta name="generator" content={Astro.generator} />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>{title}</title>
+    <slot name="head" />
   </head>
   <body class="min-h-screen bg-canvas text-ink antialiased">
     <slot />

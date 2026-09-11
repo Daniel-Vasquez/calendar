@@ -60,6 +60,67 @@ html {
   .animate-pop-in { animation: none; }
 }
 
+/* ── Acordeón de meses ───────────────────────────────────────────────
+   MonthCard marca cada tarjeta con `data-month` y, si está abierta, con
+   `data-open`. El cuerpo se pliega animando `grid-template-rows` entre 0fr
+   y 1fr, que es lo único que un navegador sabe interpolar sin conocer la
+   altura del contenido.
+
+   El recorte solo puede estar activo mientras el mes está cerrado o en
+   movimiento: abierto, las notas asoman por encima de la primera fila y un
+   `overflow: hidden` permanente las cortaría. Al abrir, `overflow` espera a
+   que termine la transición (`allow-discrete` con retardo); al cerrar
+   cambia en el acto, porque la regla cerrada no lo transiciona. */
+.month-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  overflow: hidden;
+  transition: grid-template-rows 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.month-body > * {
+  min-height: 0;
+  opacity: 0;
+  transition: opacity 150ms ease-out;
+}
+
+[data-open] > .month-body {
+  grid-template-rows: 1fr;
+  overflow: visible;
+  /* Dos veces: un navegador sin `allow-discrete` descarta la segunda entera y
+     se queda con la primera, que al menos anima las filas. (No vale la
+     propiedad suelta `transition-behavior`: el minificador la adelanta al
+     atajo, y este la resetea.) */
+  transition:
+    grid-template-rows 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    overflow 0s linear 300ms;
+  transition:
+    grid-template-rows 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    overflow 0s linear 300ms allow-discrete;
+}
+
+[data-open] > .month-body > * {
+  opacity: 1;
+  transition: opacity 250ms ease-out 50ms;
+}
+
+.month-chevron {
+  rotate: -90deg;
+  transition: rotate 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+[data-open] .month-chevron {
+  rotate: 0deg;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .month-body,
+  .month-body > *,
+  .month-chevron {
+    transition: none;
+  }
+}
+
 /* ── Impresión ───────────────────────────────────────────────────────
    El planificador se imprime como referencia de escritorio: fuera los
    controles, y los colores de los días son información, no adorno. */
@@ -93,6 +154,16 @@ html {
   section {
     break-inside: avoid;
     box-shadow: none !important;
+  }
+
+  /* En papel se imprime el año completo, esté plegado o no en pantalla. */
+  .month-body {
+    grid-template-rows: 1fr !important;
+    overflow: visible !important;
+  }
+
+  .month-body > * {
+    opacity: 1 !important;
   }
 
   /* La agenda se lee entera: en pantalla tiene scroll propio, aquí no cabría. */

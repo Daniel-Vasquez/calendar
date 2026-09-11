@@ -142,6 +142,11 @@ export function formatWeekday(key: string): string {
   return WEEKDAY_LABELS[mondayIndex(new Date(year, month - 1, day))];
 }
 
+/** Índice 0-based del mes de una clave `YYYY-MM-DD`. */
+export function monthIndexOf(key: string): number {
+  return Number(key.slice(5, 7)) - 1;
+}
+
 /** ¿La clave cae dentro de alguno de los meses que el calendario dibuja? */
 export function isInQuarter(key: string): boolean {
   return QUARTER_MONTHS.some((month) =>

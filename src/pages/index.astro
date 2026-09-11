@@ -1,9 +1,39 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import CalendarDashboard from '../components/CalendarDashboard';
+import { BOOT_STYLE_ID, EXPANSION_KEY } from '../lib/collapse';
 ---
 
 <Layout title="Planificador 2026">
+  {/* El HTML llega con los doce meses abiertos y React aplica los plegados
+      al hidratar. Para que no se vean abrir y cerrarse por el camino, este
+      script bloqueante lee localStorage antes de que exista el calendario y
+      deja una hoja con su aspecto plegado —cuerpo oculto, chevron girado—
+      que CalendarDashboard retira en cuanto el estado es suyo. Los ganchos
+      (`data-month`, `.month-body`, `.month-chevron`) son los de MonthCard. */}
+  <script slot="head" is:inline define:vars={{ key: EXPANSION_KEY, id: BOOT_STYLE_ID }}>
+    try {
+      var saved = JSON.parse(localStorage.getItem(key) || '{}');
+      var rules = '';
+      for (var month in saved) {
+        // Solo nombres de mes: la clave acaba dentro de un selector.
+        if (saved[month] === false && /^[a-z]+$/.test(month)) {
+          rules +=
+            '[data-month="' + month + '"]>.month-body{display:none!important}' +
+            '[data-month="' + month + '"] .month-chevron{rotate:-90deg!important}';
+        }
+      }
+      if (rules) {
+        var style = document.createElement('style');
+        style.id = id;
+        style.textContent = rules;
+        document.head.appendChild(style);
+      }
+    } catch (error) {
+      /* Sin almacenamiento no hay nada guardado: se dibuja todo abierto. */
+    }
+  </script>
+
   <main class="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
     <CalendarDashboard client:load />
   </main>

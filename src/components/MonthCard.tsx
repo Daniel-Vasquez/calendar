@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import DayCell from './DayCell';
 import {
   buildMonthWeeks,
@@ -14,6 +14,7 @@ import {
   YEAR,
   type DayTimeState,
 } from '../lib/calendar';
+import { monthKey } from '../lib/collapse';
 import type { CalendarData } from '../lib/storage';
 
 type Props = {
@@ -24,6 +25,9 @@ type Props = {
   today: string;
   /** `extend` llega de un clic con Shift: marca el rango desde el último día. */
   onSelectDay: (key: string, extend: boolean) => void;
+  /** Plegado o desplegado; lo decide el panel, que lo guarda para todos los meses. */
+  expanded: boolean;
+  onToggle: () => void;
 };
 
 /** Días que avanza cada flecha: la cuadrícula tiene una semana por fila. */
@@ -41,10 +45,19 @@ const STATE_SUFFIX: Record<DayTimeState, string> = {
   future: '',
 };
 
-export default function MonthCard({ monthIndex, name, data, today, onSelectDay }: Props) {
+export default function MonthCard({
+  monthIndex,
+  name,
+  data,
+  today,
+  onSelectDay,
+  expanded,
+  onToggle,
+}: Props) {
   const weeks = buildMonthWeeks(YEAR, monthIndex);
   const total = daysInMonth(YEAR, monthIndex);
   const monthPrefix = `${YEAR}-${String(monthIndex + 1).padStart(2, '0')}-`;
+  const bodyId = useId();
 
   const markedCount = weeks
     .flat()
@@ -76,7 +89,8 @@ export default function MonthCard({ monthIndex, name, data, today, onSelectDay }
     event.preventDefault();
 
     // La búsqueda es global, así que las flechas pasan de un mes al siguiente.
-    // Fuera del año no hay casilla y el foco se queda donde está.
+    // Fuera del año no hay casilla y el foco se queda donde está; en un mes
+    // plegado la casilla es `inert` y `focus()` tampoco se mueve.
     if (!isInQuarter(target)) return;
     document.querySelector<HTMLButtonElement>(`[data-date="${target}"]`)?.focus();
   }
@@ -89,80 +103,126 @@ export default function MonthCard({ monthIndex, name, data, today, onSelectDay }
   }
 
   return (
+    // `data-month` y `data-open` son los ganchos del acordeón: el CSS de
+    // global.css pliega el cuerpo y gira el chevron a partir de ellos, y la
+    // hoja de arranque de index.astro hace lo mismo antes de hidratar.
     <section
       aria-label={`${name} de ${YEAR}`}
+      data-month={monthKey(monthIndex)}
+      data-open={expanded || undefined}
       className="rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5"
     >
-      <header className="mb-4 flex items-baseline justify-between gap-3">
+      {/* El margen negativo devuelve el relleno del botón al borde de la
+          tarjeta: la zona de pulsado crece sin mover el título. */}
+      <header className="-m-2">
         <h2 className="text-lg font-semibold tracking-tight text-ink">
-          {name} <span className="font-normal text-ink-muted">{YEAR}</span>
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={expanded}
+            aria-controls={bodyId}
+            className="flex w-full items-center gap-3 rounded-xl p-2 text-left transition-colors hover:bg-edge/60 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus-visible:outline-none"
+          >
+            <span className="flex-1">
+              {name} <span className="font-normal text-ink-muted">{YEAR}</span>
+            </span>
+            {markedCount > 0 && (
+              <span className="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-medium text-accent-strong">
+                {markedCount} {markedCount === 1 ? 'día' : 'días'}
+              </span>
+            )}
+            <ChevronIcon />
+          </button>
         </h2>
-        {markedCount > 0 && (
-          <span className="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-medium text-accent-strong">
-            {markedCount} {markedCount === 1 ? 'día' : 'días'}
-          </span>
-        )}
       </header>
 
-      {/* Una fila por semana: la rejilla plana se pintaba igual, pero `grid`
-          solo es una tabla accesible si las filas existen en el DOM. */}
-      <div
-        role="grid"
-        aria-label={`Días de ${name}`}
-        onKeyDown={moveFocus}
-        onFocus={trackFocus}
-        className="flex flex-col gap-1.5"
-      >
-        <div role="row" className="mb-0.5 grid grid-cols-7 gap-1.5">
-          {WEEKDAYS.map((initial, i) => (
-            <abbr
-              key={WEEKDAY_LABELS[i]}
-              role="columnheader"
-              title={WEEKDAY_LABELS[i]}
-              className="text-center text-xs font-semibold text-ink-muted no-underline"
-            >
-              {initial}
-            </abbr>
-          ))}
-        </div>
+      {/* Plegado, el cuerpo sigue en el DOM para conservar el estado del foco
+          itinerante, pero `inert` lo saca del tabulado y del lector. */}
+      <div id={bodyId} className="month-body" inert={!expanded}>
+        {/* Sin clases a propósito: es el ítem de la rejilla plegable y un
+            relleno suyo no se encoge a 0fr; la separación va en la rejilla. */}
+        <div>
+          {/* Una fila por semana: la rejilla plana se pintaba igual, pero `grid`
+              solo es una tabla accesible si las filas existen en el DOM. */}
+          <div
+            role="grid"
+            aria-label={`Días de ${name}`}
+            onKeyDown={moveFocus}
+            onFocus={trackFocus}
+            className="flex flex-col gap-1.5 pt-4"
+          >
+            <div role="row" className="mb-0.5 grid grid-cols-7 gap-1.5">
+              {WEEKDAYS.map((initial, i) => (
+                <abbr
+                  key={WEEKDAY_LABELS[i]}
+                  role="columnheader"
+                  title={WEEKDAY_LABELS[i]}
+                  className="text-center text-xs font-semibold text-ink-muted no-underline"
+                >
+                  {initial}
+                </abbr>
+              ))}
+            </div>
 
-        {weeks.map((week) => (
-          <div key={week[0].id} role="row" className="grid grid-cols-7 gap-1.5">
-            {week.map((slot) => {
-              if (slot.type === 'blank') {
-                // Sin `aria-hidden`: una casilla vacía sigue contando como
-                // columna, y ocultarla descuadraría la fila para el lector.
-                return (
-                  <div
-                    key={slot.id}
-                    role="gridcell"
-                    className="aspect-square rounded-lg bg-edge/50"
-                  />
-                );
-              }
+            {weeks.map((week) => (
+              <div key={week[0].id} role="row" className="grid grid-cols-7 gap-1.5">
+                {week.map((slot) => {
+                  if (slot.type === 'blank') {
+                    // Sin `aria-hidden`: una casilla vacía sigue contando como
+                    // columna, y ocultarla descuadraría la fila para el lector.
+                    return (
+                      <div
+                        key={slot.id}
+                        role="gridcell"
+                        className="aspect-square rounded-lg bg-edge/50"
+                      />
+                    );
+                  }
 
-              const timeState = dayTimeState(slot.key, today);
-              const dateLabel = `${formatWeekday(slot.key)} ${formatLongDate(slot.key)}`;
+                  const timeState = dayTimeState(slot.key, today);
+                  const dateLabel = `${formatWeekday(slot.key)} ${formatLongDate(slot.key)}`;
 
-              return (
-                <DayCell
-                  key={slot.id}
-                  day={slot.day}
-                  isWeekend={slot.isWeekend}
-                  entry={data[slot.key]}
-                  timeState={timeState}
-                  dateKey={slot.key}
-                  label={dateLabel + STATE_SUFFIX[timeState]}
-                  dateLabel={dateLabel}
-                  weekday={slot.weekday}
-                  tabIndex={slot.key === focusedKey ? 0 : -1}
-                  onSelect={(extend) => onSelectDay(slot.key, extend)}
-                />
-              );
-            })}
+                  return (
+                    <DayCell
+                      key={slot.id}
+                      day={slot.day}
+                      isWeekend={slot.isWeekend}
+                      entry={data[slot.key]}
+                      timeState={timeState}
+                      dateKey={slot.key}
+                      label={dateLabel + STATE_SUFFIX[timeState]}
+                      dateLabel={dateLabel}
+                      weekday={slot.weekday}
+                      tabIndex={slot.key === focusedKey ? 0 : -1}
+                      onSelect={(extend) => onSelectDay(slot.key, extend)}
+                    />
+                  );
+                })}
+              </div>
+            ))}
           </div>
-        ))}
+        </div>
       </div>
     </section>
+  );
+}
+
+/** Apunta abajo con el mes abierto; el CSS lo gira hacia la derecha al plegar. */
+function ChevronIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="month-chevron print-hidden shrink-0 text-ink-muted"
+    >
+      <path d="M6 9l6 6 6-6" />
+    </svg>
   );
 }
