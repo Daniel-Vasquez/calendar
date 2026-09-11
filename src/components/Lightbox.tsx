@@ -49,6 +49,7 @@ export default function Lightbox({ image, triggerRef, onClose }: Props) {
           <div>
             <p className="text-xs font-semibold tracking-wide text-ink-muted uppercase">
               {formatWeekday(image.key)}
+              {image.count > 1 && ` · Imagen ${image.index + 1} de ${image.count}`}
             </p>
             <h2 id={titleId} className="mt-1 text-xl font-semibold text-ink">
               {date}
@@ -77,7 +78,11 @@ export default function Lightbox({ image, triggerRef, onClose }: Props) {
         <div className="flex min-h-0 flex-1 items-center justify-center bg-surface">
           <img
             src={image.dataUrl}
-            alt={`Imagen adjunta al ${date}`}
+            alt={
+              image.count > 1
+                ? `Imagen ${image.index + 1} de ${image.count} adjunta al ${date}`
+                : `Imagen adjunta al ${date}`
+            }
             className="max-h-[60vh] w-auto max-w-full object-contain"
           />
         </div>
@@ -89,7 +94,9 @@ export default function Lightbox({ image, triggerRef, onClose }: Props) {
           {image.note ? (
             <p className="text-sm whitespace-pre-line text-ink-soft">{image.note}</p>
           ) : (
-            <p className="text-sm text-ink-muted italic">Imagen adjunta, sin texto</p>
+            <p className="text-sm text-ink-muted italic">
+              {image.count > 1 ? 'Imágenes adjuntas, sin texto' : 'Imagen adjunta, sin texto'}
+            </p>
           )}
         </div>
 

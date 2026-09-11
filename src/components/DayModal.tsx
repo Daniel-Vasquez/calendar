@@ -2,7 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { formatLongDate, formatWeekday } from '../lib/calendar';
 import { DAY_COLORS, DEFAULT_COLOR, colorHex, type ColorId } from '../lib/palette';
 import { labelFor, type ColorLabels } from '../lib/labels';
-import { dataUrlBytes, IMAGE_ACCEPT, prepareImage } from '../lib/image';
+import { dataUrlBytes, IMAGE_ACCEPT, MAX_IMAGES_PER_DAY, prepareImage } from '../lib/image';
 import { hasContent, type DayEntry } from '../lib/storage';
 import { useDialog } from './useDialog';
 
@@ -21,17 +21,24 @@ const IMAGE_ACTION =
   'transition-colors hover:bg-edge disabled:cursor-wait disabled:opacity-60 ' +
   'focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none';
 
-/** "120 KB" a partir de bytes; las imágenes adjuntas nunca llegan al megabyte. */
+/** "120 KB" o "1.4 MB" a partir de bytes. */
 function formatBytes(bytes: number): string {
-  return bytes < 1024 ? `${bytes} B` : `${Math.round(bytes / 1024)} KB`;
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** ¿Mismas imágenes en el mismo orden? Decide si el pie avisa de cambios sin guardar. */
+function sameImages(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((image, i) => image === b[i]);
 }
 
 export default function DayModal({ dateKey, entry, labels, onSave, onClear, onClose }: Props) {
   const [marked, setMarked] = useState(entry?.marked ?? false);
   const [note, setNote] = useState(entry?.note ?? '');
   const [color, setColor] = useState<ColorId>(entry?.color ?? DEFAULT_COLOR);
-  /** Data URL de la imagen adjunta; `undefined` si la nota no lleva ninguna. */
-  const [image, setImage] = useState<string | undefined>(entry?.image);
+  /** Data URL de cada imagen adjunta, en el orden en que se añadieron. */
+  const [images, setImages] = useState<string[]>(entry?.images ?? []);
   const [imageError, setImageError] = useState('');
   const [processing, setProcessing] = useState(false);
   const noteId = useId();
@@ -49,9 +56,9 @@ export default function DayModal({ dateKey, entry, labels, onSave, onClear, onCl
     setMarked(entry?.marked ?? false);
     setNote(entry?.note ?? '');
     setColor(entry?.color ?? DEFAULT_COLOR);
-    setImage(entry?.image);
+    setImages(entry?.images ?? []);
     setImageError('');
-  }, [dateKey, entry?.marked, entry?.note, entry?.color, entry?.image]);
+  }, [dateKey, entry?.marked, entry?.note, entry?.color, entry?.images]);
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -66,25 +73,49 @@ export default function DayModal({ dateKey, entry, labels, onSave, onClear, onCl
     setMarked(true);
   }
 
-  async function pickImage(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
+  const remaining = MAX_IMAGES_PER_DAY - images.length;
+  const totalBytes = images.reduce((sum, image) => sum + dataUrlBytes(image), 0);
+  const unsaved = !sameImages(images, entry?.images ?? []);
+
+  /**
+   * Procesa los archivos elegidos uno a uno, en orden, hasta llenar el cupo.
+   * Los que fallen se anuncian juntos al final sin frenar a los demás.
+   */
+  async function pickImages(event: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []);
     // Sin limpiarlo, volver a elegir el mismo archivo no dispara `change`.
     event.target.value = '';
-    if (!file) return;
+    if (files.length === 0) return;
 
     setImageError('');
     setProcessing(true);
-    const result = await prepareImage(file);
-    setProcessing(false);
 
-    if (result.ok) setImage(result.dataUrl);
-    else setImageError(result.reason);
+    const accepted: string[] = [];
+    const problems: string[] = [];
+    for (const file of files.slice(0, remaining)) {
+      const result = await prepareImage(file);
+      if (result.ok) accepted.push(result.dataUrl);
+      else problems.push(`${file.name}: ${result.reason}`);
+    }
+    if (files.length > remaining) {
+      problems.push(
+        `Solo caben ${MAX_IMAGES_PER_DAY} imágenes por día; se omitieron ${files.length - remaining}.`,
+      );
+    }
+
+    setProcessing(false);
+    // Una misma imagen dos veces no aporta nada y duplicaría su peso.
+    setImages((current) => [
+      ...current,
+      ...accepted.filter((image, i) => !current.includes(image) && accepted.indexOf(image) === i),
+    ]);
+    setImageError(problems.join(' '));
   }
 
-  function removeImage() {
-    setImage(undefined);
+  function removeImage(index: number) {
+    setImages((current) => current.filter((_, i) => i !== index));
     setImageError('');
-    // El botón "Quitar" desaparece con la imagen: el foco pasa al de adjuntar
+    // El botón de quitar desaparece con su imagen: el foco pasa al de añadir
     // en cuanto React lo pinte, para no caer fuera del modal.
     requestAnimationFrame(() => attachRef.current?.focus());
   }
@@ -216,63 +247,77 @@ export default function DayModal({ dateKey, entry, labels, onSave, onClear, onCl
             </span>
           </div>
 
-          {image ? (
-            <div className="flex items-start gap-3 rounded-xl border border-edge bg-surface p-3">
-              <img
-                src={image}
-                alt="Vista previa de la imagen adjunta"
-                className="h-20 w-20 shrink-0 rounded-lg object-cover"
-              />
-              <div className="flex min-w-0 flex-1 flex-col gap-2">
-                <p className="text-xs text-ink-muted">
-                  {formatBytes(dataUrlBytes(image))}
-                  {image !== entry?.image && ' · sin guardar'}
-                </p>
-                <div className="flex flex-wrap gap-2">
+          {images.length > 0 && (
+            <ul className="mb-3 grid grid-cols-3 gap-2 sm:grid-cols-4">
+              {images.map((image, index) => (
+                <li key={image} className="relative">
+                  <img
+                    src={image}
+                    alt={`Imagen adjunta ${index + 1} de ${images.length}`}
+                    className="aspect-square w-full rounded-lg object-cover ring-1 ring-edge"
+                  />
                   <button
                     type="button"
-                    onClick={() => fileRef.current?.click()}
-                    disabled={processing}
-                    className={IMAGE_ACTION}
+                    onClick={() => removeImage(index)}
+                    aria-label={`Quitar imagen ${index + 1}`}
+                    title="Quitar imagen"
+                    className="absolute top-1 right-1 rounded-full bg-ink/60 p-1 text-white shadow transition-colors hover:bg-ink focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
                   >
-                    Cambiar
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <path
+                        d="M4 4l8 8M12 4l-8 8"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                      />
+                    </svg>
                   </button>
-                  <button type="button" onClick={removeImage} className={IMAGE_ACTION}>
-                    Quitar imagen
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <button
-              ref={attachRef}
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              disabled={processing}
-              aria-describedby={imageHelpId}
-              className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-edge bg-surface px-4 py-3 text-sm font-medium text-ink-soft transition-colors hover:border-accent hover:text-accent-strong disabled:cursor-wait disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none"
-            >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <rect
-                  x="2"
-                  y="3"
-                  width="12"
-                  height="10"
-                  rx="1.5"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                />
-                <path
-                  d="M2.5 11l3.2-3.2a1 1 0 011.4 0L10 10.7l1.3-1.3a1 1 0 011.4 0l.8.8"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-                <circle cx="10.5" cy="6.5" r="1" fill="currentColor" />
-              </svg>
-              {processing ? 'Procesando imagen…' : 'Adjuntar imagen'}
-            </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          <button
+            ref={attachRef}
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            disabled={processing || remaining === 0}
+            aria-describedby={imageHelpId}
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-edge bg-surface px-4 py-3 text-sm font-medium text-ink-soft transition-colors hover:border-accent hover:text-accent-strong disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-edge disabled:hover:text-ink-soft focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <rect
+                x="2"
+                y="3"
+                width="12"
+                height="10"
+                rx="1.5"
+                stroke="currentColor"
+                strokeWidth="1.5"
+              />
+              <path
+                d="M2.5 11l3.2-3.2a1 1 0 011.4 0L10 10.7l1.3-1.3a1 1 0 011.4 0l.8.8"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              <circle cx="10.5" cy="6.5" r="1" fill="currentColor" />
+            </svg>
+            {processing
+              ? 'Procesando imágenes…'
+              : remaining === 0
+                ? `Máximo ${MAX_IMAGES_PER_DAY} imágenes`
+                : images.length === 0
+                  ? 'Adjuntar imágenes'
+                  : 'Añadir más imágenes'}
+          </button>
+
+          {images.length > 0 && (
+            <p className="mt-2 text-xs text-ink-muted">
+              {images.length} de {MAX_IMAGES_PER_DAY} · {formatBytes(totalBytes)}
+              {unsaved && ' · sin guardar'}
+            </p>
           )}
 
           {/* El input real queda oculto: el botón lo dispara y el `accept`
@@ -281,7 +326,8 @@ export default function DayModal({ dateKey, entry, labels, onSave, onClear, onCl
             ref={fileRef}
             type="file"
             accept={IMAGE_ACCEPT}
-            onChange={pickImage}
+            multiple
+            onChange={pickImages}
             className="sr-only"
             tabIndex={-1}
             aria-hidden="true"
@@ -297,7 +343,14 @@ export default function DayModal({ dateKey, entry, labels, onSave, onClear, onCl
         <div className="mt-6 flex flex-col gap-2 sm:flex-row-reverse">
           <button
             type="button"
-            onClick={() => onSave(dateKey, { marked, note: note.trim(), color, image })}
+            onClick={() =>
+              onSave(dateKey, {
+                marked,
+                note: note.trim(),
+                color,
+                ...(images.length ? { images } : {}),
+              })
+            }
             disabled={processing}
             style={marked ? { backgroundColor: colorHex(color) } : undefined}
             className={

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { dayTimeState, formatLongDate, formatWeekday } from '../lib/calendar';
 import { colorHex, DAY_COLORS, DEFAULT_COLOR, type ColorId } from '../lib/palette';
 import { hasCustomLabel, labelFor, type ColorLabels } from '../lib/labels';
-import type { CalendarData } from '../lib/storage';
+import { hasImages, type CalendarData } from '../lib/storage';
 
 type Props = {
   data: CalendarData;
@@ -192,9 +192,11 @@ export default function AgendaPanel({ data, labels, today, onSelectDay }: Props)
                       <span className="mt-0.5 line-clamp-2 block text-sm whitespace-pre-line text-ink-soft">
                         {entry.note}
                       </span>
-                    ) : entry.image ? (
+                    ) : hasImages(entry) ? (
                       <span className="mt-0.5 block text-sm text-ink-muted italic">
-                        Imagen adjunta, sin texto
+                        {entry.images!.length === 1
+                          ? 'Imagen adjunta, sin texto'
+                          : `${entry.images!.length} imágenes adjuntas, sin texto`}
                       </span>
                     ) : (
                       <span className="mt-0.5 block text-sm text-ink-muted italic">
@@ -203,12 +205,19 @@ export default function AgendaPanel({ data, labels, today, onSelectDay }: Props)
                     )}
                   </span>
 
-                  {entry.image && (
-                    <img
-                      src={entry.image}
-                      alt=""
-                      className="h-12 w-12 shrink-0 rounded-lg object-cover ring-1 ring-edge"
-                    />
+                  {hasImages(entry) && (
+                    <span className="relative shrink-0">
+                      <img
+                        src={entry.images![0]}
+                        alt=""
+                        className="h-12 w-12 rounded-lg object-cover ring-1 ring-edge"
+                      />
+                      {entry.images!.length > 1 && (
+                        <span className="absolute -right-1 -bottom-1 rounded-md bg-ink px-1 text-[10px] font-semibold text-white">
+                          +{entry.images!.length - 1}
+                        </span>
+                      )}
+                    </span>
                   )}
                 </button>
               </li>

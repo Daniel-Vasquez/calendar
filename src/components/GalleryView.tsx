@@ -13,8 +13,8 @@ import { loadData, STORAGE_KEY, type CalendarData } from '../lib/storage';
 export default function GalleryView() {
   const [data, setData] = useState<CalendarData>({});
   const [hydrated, setHydrated] = useState(false);
-  /** Clave del día cuya imagen está ampliada; `null` con el visor cerrado. */
-  const [openKey, setOpenKey] = useState<string | null>(null);
+  /** Id de la imagen ampliada; `null` con el visor cerrado. */
+  const [openId, setOpenId] = useState<string | null>(null);
   /** Miniatura que abrió el visor, para devolverle el foco al cerrar. */
   const triggerRef = useRef<HTMLButtonElement | null>(null);
 
@@ -35,12 +35,12 @@ export default function GalleryView() {
   }, []);
 
   const images = useMemo(() => collectImages(data), [data]);
-  const open = openKey ? images.find((image) => image.key === openKey) : undefined;
+  const open = openId ? images.find((image) => image.id === openId) : undefined;
 
   // Si la imagen ampliada desaparece desde otra pestaña, el visor se cierra solo.
   useEffect(() => {
-    if (openKey && !open) setOpenKey(null);
-  }, [openKey, open]);
+    if (openId && !open) setOpenId(null);
+  }, [openId, open]);
 
   return (
     <>
@@ -76,16 +76,18 @@ export default function GalleryView() {
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5">
             {images.map((image) => {
               const date = formatLongDate(image.key);
+              // Con varias imágenes el mismo día, el pie las numera.
+              const position = image.count > 1 ? ` (${image.index + 1} de ${image.count})` : '';
               return (
-                <li key={image.key}>
+                <li key={image.id}>
                   <button
                     type="button"
                     onClick={(event) => {
                       triggerRef.current = event.currentTarget;
-                      setOpenKey(image.key);
+                      setOpenId(image.id);
                     }}
                     aria-haspopup="dialog"
-                    aria-label={`Ampliar imagen del ${date}`}
+                    aria-label={`Ampliar imagen del ${date}${position}`}
                     className="group block w-full overflow-hidden rounded-xl border border-edge bg-surface text-left shadow-sm transition-shadow hover:shadow-md focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none"
                   >
                     {/* Cuadrada y recortada con `object-cover`: la proporción
@@ -98,8 +100,13 @@ export default function GalleryView() {
                         className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100"
                       />
                     </span>
-                    <span className="block truncate px-3 py-2 text-xs font-medium text-ink-soft transition-colors group-hover:text-ink">
-                      {date}
+                    <span className="flex items-baseline justify-between gap-2 px-3 py-2 text-xs font-medium text-ink-soft transition-colors group-hover:text-ink">
+                      <span className="truncate">{date}</span>
+                      {image.count > 1 && (
+                        <span className="shrink-0 text-ink-muted tabular-nums">
+                          {image.index + 1}/{image.count}
+                        </span>
+                      )}
                     </span>
                   </button>
                 </li>
@@ -108,7 +115,7 @@ export default function GalleryView() {
           </ul>
         )}
 
-        {open && <Lightbox image={open} triggerRef={triggerRef} onClose={() => setOpenKey(null)} />}
+        {open && <Lightbox image={open} triggerRef={triggerRef} onClose={() => setOpenId(null)} />}
       </main>
     </>
   );
@@ -138,7 +145,7 @@ function EmptyState() {
       </svg>
       <h2 className="mt-5 text-lg font-semibold text-ink">Todavía no hay imágenes</h2>
       <p className="mt-2 max-w-sm text-sm text-ink-soft">
-        Abre cualquier día del calendario y usa «Adjuntar imagen» en su nota. Todo lo que adjuntes
+        Abre cualquier día del calendario y usa «Adjuntar imágenes» en su nota. Todo lo que adjuntes
         se reunirá aquí, ordenado por fecha.
       </p>
       <a

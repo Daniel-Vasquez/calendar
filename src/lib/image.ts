@@ -11,6 +11,12 @@ export const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'] as const;
 /** Valor del atributo `accept` del selector: tipos y extensiones a la vez. */
 export const IMAGE_ACCEPT = [...IMAGE_TYPES, ...IMAGE_EXTENSIONS].join(',');
 
+/**
+ * Imágenes que admite una nota. Con la cuota de localStorage repartida entre
+ * todo el año, más adjuntos por día agotarían el espacio en pocas notas.
+ */
+export const MAX_IMAGES_PER_DAY = 6;
+
 /** Archivos mayores no se intentan ni abrir: decodificarlos cuesta memoria. */
 export const MAX_FILE_BYTES = 12 * 1024 * 1024;
 

@@ -38,6 +38,7 @@ import {
 import { downloadFile, exportFilename, parseImport, toIcs, toJson } from '../lib/transfer';
 import {
   hasContent,
+  hasImages,
   loadData,
   saveData,
   STORAGE_KEY,
@@ -246,13 +247,13 @@ export default function CalendarDashboard() {
       setData((current) => {
         const next = { ...current };
         for (const key of keys) {
-          // Marcar en bloque pinta el día; la nota e imagen que ya tuviera se respetan.
+          // Marcar en bloque pinta el día; la nota e imágenes que ya tuviera se respetan.
           const previous = current[key];
           next[key] = {
             marked: true,
             note: previous?.note ?? '',
             color: lastColor,
-            ...(previous?.image ? { image: previous.image } : {}),
+            ...(hasImages(previous) ? { images: previous!.images } : {}),
           };
         }
         return next;
@@ -363,7 +364,7 @@ export default function CalendarDashboard() {
     return {
       marked: entries.filter((entry) => entry.marked).length,
       // Una imagen sola también cuenta como nota: es contenido del día.
-      notes: entries.filter((entry) => entry.note || entry.image).length,
+      notes: entries.filter((entry) => entry.note || hasImages(entry)).length,
     };
   }, [data]);
 
