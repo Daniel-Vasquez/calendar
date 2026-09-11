@@ -25,6 +25,7 @@ import {
   type MonthExpansion,
 } from '../lib/collapse';
 import { DAY_COLORS, DEFAULT_COLOR, type ColorId } from '../lib/palette';
+import { DAY_PARAM } from '../lib/gallery';
 import {
   labelFor,
   loadLabels,
@@ -214,6 +215,29 @@ export default function CalendarDashboard() {
     setSelectedKey(key);
   }, []);
 
+  // `/?day=2026-03-15` abre ese día nada más cargar: es el enlace "Ver nota"
+  // de la galería. Espera a los datos para que el modal nazca con la nota, y
+  // despliega el mes y lo trae a la vista para que, al cerrar, el día esté
+  // ahí. El parámetro se retira de la URL: recargar no debe reabrirlo.
+  useEffect(() => {
+    if (!hydrated || !expansionLoaded) return;
+
+    const url = new URL(window.location.href);
+    const key = url.searchParams.get(DAY_PARAM);
+    if (!key) return;
+
+    url.searchParams.delete(DAY_PARAM);
+    window.history.replaceState(window.history.state, '', url);
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(key) || !isInQuarter(key)) return;
+
+    setExpansion((current) => ({ ...current, [monthKey(monthIndexOf(key))]: true }));
+    openDay(key);
+    document
+      .querySelector<HTMLElement>(`[data-date="${key}"]`)
+      ?.scrollIntoView({ behavior: 'auto', block: 'center' });
+  }, [hydrated, expansionLoaded, openDay]);
+
   /** Marca de golpe todo lo que hay entre el último día abierto y este. */
   const markRange = useCallback(
     (from: string, to: string) => {
@@ -342,6 +366,7 @@ export default function CalendarDashboard() {
       marked: entries.filter((entry) => entry.marked).length,
       // Una imagen sola también cuenta como nota: es contenido del día.
       notes: entries.filter((entry) => entry.note || entry.image).length,
+      images: entries.filter((entry) => entry.image).length,
     };
   }, [data]);
 
@@ -400,6 +425,27 @@ export default function CalendarDashboard() {
                 <ChevronsIcon direction="down" />
               </IconButton>
             </div>
+
+            <a
+              href="/galeria"
+              aria-label={
+                summary.images > 0
+                  ? `Galería, ${summary.images} ${summary.images === 1 ? 'imagen' : 'imágenes'}`
+                  : 'Galería'
+              }
+              title="Galería de imágenes"
+              className="print-hidden relative rounded-xl border border-edge bg-white p-2.5 text-ink-soft transition-colors hover:bg-edge hover:text-ink focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none"
+            >
+              <ImageIcon />
+              {summary.images > 0 && (
+                <span
+                  aria-hidden="true"
+                  className="absolute -top-1.5 -right-1.5 min-w-5 rounded-full bg-highlight px-1 text-center text-[10px] leading-5 font-semibold text-white tabular-nums"
+                >
+                  {summary.images}
+                </span>
+              )}
+            </a>
 
             <button
               ref={settingsButtonRef}
@@ -572,6 +618,27 @@ function ChevronsIcon({ direction }: { direction: 'up' | 'down' }) {
       className={direction === 'up' ? 'rotate-180' : undefined}
     >
       <path d="M7 6l5 5 5-5M7 13l5 5 5-5" />
+    </svg>
+  );
+}
+
+/** Imagen con montaña: el enlace a la galería de adjuntos. */
+function ImageIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect x="3" y="5" width="18" height="14" rx="2.5" />
+      <path d="M3.5 17l5-5a1.5 1.5 0 012.1 0l4.9 4.9 2-2a1.5 1.5 0 012.1 0L21 16" />
+      <circle cx="15.5" cy="9.5" r="1.25" fill="currentColor" />
     </svg>
   );
 }

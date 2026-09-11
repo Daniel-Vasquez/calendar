@@ -1,0 +1,13 @@
+---
+import Layout from '../layouts/Layout.astro';
+import GalleryView from '../components/GalleryView';
+---
+
+<Layout
+  title="Galería · Planificador 2026"
+  description="Todas las imágenes adjuntas a las notas del Planificador 2026."
+>
+  <main class="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
+    <GalleryView client:load />
+  </main>
+</Layout>
