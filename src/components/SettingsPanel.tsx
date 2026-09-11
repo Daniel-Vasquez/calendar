@@ -79,7 +79,7 @@ export default function SettingsPanel({
         <section>
           <h3 className="text-sm font-semibold text-ink-soft">Copia de seguridad</h3>
           <p className="mt-1 text-xs text-ink-muted">
-            El trimestre vive solo en este navegador: vaciar los datos del sitio lo borra. Guarda
+            El calendario vive solo en este navegador: vaciar los datos del sitio lo borra. Guarda
             una copia de vez en cuando.
           </p>
 

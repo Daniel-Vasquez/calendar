@@ -2,7 +2,7 @@ import { labelFor, type ColorLabels } from './labels';
 import { sanitizeData, type CalendarData } from './storage';
 
 /** Nombre base de los archivos que se descargan. */
-const FILE_STEM = 'planificador-q4-2026';
+const FILE_STEM = 'planificador-2026';
 
 export type ImportResult =
   | { ok: true; data: CalendarData; days: number }
@@ -70,7 +70,7 @@ function icsStamp(now: Date): string {
 
 /**
  * Calendario iCalendar con un evento de día completo por cada día registrado,
- * para llevarse el trimestre a Google Calendar, Outlook o Apple Calendario.
+ * para llevarse el año a Google Calendar, Outlook o Apple Calendario.
  */
 export function toIcs(data: CalendarData, labels: ColorLabels, now: Date = new Date()): string {
   const stamp = icsStamp(now);
@@ -132,7 +132,7 @@ export function downloadFile(contents: string, filename: string, type: string): 
   window.setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-/** `planificador-q4-2026-2026-09-10.json` — la fecha evita pisar exportaciones. */
+/** `planificador-2026-2026-09-10.json` — la fecha evita pisar exportaciones. */
 export function exportFilename(extension: string, today: string): string {
   return `${FILE_STEM}-${today || 'export'}.${extension}`;
 }

@@ -243,7 +243,7 @@ export default function CalendarDashboard() {
       }
 
       // Fusiona en vez de reemplazar: lo importado pisa el mismo día, el resto
-      // del trimestre sigue donde estaba. La instantánea deshace las dos cosas.
+      // del año sigue donde estaba. La instantánea deshace las dos cosas.
       const snapshot = data;
       setData((current) => ({ ...current, ...result.data }));
       setNotice({
@@ -254,7 +254,7 @@ export default function CalendarDashboard() {
     [data],
   );
 
-  // Un calendario de cuatro meses no cabe en pantalla: este atajo devuelve a
+  // Un calendario de doce meses no cabe en pantalla: este atajo devuelve a
   // hoy y le deja el foco, listo para seguir moviéndose con las flechas.
   const canJumpToToday = Boolean(today) && isInQuarter(today);
 
@@ -281,10 +281,10 @@ export default function CalendarDashboard() {
         <div className="flex flex-wrap items-end justify-between gap-6">
           <div>
             <p className="text-xs font-semibold tracking-[0.18em] text-highlight uppercase">
-              Septiembre — Diciembre
+              Enero — Diciembre
             </p>
             <h1 className="mt-2 text-3xl font-semibold tracking-tight text-ink sm:text-4xl">
-              Planificador Q4 2026
+              Planificador 2026
             </h1>
             <p className="mt-2 text-sm text-ink-soft">
               Marca días clave y guarda notas. Todo se conserva en este navegador.
@@ -370,7 +370,7 @@ export default function CalendarDashboard() {
         </span>
         <span className="print-hidden">
           Haz clic en un día para editarlo, Shift+clic para marcar el tramo desde el anterior, o
-          recorre el trimestre con las flechas.
+          recorre el año con las flechas.
         </span>
       </footer>
 

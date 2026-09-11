@@ -1,7 +1,15 @@
 export const YEAR = 2026;
 
-/** Meses del Q4 que se renderizan simultáneamente. `index` es 0-based (8 = Septiembre). */
+/** Meses del año que se renderizan simultáneamente. `index` es 0-based (0 = Enero). */
 export const QUARTER_MONTHS = [
+  { index: 0, name: 'Enero' },
+  { index: 1, name: 'Febrero' },
+  { index: 2, name: 'Marzo' },
+  { index: 3, name: 'Abril' },
+  { index: 4, name: 'Mayo' },
+  { index: 5, name: 'Junio' },
+  { index: 6, name: 'Julio' },
+  { index: 7, name: 'Agosto' },
   { index: 8, name: 'Septiembre' },
   { index: 9, name: 'Octubre' },
   { index: 10, name: 'Noviembre' },

@@ -76,7 +76,7 @@ export default function MonthCard({ monthIndex, name, data, today, onSelectDay }
     event.preventDefault();
 
     // La búsqueda es global, así que las flechas pasan de un mes al siguiente.
-    // Fuera del trimestre no hay casilla y el foco se queda donde está.
+    // Fuera del año no hay casilla y el foco se queda donde está.
     if (!isInQuarter(target)) return;
     document.querySelector<HTMLButtonElement>(`[data-date="${target}"]`)?.focus();
   }

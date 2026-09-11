@@ -18,10 +18,10 @@ const CHIP =
   'focus-visible:outline-none';
 
 /**
- * Lista cronológica de todo lo registrado en el trimestre.
+ * Lista cronológica de todo lo registrado en el año.
  *
  * La rejilla responde a "¿qué pasa este día?"; esta lista responde a "¿qué
- * tengo por delante?" sin recorrer cuatro meses cazando puntos de color.
+ * tengo por delante?" sin recorrer doce meses cazando puntos de color.
  */
 export default function AgendaPanel({ data, labels, today, onSelectDay }: Props) {
   // Los filtros son una lente sobre la lista, no un ajuste del calendario:
@@ -53,7 +53,7 @@ export default function AgendaPanel({ data, labels, today, onSelectDay }: Props)
     >
       <header className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
         <h2 id="agenda-title" className="text-lg font-semibold tracking-tight text-ink">
-          Agenda del trimestre
+          Agenda del año
         </h2>
         {allKeys.length > 0 && (
           <span className="text-xs font-medium text-ink-muted">
@@ -138,7 +138,7 @@ export default function AgendaPanel({ data, labels, today, onSelectDay }: Props)
           Ningún día coincide con el filtro.
         </p>
       ) : (
-        // El trimestre admite más de cien entradas: la lista se queda con su
+        // El año admite más de cien entradas: la lista se queda con su
         // propio scroll para no empujar el pie de página fuera de la vista.
         <ul className="max-h-96 divide-y divide-edge overflow-y-auto">
           {keys.map((key) => {
