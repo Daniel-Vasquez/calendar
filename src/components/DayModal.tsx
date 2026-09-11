@@ -2,7 +2,8 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { formatLongDate, formatWeekday } from '../lib/calendar';
 import { DAY_COLORS, DEFAULT_COLOR, colorHex, type ColorId } from '../lib/palette';
 import { labelFor, type ColorLabels } from '../lib/labels';
-import type { DayEntry } from '../lib/storage';
+import { dataUrlBytes, IMAGE_ACCEPT, prepareImage } from '../lib/image';
+import { hasContent, type DayEntry } from '../lib/storage';
 
 type Props = {
   dateKey: string;
@@ -14,23 +15,42 @@ type Props = {
   onClose: () => void;
 };
 
+const IMAGE_ACTION =
+  'rounded-lg border border-edge bg-white px-3 py-1.5 text-xs font-medium text-ink-soft ' +
+  'transition-colors hover:bg-edge disabled:cursor-wait disabled:opacity-60 ' +
+  'focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none';
+
+/** "120 KB" a partir de bytes; las imágenes adjuntas nunca llegan al megabyte. */
+function formatBytes(bytes: number): string {
+  return bytes < 1024 ? `${bytes} B` : `${Math.round(bytes / 1024)} KB`;
+}
+
 export default function DayModal({ dateKey, entry, labels, onSave, onClear, onClose }: Props) {
   const [marked, setMarked] = useState(entry?.marked ?? false);
   const [note, setNote] = useState(entry?.note ?? '');
   const [color, setColor] = useState<ColorId>(entry?.color ?? DEFAULT_COLOR);
+  /** Data URL de la imagen adjunta; `undefined` si la nota no lleva ninguna. */
+  const [image, setImage] = useState<string | undefined>(entry?.image);
+  const [imageError, setImageError] = useState('');
+  const [processing, setProcessing] = useState(false);
   const noteId = useId();
   const titleId = useId();
+  const imageHelpId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const attachRef = useRef<HTMLButtonElement>(null);
 
-  const hasStoredData = Boolean(entry?.marked || entry?.note);
+  const hasStoredData = Boolean(entry && hasContent(entry));
 
   // El modal se reutiliza entre días: resincroniza el borrador al cambiar de fecha.
   useEffect(() => {
     setMarked(entry?.marked ?? false);
     setNote(entry?.note ?? '');
     setColor(entry?.color ?? DEFAULT_COLOR);
-  }, [dateKey, entry?.marked, entry?.note, entry?.color]);
+    setImage(entry?.image);
+    setImageError('');
+  }, [dateKey, entry?.marked, entry?.note, entry?.color, entry?.image]);
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -47,7 +67,7 @@ export default function DayModal({ dateKey, entry, labels, onSave, onClear, onCl
       if (event.key !== 'Tab' || !panelRef.current) return;
 
       const focusables = panelRef.current.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), textarea, input, [href], [tabindex]:not([tabindex="-1"])',
+        'button:not([disabled]), textarea, input:not([tabindex="-1"]), [href], [tabindex]:not([tabindex="-1"])',
       );
       if (focusables.length === 0) return;
 
@@ -79,6 +99,29 @@ export default function DayModal({ dateKey, entry, labels, onSave, onClear, onCl
   function pickColor(next: ColorId) {
     setColor(next);
     setMarked(true);
+  }
+
+  async function pickImage(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    // Sin limpiarlo, volver a elegir el mismo archivo no dispara `change`.
+    event.target.value = '';
+    if (!file) return;
+
+    setImageError('');
+    setProcessing(true);
+    const result = await prepareImage(file);
+    setProcessing(false);
+
+    if (result.ok) setImage(result.dataUrl);
+    else setImageError(result.reason);
+  }
+
+  function removeImage() {
+    setImage(undefined);
+    setImageError('');
+    // El botón "Quitar" desaparece con la imagen: el foco pasa al de adjuntar
+    // en cuanto React lo pinte, para no caer fuera del modal.
+    requestAnimationFrame(() => attachRef.current?.focus());
   }
 
   return (
@@ -200,10 +243,97 @@ export default function DayModal({ dateKey, entry, labels, onSave, onClear, onCl
           />
         </div>
 
+        <div className="mt-4">
+          <div className="mb-2 flex items-baseline justify-between">
+            <span className="text-sm font-medium text-ink-soft">Imagen adjunta</span>
+            <span id={imageHelpId} className="text-xs text-ink-muted">
+              JPG, PNG o WebP
+            </span>
+          </div>
+
+          {image ? (
+            <div className="flex items-start gap-3 rounded-xl border border-edge bg-surface p-3">
+              <img
+                src={image}
+                alt="Vista previa de la imagen adjunta"
+                className="h-20 w-20 shrink-0 rounded-lg object-cover"
+              />
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
+                <p className="text-xs text-ink-muted">
+                  {formatBytes(dataUrlBytes(image))}
+                  {image !== entry?.image && ' · sin guardar'}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => fileRef.current?.click()}
+                    disabled={processing}
+                    className={IMAGE_ACTION}
+                  >
+                    Cambiar
+                  </button>
+                  <button type="button" onClick={removeImage} className={IMAGE_ACTION}>
+                    Quitar imagen
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <button
+              ref={attachRef}
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={processing}
+              aria-describedby={imageHelpId}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-edge bg-surface px-4 py-3 text-sm font-medium text-ink-soft transition-colors hover:border-accent hover:text-accent-strong disabled:cursor-wait disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none"
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <rect
+                  x="2"
+                  y="3"
+                  width="12"
+                  height="10"
+                  rx="1.5"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                />
+                <path
+                  d="M2.5 11l3.2-3.2a1 1 0 011.4 0L10 10.7l1.3-1.3a1 1 0 011.4 0l.8.8"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+                <circle cx="10.5" cy="6.5" r="1" fill="currentColor" />
+              </svg>
+              {processing ? 'Procesando imagen…' : 'Adjuntar imagen'}
+            </button>
+          )}
+
+          {/* El input real queda oculto: el botón lo dispara y el `accept`
+              filtra el diálogo, aunque la validación de verdad es prepareImage. */}
+          <input
+            ref={fileRef}
+            type="file"
+            accept={IMAGE_ACCEPT}
+            onChange={pickImage}
+            className="sr-only"
+            tabIndex={-1}
+            aria-hidden="true"
+          />
+
+          {imageError && (
+            <p role="alert" className="mt-2 text-xs font-medium text-highlight">
+              {imageError}
+            </p>
+          )}
+        </div>
+
         <div className="mt-6 flex flex-col gap-2 sm:flex-row-reverse">
           <button
             type="button"
-            onClick={() => onSave(dateKey, { marked, note: note.trim(), color })}
+            onClick={() => onSave(dateKey, { marked, note: note.trim(), color, image })}
+            disabled={processing}
             style={marked ? { backgroundColor: colorHex(color) } : undefined}
             className={
               'flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none ' +

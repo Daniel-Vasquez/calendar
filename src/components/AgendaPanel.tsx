@@ -192,12 +192,24 @@ export default function AgendaPanel({ data, labels, today, onSelectDay }: Props)
                       <span className="mt-0.5 line-clamp-2 block text-sm whitespace-pre-line text-ink-soft">
                         {entry.note}
                       </span>
+                    ) : entry.image ? (
+                      <span className="mt-0.5 block text-sm text-ink-muted italic">
+                        Imagen adjunta, sin texto
+                      </span>
                     ) : (
                       <span className="mt-0.5 block text-sm text-ink-muted italic">
                         Día marcado, sin nota
                       </span>
                     )}
                   </span>
+
+                  {entry.image && (
+                    <img
+                      src={entry.image}
+                      alt=""
+                      className="h-12 w-12 shrink-0 rounded-lg object-cover ring-1 ring-edge"
+                    />
+                  )}
                 </button>
               </li>
             );

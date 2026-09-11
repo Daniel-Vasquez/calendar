@@ -105,7 +105,9 @@ export default function DayCell({
 }: Props) {
   const marked = entry?.marked ?? false;
   const note = entry?.note ?? '';
-  const hasNote = Boolean(note);
+  const image = entry?.image;
+  // Una imagen sin texto también es una nota: enciende el punto y el popover.
+  const hasNote = Boolean(note || image);
   const isToday = timeState === 'today';
 
   const { className, style, solid } = getDayStyles(timeState, marked, isWeekend, entry?.color);
@@ -161,9 +163,18 @@ export default function DayCell({
               <p className="text-[11px] font-semibold tracking-wide text-ink-muted uppercase">
                 {dateLabel}
               </p>
-              <p className="mt-1 line-clamp-3 text-xs leading-relaxed whitespace-pre-line break-words text-ink-soft">
-                {note}
-              </p>
+              {image && (
+                <img
+                  src={image}
+                  alt=""
+                  className="mt-2 h-24 w-full rounded-lg object-cover"
+                />
+              )}
+              {note && (
+                <p className="mt-1 line-clamp-3 text-xs leading-relaxed whitespace-pre-line break-words text-ink-soft">
+                  {note}
+                </p>
+              )}
             </div>
           </div>
 

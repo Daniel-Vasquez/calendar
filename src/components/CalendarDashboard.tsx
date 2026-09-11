@@ -28,6 +28,7 @@ import {
   toJson,
 } from '../lib/transfer';
 import {
+  hasContent,
   loadData,
   saveData,
   STORAGE_KEY,
@@ -61,9 +62,16 @@ export default function CalendarDashboard() {
     setHydrated(true);
   }, []);
 
+  // Si el navegador rechaza el guardado (cuota llena, casi siempre por las
+  // imágenes adjuntas) el estado sigue en memoria, pero hay que decirlo: al
+  // recargar se perdería lo último.
   useEffect(() => {
     if (!hydrated) return;
-    saveData(data);
+    if (!saveData(data)) {
+      setNotice({
+        message: 'No hay espacio para guardar en este navegador. Quita alguna imagen adjunta.',
+      });
+    }
   }, [data, hydrated]);
 
   useEffect(() => {
@@ -109,8 +117,8 @@ export default function CalendarDashboard() {
 
   const handleSave = useCallback(
     (key: string, entry: DayEntry) => {
-      // Un día sin marca ni nota no se guarda: mantiene el almacenamiento limpio.
-      const removes = !entry.marked && !entry.note;
+      // Un día sin marca, nota ni imagen no se guarda: mantiene el almacenamiento limpio.
+      const removes = !hasContent(entry);
       const snapshot = data;
 
       setData((current) => {
@@ -179,8 +187,14 @@ export default function CalendarDashboard() {
       setData((current) => {
         const next = { ...current };
         for (const key of keys) {
-          // Marcar en bloque pinta el día; la nota que ya tuviera se respeta.
-          next[key] = { marked: true, note: current[key]?.note ?? '', color: lastColor };
+          // Marcar en bloque pinta el día; la nota e imagen que ya tuviera se respetan.
+          const previous = current[key];
+          next[key] = {
+            marked: true,
+            note: previous?.note ?? '',
+            color: lastColor,
+            ...(previous?.image ? { image: previous.image } : {}),
+          };
         }
         return next;
       });
@@ -271,7 +285,8 @@ export default function CalendarDashboard() {
     const entries = Object.values(data);
     return {
       marked: entries.filter((entry) => entry.marked).length,
-      notes: entries.filter((entry) => entry.note).length,
+      // Una imagen sola también cuenta como nota: es contenido del día.
+      notes: entries.filter((entry) => entry.note || entry.image).length,
     };
   }, [data]);
 

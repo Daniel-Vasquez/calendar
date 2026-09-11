@@ -1,4 +1,5 @@
 import { DEFAULT_COLOR, isColorId, type ColorId } from './palette';
+import { isImageDataUrl } from './image';
 
 export const STORAGE_KEY = 'calendar_2026_q4_data';
 
@@ -6,7 +7,14 @@ export type DayEntry = {
   marked: boolean;
   note: string;
   color?: ColorId;
+  /** Imagen adjunta a la nota como data URL (JPEG, PNG o WebP). */
+  image?: string;
 };
+
+/** ¿Hay algo que guardar? Una imagen sola ya es contenido, igual que una nota. */
+export function hasContent(entry: DayEntry): boolean {
+  return entry.marked || Boolean(entry.note) || Boolean(entry.image);
+}
 
 export type CalendarData = Record<string, DayEntry>;
 
@@ -26,12 +34,15 @@ export function sanitizeData(raw: unknown): CalendarData {
     const entry = value as Partial<DayEntry>;
     const marked = entry.marked === true;
     const note = typeof entry.note === 'string' ? entry.note : '';
-    if (!marked && !note) continue;
+    // Una imagen que no parezca generada por el navegador se descarta sin
+    // tumbar el resto del día.
+    const image = isImageDataUrl(entry.image) ? entry.image : undefined;
+    if (!marked && !note && !image) continue;
 
     // Datos anteriores a los colores no traen `color`: se asume el teal base.
     const color = isColorId(entry.color) ? entry.color : DEFAULT_COLOR;
 
-    clean[key] = { marked, note, color };
+    clean[key] = image ? { marked, note, color, image } : { marked, note, color };
   }
   return clean;
 }
@@ -46,11 +57,17 @@ export function loadData(): CalendarData {
   }
 }
 
-export function saveData(data: CalendarData): void {
-  if (typeof window === 'undefined') return;
+/**
+ * Devuelve `false` si no se pudo persistir. Cuota llena o almacenamiento
+ * bloqueado: la app sigue funcionando en memoria, pero con imágenes adjuntas
+ * la cuota se alcanza de verdad y el usuario merece saberlo.
+ */
+export function saveData(data: CalendarData): boolean {
+  if (typeof window === 'undefined') return true;
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    return true;
   } catch {
-    /* Cuota llena o almacenamiento bloqueado: la app sigue funcionando en memoria. */
+    return false;
   }
 }
