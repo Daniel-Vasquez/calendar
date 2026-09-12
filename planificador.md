@@ -2,7 +2,7 @@
 
 Calendario anual con notas, colores, imágenes adjuntas y —próximamente—
 recordatorios por Telegram. Astro + React, MongoDB Atlas, desplegado en Vercel;
-las imágenes van camino de Cloudinary (tanda 7).
+las imágenes van camino de Cloudinary (tanda 8).
 
 **En producción:** <https://planificador.danielvasquez.lat>
 · estado: <https://planificador.danielvasquez.lat/api/health>
@@ -45,6 +45,9 @@ middleware ───────────────────────
 | `src/lib/sync.ts` | Cola, fusión, subida y descarga bajo demanda |
 | `src/lib/storage.ts` | `localStorage`, saneado, forma de `DayEntry` |
 | `src/lib/reminder.ts` | Hora, texto y estado del aviso; lo importan los dos lados |
+| `src/lib/telegram.ts` | El bot: enviar, leer `getUpdates`, clasificar fallos |
+| `src/pages/api/telegram.ts` | Vincular, comprobar, probar y desvincular |
+| `src/pages/api/cron/reminders.ts` | Lo dispara el programador externo |
 | `src/lib/image.ts` | Redimensionado, compresión y miniaturas |
 | `src/pages/api/days.ts` | Lectura y subida por lotes de días |
 | `src/pages/api/images.ts` | Una imagen por petición; recorte de cola |
@@ -57,7 +60,8 @@ middleware ───────────────────────
 |---|---|---|
 | `user` `session` `account` | Las crea Better Auth. Tu nombre vive en `user` | propios |
 | `days` | Un día por usuario: marca, nota, color, `imageCount`, `thumb`, `reminder` | `{userId, key}` único |
-| `images` | Una imagen por documento, con su posición. Hoy guarda la imagen entera como data URL; la tanda 7 deja aquí solo la referencia a Cloudinary | `{userId, key, index}` único |
+| `settings` | Ajustes que no son de este dispositivo: hoy, el chat de Telegram | `{userId}` único |
+| `images` | Una imagen por documento, con su posición. Hoy guarda la imagen entera como data URL; la tanda 8 deja aquí solo la referencia a Cloudinary | `{userId, key, index}` único |
 
 `userId` se guarda como **ObjectId**, no como cadena.
 
@@ -91,15 +95,23 @@ día en el móvil y abrir el portátil —que aún lo tiene— lo resucitaría.
 | `BETTER_AUTH_SECRET` | `openssl rand -base64 32`. **Distinta en producción** |
 | `BETTER_AUTH_URL` | Origen público **con esquema** y sin barra final |
 
-Las que traen las tandas 6 y 7, todas de servidor y todas `secret`:
+Las de los recordatorios son **opcionales**, al revés que las de arriba: sin
+ellas el calendario funciona entero y solo deja de haber avisos. Obligatorias
+tumbarían el sitio por una función accesoria.
+
+| Variable | Nota |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | El bot es de la aplicación, no de cada persona. **Nunca a Mongo** |
+| `TELEGRAM_BOT_USERNAME` | El `@algo_bot`. No es secreto: va dentro del enlace |
+| `CRON_SECRET` | Cabecera que autoriza `POST /api/cron/reminders` |
+
+Las que traerá la tanda 8, todas de servidor y todas `secret`:
 
 | Variable | Nota |
 |---|---|
 | `CLOUDINARY_CLOUD_NAME` | El nombre de la nube, a secas |
 | `CLOUDINARY_API_KEY` | Pública en la práctica, pero no hace falta que salga del servidor |
 | `CLOUDINARY_API_SECRET` | Firma las URLs y las subidas. **Nunca al navegador** |
-| `TELEGRAM_BOT_TOKEN` | El bot es de la aplicación, no de cada persona |
-| `CRON_SECRET` | Cabecera que autoriza `POST /api/cron/reminders` |
 
 La *API Environment Variable* de Cloudinary (`CLOUDINARY_URL`) **no se usa**: el
 SDK la lee de `process.env` por su cuenta y en `astro dev` las variables del
@@ -242,86 +254,73 @@ calendario decide por su cuenta a qué hora empieza uno.
 La interfaz avisa de que el envío todavía no existe. Prometer un mensaje que no
 va a llegar es peor que no ofrecerlo.
 
+#### 7 · El envío por Telegram — `8ebb04e`
+
+El bot es **uno, de la aplicación**, no uno por persona. Eso decide dónde vive
+cada cosa y es lo que más se malinterpreta al montarlo: el token es
+configuración de despliegue, como `MONGODB_URI`, y no un ajuste que nadie
+teclee en una pantalla. Nunca va a Mongo — una filtración de la base no debe
+ser también una del bot— ni baja al navegador.
+
+Lo único de cada persona es el `chatId`, y vive en una colección `settings`.
+
+**Nadie tiene que copiar su «chat ID».** Averiguarlo pasa por `getUpdates`, que
+exige el token; enseñárselo a un usuario para que se configure es justo lo que
+no puede ser. En su lugar el servidor entrega un enlace `t.me/<bot>?start=<código>`,
+la persona pulsa Start y vuelve a pulsar *Comprobar*: el `/start <código>`
+aparece en `getUpdates` y ata el chat a quien abrió **ese** enlace, no a quien
+diga ser. Se descartó el webhook porque obliga a una URL pública y en local no
+hay forma de probarlo sin un túnel.
+
+El `offset` de `getUpdates` **no se avanza**: confirmarlos los borra de la cola
+de Telegram, y dos personas vinculando a la vez se pisarían. Telegram los tira
+solo a las 24 h. A cambio, el bot no puede tener webhook puesto: con uno,
+`getUpdates` contesta 409.
+
+El envío **reclama antes de mandar**. El filtro exige que `sent` siga sin
+existir, así que dos pasadas solapadas no pueden llevarse el mismo aviso; si el
+envío falla, se suelta la reclamación y la pasada siguiente lo reintenta
+mientras siga dentro de la ventana. Al revés —mandar y marcar después— la misma
+persona podría recibirlo dos veces.
+
+Lo más delicado: **el cron no toca `updatedAt` al marcar `sent`**. Subirlo
+haría que el servidor le ganara a una edición local que aún no hubiera subido,
+borrándola. Pero entonces el día vuelve con la marca de siempre y la fusión lo
+descartaría con el `sent` dentro, así que `pull()` adopta ese campo aparte: lo
+escribe solo el servidor, no puede entrar en conflicto con nada de aquí, y se
+compara `at` porque un aviso movido de hora es otro aviso.
+
+Dos trampas que costaron rato y están contadas en **Trampas que ya nos han
+mordido**: el `content-type` que exige la protección CSRF de Astro, y una
+comilla sin cerrar en el `.env` que hizo que el error señalara a la variable
+equivocada.
+
+Comprobado de punta a punta contra Atlas: el cron encontró un aviso pendiente
+real y lo saltó como «sin destino» por no haber chat vinculado todavía, sin
+marcarlo como enviado. `getMe` confirma el bot y no hay webhook puesto.
+
 ---
 
 ## Lo que falta
 
-### Tanda 6 · El envío por Telegram
+### Lo que queda de los recordatorios
 
-El modelo ya está puesto: `dueReminders(data, now)` devuelve lo que toca mandar
-y `GRACE_MS` es la ventana de gracia. Lo que falta es el canal y el disparador.
+El código está entero; falta encender el interruptor de fuera.
 
-- [ ] `src/lib/telegram.ts`: `sendMessage(chatId, text)` contra
-      `https://api.telegram.org/bot<token>/sendMessage`. El token sale del
-      entorno, nunca de la base.
-- [ ] `chatId` por usuario en una colección `settings`, **no en el navegador**:
-      es el destino de una alerta, no una preferencia de este dispositivo.
-- [ ] `POST /api/cron/reminders` con cabecera secreta (`CRON_SECRET`).
-- [x] Ventana de gracia. Sin un tope, volver tras tres días dispara diez
-      mensajes de golpe. Son 2 h (`GRACE_MS`), y lo que pasa de ahí ya se marca
-      como perdido y se enseña en la agenda.
-- [ ] Marcar `sent` al recibir `ok: true`, y que eso vuelva al navegador: hoy
-      el campo existe y lo pinta la agenda, pero no lo escribe nadie.
-- [ ] Programador externo apuntando al endpoint.
-- [ ] Botón **Probar** en `SettingsModal`: manda un mensaje ahora y enseña lo
-      que contestó Telegram. Descubrir que el `chatId` está mal a las 9:00 de
-      un martes es tarde.
+- [ ] **Vincular tu Telegram.** Ajustes → *Recordatorios por Telegram* → abrir
+      el chat, pulsar **Start**, volver y pulsar *Comprobar conexión*. Un bot no
+      puede escribir primero: hasta ese Start, Telegram no le deja mandarte
+      nada, y el cron cuenta el aviso como «sin destino».
+- [ ] **`CRON_SECRET` en Vercel.** `openssl rand -hex 32`. Es lo único que
+      guarda la ruta del cron, que no tiene sesión.
+- [ ] **Las tres variables de Telegram en el panel de Vercel.** En local ya
+      están.
+- [ ] **El programador externo.** Cada 5–15 min contra
+      `POST https://planificador.danielvasquez.lat/api/cron/reminders`, con
+      `x-cron-secret` y **`content-type: application/json`** (ver Trampas).
+      Comprueba que sin la cabecera contesta `401` antes de dejarlo corriendo.
 
-**Vercel Hobby no sirve como cron:** solo admite uno al día, y aun así se
-dispara en cualquier momento dentro de la hora indicada. Alternativas gratis:
-cron-job.org (precisión de minutos), GitHub Actions (retrasos de 5–20 min, pero
-ahora vale porque los datos ya no están en el repo) o un Worker de Cloudflare de
-cinco líneas que solo hace ping.
-
-Canal elegido: **un bot de Telegram**. WhatsApp queda descartado por los dos
-lados: CallMeBot es un tercero sin compromiso ninguno por el que pasarían los
-recordatorios, y la Meta Cloud API exige plantilla aprobada y tarifa por mensaje
-porque un recordatorio lo inicia el negocio. La API de bots de Telegram es
-oficial, gratuita, sin plantillas y es un `POST`. Se mantiene lo que ya movía la
-decisión anterior: desde el servidor no hay problema de CORS y la respuesta se
-lee entera —trae `ok` y, si falla, `description`—, así que «enviado» será verdad
-y no un acto de fe.
-
-Tres cosas de la API que conviene tener presentes antes de escribir el envío:
-
-- **Un bot no puede escribir primero.** Hasta que la persona no abre el chat y
-  pulsa *Start*, cualquier `sendMessage` devuelve `403`. Por eso el `chatId` es
-  un prerrequisito y no algo que la aplicación pueda averiguar sola.
-- **El texto de la nota es texto de usuario.** Con `parse_mode` de Markdown, un
-  guion bajo suelto en la nota tumba el envío con un `400`. Se manda **sin
-  `parse_mode`** salvo que haga falta formato, y entonces se escapa. El tope es
-  de 4096 caracteres por mensaje: la nota se recorta.
-- **Los fallos no son todos iguales.** `429` trae `parameters.retry_after` y
-  toca esperar; `403` significa que el bot está bloqueado o el chat ya no
-  existe, y ahí reintentar no arregla nada — se marca y se enseña en la agenda.
-
-El recordatorio solo se marca como `sent` cuando la respuesta trae `ok: true`.
-Guardar también el `message_id` sale gratis y permite editar o borrar el aviso
-más adelante.
-
-#### Lo que necesito de tu lado
-
-| Dato | Cómo se obtiene | Dónde va |
-|---|---|---|
-| **Bot Token** | @BotFather → `/newbot` → un nombre y un usuario que acabe en `bot`. Devuelve algo como `123456789:AAF…` | `TELEGRAM_BOT_TOKEN`, en `.env` y en Vercel |
-| **Chat ID** | Abre el chat con tu bot y pulsa **Start**. Luego `https://api.telegram.org/bot<TOKEN>/getUpdates` y lee `result[0].message.chat.id`. @userinfobot también lo dice | `settings.telegram.chatId`, por usuario |
-| **Usuario del bot** | El `@algo_bot` que te dé BotFather | Solo para el enlace del botón «Conectar» |
-| **Secreto del cron** | Lo eliges tú: `openssl rand -hex 32` | `CRON_SECRET`, en Vercel y en el programador |
-
-Y una decisión: si las alertas van a tu chat privado o a un grupo. En un grupo
-hay que añadir el bot y el id es negativo (`-100…`); el modo privacidad que
-traen por defecto da igual aquí, porque el bot solo escribe.
-
-El token es la llave entera del bot. Si acaba en un commit hay que revocarlo con
-`/revoke` en BotFather, no basta con borrarlo del archivo.
-
-Cuando canse copiar el `chatId` a mano: el botón «Conectar» abre
-`https://t.me/<bot>?start=<código>`, un webhook en `POST /api/telegram/webhook`
-—protegido con el `secret_token` que admite `setWebhook`— recibe ese `/start` y
-ata el chat al usuario él solo. Para una aplicación personal no compensa
-todavía, pero es el camino si algún día la usa alguien más.
-
-### Tanda 7 · Multimedia en Cloudinary
+### Tanda 8 · Multimedia en Cloudinary
 
 La tanda 4 sacó las imágenes del documento del día, pero los bytes siguen en
 Atlas y una copia completa sigue en `localStorage`. Eso deja tres techos a la
@@ -517,7 +516,7 @@ Pendiente:
 - [ ] Las miniaturas viajan dentro de `GET /api/days`. La actual pesa 5 KB y el
       tope son 20 KB: un año con imagen todos los días serían ~1,8 MB por carga.
       Irreal para uso personal, pero si se acerca, basta bajar `THUMB_SIDE` de
-      192 a 128 o servirlas aparte. **La tanda 7 lo retira**: la miniatura pasa
+      192 a 128 o servirlas aparte. **La tanda 8 lo retira**: la miniatura pasa
       a ser una derivada y deja de viajar.
 - [ ] Cambiar un adjunto reenvía los seis del día. Con seis como tope y
       ediciones contadas, comparar cuáles cambiaron costaría más de lo que
@@ -525,7 +524,7 @@ Pendiente:
 - [ ] Las lápidas no se purgan nunca. Sobra sitio, pero crecen sin fin.
 - [ ] `localStorage` sigue guardando la copia completa con imágenes, así que su
       cuota sigue siendo un techo. `MAX_DATA_URL_LENGTH` (700 KB) se dimensionó
-      para esa cuota y ahora podría subir. **La tanda 7 lo retira**, a cambio de
+      para esa cuota y ahora podría subir. **La tanda 8 lo retira**, a cambio de
       que las imágenes dejen de verse sin conexión.
 - [ ] No hay recuperación de contraseña: haría falta un servidor de correo.
 - [ ] `IMAGE_ACTION` en `DayModal.tsx` no se usa. Anterior a esta sesión.
@@ -534,16 +533,17 @@ Pendiente:
       igual a la nota, al color y ahora al recordatorio; es anterior a esta
       tanda y se arregla comparando valores en vez de reaccionar al objeto.
 - [ ] La galería descarga en serie todas las imágenes que falten, sin límite ni
-      desalojo. Con muchas notas conviene paginar. La tanda 7 lo alivia —el
+      desalojo. Con muchas notas conviene paginar. La tanda 8 lo alivia —el
       navegador cachea lo servido por el proxy y ya no hay que guardarlo— pero
       no lo arregla: sigue faltando paginar.
-- [ ] *(tanda 7)* Un `destroy` que falle deja la imagen huérfana en Cloudinary.
+- [ ] *(tanda 8)* Un `destroy` que falle deja la imagen huérfana en Cloudinary.
       Haría falta un repaso que liste el prefijo `uploads/users/{userId}` y
       borre lo que no tenga documento en Mongo.
-- [ ] *(tanda 7)* La exportación de `transfer.ts` deja de ser una copia
+- [ ] *(tanda 8)* La exportación de `transfer.ts` deja de ser una copia
       completa: para que lo siga siendo hay que bajar las imágenes al exportar.
-- [ ] *(tanda 6)* El `chatId` se copia a mano. El enlace `?start=<código>` con
-      webhook lo automatiza cuando compense.
+- [ ] La vinculación lee `getUpdates` sin avanzar el `offset`, así que el bot
+      no puede tener webhook. Si algún día hace falta uno, hay que cambiar las
+      dos cosas a la vez.
 
 ---
 
@@ -566,6 +566,31 @@ respondiendo — que es lo que hacía el fallo tan desconcertante.
 Ahora el cliente recibe su origen explícito y ya no depende del entorno.
 Para reproducir algo así en local: compilar con `@astrojs/node`, arrancar
 `dist/server/entry.mjs` y poner la variable en `process.env` a mano.
+
+**Astro rechaza el POST del cron si no lleva `content-type: application/json`.**
+La protección contra CSRF viene encendida de fábrica y bloquea cualquier POST
+cuyo tipo de contenido sea de los que un navegador puede mandar entre sitios sin
+preflight: formulario, texto plano y —esto es lo que muerde— **ninguno**. Un
+`curl -X POST` pelado, que es justo lo que configura cualquiera en un cron,
+recibe `403 Cross-site POST form submissions are forbidden`, que no menciona ni
+el cron ni la cabecera ni el tipo de contenido. Con el `content-type` puesto
+pasa, incluso con un `Origin` ajeno: quien guarda la ruta es el secreto, no esa
+comprobación.
+
+**Una comilla sin cerrar en el `.env` acusa a la variable equivocada.** El
+token del bot estaba escrito como `TELEGRAM_BOT_TOKEN="123:AAF…` sin la comilla
+final, así que el parser siguió leyendo hasta encontrar la siguiente comilla
+—dos líneas más abajo— y se tragó dentro del token el comentario y la línea de
+`TELEGRAM_BOT_USERNAME`. El síntoma era «falta TELEGRAM_BOT_USERNAME», que
+manda a mirar la línea que **sí** estaba bien. Para comprobarlo sin enseñar el
+valor:
+
+```bash
+node --env-file=.env -e 'const t=process.env.TELEGRAM_BOT_TOKEN;
+  console.log(t?.length, /^\d+:[\w-]+$/.test(t ?? ""))'
+```
+
+Un token del bot son 46 caracteres. Si salen 145, hay una comilla suelta.
 
 **Tocar `astro.config.mjs` obliga a reiniciar el servidor.** El esquema de
 `astro:env` se lee al arrancar; sin reinicio las variables llegan vacías.
