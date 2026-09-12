@@ -4,7 +4,8 @@ import MonthCard from './MonthCard';
 import DayModal from './DayModal';
 import AgendaPanel from './AgendaPanel';
 import SettingsModal from './SettingsModal';
-import NavBar from './NavBar';
+import NavBar, { type NavUser } from './NavBar';
+import SyncBadge, { type SyncState } from './SyncBadge';
 import {
   formatLongDate,
   isInQuarter,
@@ -36,6 +37,7 @@ import {
   type ColorLabels,
 } from '../lib/labels';
 import { downloadFile, exportFilename, parseImport, toIcs, toJson } from '../lib/transfer';
+import { flush, pendingCount, pull, recordChanges, SYNC_KEY } from '../lib/sync';
 import {
   hasContent,
   hasImages,
@@ -52,7 +54,7 @@ import {
  */
 type Notice = { message: string; snapshot?: CalendarData };
 
-export default function CalendarDashboard() {
+export default function CalendarDashboard({ user }: { user: NavUser }) {
   const [data, setData] = useState<CalendarData>({});
   const [labels, setLabels] = useState<ColorLabels>({});
   const [hydrated, setHydrated] = useState(false);
@@ -69,11 +71,24 @@ export default function CalendarDashboard() {
   /** Qué meses están desplegados. El servidor los dibuja todos abiertos. */
   const [expansion, setExpansion] = useState<MonthExpansion>(DEFAULT_EXPANSION);
   const [expansionLoaded, setExpansionLoaded] = useState(false);
+  const [sync, setSync] = useState<SyncState>('starting');
+  const [pending, setPending] = useState(0);
+  /**
+   * Última versión que ya está en localStorage. Comparar contra ella es lo que
+   * dice qué días han cambiado, sin tener que releer y reparsear el año entero
+   * —imágenes incluidas— en cada guardado.
+   */
+  const persistedRef = useRef<CalendarData>({});
+  /** Subida en curso: evita que dos disparos se pisen. */
+  const flushingRef = useRef(false);
+  const flushTimerRef = useRef(0);
 
   // El primer render debe coincidir con el HTML del servidor, así que
   // localStorage se lee después de montar.
   useEffect(() => {
-    setData(loadData());
+    const initial = loadData();
+    persistedRef.current = initial;
+    setData(initial);
     setLabels(loadLabels());
     setHydrated(true);
   }, []);
@@ -98,14 +113,123 @@ export default function CalendarDashboard() {
   // Si el navegador rechaza el guardado (cuota llena, casi siempre por las
   // imágenes adjuntas) el estado sigue en memoria, pero hay que decirlo: al
   // recargar se perdería lo último.
+  /**
+   * Vacía la cola de subida. Un solo envío a la vez: dos a la vez mandarían el
+   * mismo día dos veces, y el segundo llegaría con una marca de tiempo que el
+   * servidor ya tiene y descartaría.
+   */
+  const runFlush = useCallback(async () => {
+    if (flushingRef.current) return;
+    flushingRef.current = true;
+    setSync('saving');
+
+    try {
+      // Se repite mientras quede cola: el lote tiene tope, y una edición
+      // hecha en pleno vuelo la vuelve a llenar.
+      for (let round = 0; round < 10; round++) {
+        const result = await flush();
+
+        if (!result.ok) {
+          setSync('offline');
+          setPending(pendingCount());
+          return;
+        }
+
+        setPending(result.remaining);
+        if (result.remaining === 0) {
+          setSync('synced');
+          return;
+        }
+      }
+      // Diez vueltas sin vaciarla: algo no va bien y es mejor decirlo que
+      // seguir girando en silencio.
+      setSync('offline');
+    } finally {
+      flushingRef.current = false;
+    }
+  }, []);
+
+  const scheduleFlush = useCallback(() => {
+    window.clearTimeout(flushTimerRef.current);
+    // Escribir una nota dispara varios guardados seguidos. Esperar un momento
+    // los agrupa en una sola subida en vez de una por tecla.
+    flushTimerRef.current = window.setTimeout(() => void runFlush(), 1200);
+  }, [runFlush]);
+
+  useEffect(() => () => window.clearTimeout(flushTimerRef.current), []);
+
+  /**
+   * Primera parada tras hidratar: traer lo del servidor y fundirlo con lo de
+   * aquí. De esa fusión sale, sin caso especial, la migración de lo que ya
+   * hubiera en este navegador antes de existir la cuenta.
+   */
+  useEffect(() => {
+    if (!hydrated) return;
+    let alive = true;
+
+    void (async () => {
+      const result = await pull();
+      if (!alive) return;
+
+      if (!result.ok) {
+        setSync('offline');
+        setPending(pendingCount());
+        setNotice({ message: `${result.reason} Tus cambios siguen guardados en este navegador.` });
+        return;
+      }
+
+      // La referencia se actualiza antes que el estado: así el efecto de
+      // guardado no confunde lo que acaba de bajar con una edición local y no
+      // lo devuelve al servidor.
+      persistedRef.current = result.data;
+      setData(result.data);
+      setPending(pendingCount());
+
+      await runFlush();
+      if (!alive || result.queued === 0) return;
+
+      const left = pendingCount();
+      const count = result.queued;
+      const days = `${count} ${count === 1 ? 'día' : 'días'}`;
+      setNotice({
+        message:
+          left === 0
+            ? `Se subieron ${days} de este navegador a tu cuenta.`
+            : `Subiendo ${days} de este navegador a tu cuenta; quedan ${left}.`,
+      });
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [hydrated, runFlush]);
+
+  // Al recuperar la conexión se reintenta sin esperar a la siguiente edición.
+  useEffect(() => {
+    if (!hydrated) return;
+    function retry() {
+      void runFlush();
+    }
+    window.addEventListener('online', retry);
+    return () => window.removeEventListener('online', retry);
+  }, [hydrated, runFlush]);
+
   useEffect(() => {
     if (!hydrated) return;
     if (!saveData(data)) {
       setNotice({
         message: 'No hay espacio para guardar en este navegador. Quita alguna imagen adjunta.',
       });
+      return;
     }
-  }, [data, hydrated]);
+
+    // Todas las vías de edición —el modal, el borrado, un rango con Shift, la
+    // importación— desembocan aquí, así que ninguna puede olvidarse de avisar.
+    recordChanges(persistedRef.current, data);
+    persistedRef.current = data;
+    setPending(pendingCount());
+    scheduleFlush();
+  }, [data, hydrated, scheduleFlush]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -144,6 +268,8 @@ export default function CalendarDashboard() {
       if (event.key === null || event.key === STORAGE_KEY) setData(loadData());
       if (event.key === null || event.key === LABELS_KEY) setLabels(loadLabels());
       if (event.key === null || event.key === EXPANSION_KEY) setExpansion(loadExpansion());
+      // Otra pestaña pudo subir lo que había en cola, o encolar algo nuevo.
+      if (event.key === null || event.key === SYNC_KEY) setPending(pendingCount());
     }
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
@@ -372,6 +498,7 @@ export default function CalendarDashboard() {
     <>
       <NavBar
         current="calendar"
+        user={user}
         settings={{
           buttonRef: settingsButtonRef,
           open: settingsOpen,
@@ -404,6 +531,7 @@ export default function CalendarDashboard() {
                   label={summary.marked === 1 ? 'día marcado' : 'días marcados'}
                   tone="accent"
                 />
+                <SyncBadge state={sync} pending={pending} onRetry={() => void runFlush()} />
                 <SummaryTile
                   value={summary.notes}
                   label={summary.notes === 1 ? 'nota guardada' : 'notas guardadas'}

@@ -1,6 +1,11 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import GalleryView from '../components/GalleryView';
+
+// Igual que el calendario: la sesión se resuelve por petición.
+export const prerender = false;
+
+const user = Astro.locals.user!;
 ---
 
 <Layout
@@ -9,5 +14,5 @@ import GalleryView from '../components/GalleryView';
 >
   {/* La barra de navegación y el <main> los dibuja el componente: la
       barra debe quedar fuera del contenedor para cruzar la pantalla. */}
-  <GalleryView client:load />
+  <GalleryView user={{ name: user.name, email: user.email }} client:load />
 </Layout>

@@ -2,6 +2,15 @@
 import Layout from '../layouts/Layout.astro';
 import CalendarDashboard from '../components/CalendarDashboard';
 import { BOOT_STYLE_ID, EXPANSION_KEY } from '../lib/collapse';
+
+// Con sesión de por medio ya no se puede prerenderizar: el middleware necesita
+// una petición real para saber quién entra, y en las páginas prerenderizadas
+// no llega a correr.
+export const prerender = false;
+
+// Si el middleware ha dejado pasar la petición, hay usuario: sin él habría
+// desviado a `/login` antes de llegar aquí.
+const user = Astro.locals.user!;
 ---
 
 <Layout title="Planificador 2026">
@@ -36,5 +45,5 @@ import { BOOT_STYLE_ID, EXPANSION_KEY } from '../lib/collapse';
 
   {/* La barra de navegación y el <main> los dibuja el componente: la
       barra debe quedar fuera del contenedor para cruzar la pantalla. */}
-  <CalendarDashboard client:load />
+  <CalendarDashboard user={{ name: user.name, email: user.email }} client:load />
 </Layout>

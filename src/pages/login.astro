@@ -1,0 +1,30 @@
+---
+import Layout from '../layouts/Layout.astro';
+import LoginForm from '../components/LoginForm';
+
+// Necesita servidor: el middleware manda aquí a quien no tenga sesión, y de
+// vuelta al calendario a quien sí la tenga.
+export const prerender = false;
+
+// A dónde iba antes de que le pidieran identificarse. Solo se aceptan rutas
+// internas: un `next` con destino ajeno convertiría la pantalla de acceso en
+// un trampolín para llevar a la gente a otro sitio.
+const wanted = Astro.url.searchParams.get('next') ?? '/';
+const next = wanted.startsWith('/') && !wanted.startsWith('//') ? wanted : '/';
+---
+
+<Layout title="Entrar · Planificador 2026" description="Acceso al Planificador 2026.">
+  <main class="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center px-4 py-12 sm:px-6">
+    <div class="mb-8 flex flex-col items-center gap-3 text-center">
+      <img src="/calendar.svg" alt="" width="40" height="40" class="h-10 w-10" />
+      <h1 class="font-serif text-3xl tracking-tight text-ink">Planificador 2026</h1>
+      <p class="text-sm text-ink-muted">
+        Tu calendario, tus notas y tus recordatorios, guardados en tu cuenta.
+      </p>
+    </div>
+
+    <div class="rounded-2xl border border-edge bg-canvas p-6 shadow-sm sm:p-7">
+      <LoginForm next={next} client:load />
+    </div>
+  </main>
+</Layout>

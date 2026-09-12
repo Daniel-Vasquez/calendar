@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Lightbox from './Lightbox';
-import NavBar from './NavBar';
+import NavBar, { type NavUser } from './NavBar';
 import { formatLongDate } from '../lib/calendar';
 import { collectImages } from '../lib/gallery';
 import { loadData, STORAGE_KEY, type CalendarData } from '../lib/storage';
@@ -10,7 +10,7 @@ import { loadData, STORAGE_KEY, type CalendarData } from '../lib/storage';
  * miniaturas. Es una vista de solo lectura sobre el mismo almacenamiento que
  * el calendario: para editar se vuelve al día con "Ver nota".
  */
-export default function GalleryView() {
+export default function GalleryView({ user }: { user: NavUser }) {
   const [data, setData] = useState<CalendarData>({});
   const [hydrated, setHydrated] = useState(false);
   /** Id de la imagen ampliada; `null` con el visor cerrado. */
@@ -44,7 +44,7 @@ export default function GalleryView() {
 
   return (
     <>
-      <NavBar current="gallery" />
+      <NavBar current="gallery" user={user} />
 
       <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
         <header className="mb-8">

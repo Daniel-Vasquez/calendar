@@ -1,6 +1,12 @@
+import { signOut } from '../auth-client';
+
+export type NavUser = { name: string; email: string };
+
 type Props = {
   /** Página que se está viendo: marca el enlace activo. */
   current: 'calendar' | 'gallery';
+  /** Quién ha entrado. Lo resuelve el servidor y baja como prop. */
+  user: NavUser;
   /**
    * Engrane de ajustes. Solo el calendario lo ofrece: el modal necesita los
    * datos y sus manejadores, que viven en CalendarDashboard. En la galería
@@ -23,7 +29,7 @@ const LINKS = [
  * pantalla entera; el contenido se alinea con el mismo ancho que la página.
  * Va bajo los modales (z-50) y sobre el resto, y no se imprime.
  */
-export default function NavBar({ current, settings }: Props) {
+export default function NavBar({ current, user, settings }: Props) {
   return (
     <nav
       aria-label="Principal"
@@ -61,6 +67,17 @@ export default function NavBar({ current, settings }: Props) {
           })}
         </ul>
 
+        {/* El nombre no cabe en móvil, donde la barra ya va justa de sitio;
+            el botón de salir sí, porque es la única vía para cambiar de
+            cuenta. El correo va en el `title` para distinguir dos cuentas
+            con el mismo nombre. */}
+        <span
+          title={user.email}
+          className="hidden max-w-40 truncate text-sm font-medium text-ink-soft sm:inline"
+        >
+          {user.name}
+        </span>
+
         {settings && (
           <button
             ref={settings.buttonRef}
@@ -75,9 +92,29 @@ export default function NavBar({ current, settings }: Props) {
             <GearIcon />
           </button>
         )}
+
+        <button
+          type="button"
+          onClick={handleSignOut}
+          aria-label={`Cerrar la sesión de ${user.name}`}
+          title="Cerrar sesión"
+          className="rounded-lg p-2 text-ink-soft transition-colors hover:bg-edge hover:text-ink focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+        >
+          <SignOutIcon />
+        </button>
       </div>
     </nav>
   );
+}
+
+/**
+ * Cierra la sesión y recarga contra el servidor. Una navegación completa —y no
+ * un cambio de ruta en el cliente— es lo que hace que el middleware vea que ya
+ * no hay cookie y devuelva la pantalla de acceso.
+ */
+async function handleSignOut() {
+  await signOut();
+  window.location.href = '/login';
 }
 
 /** Engrane de ajustes, trazado a mano como el resto de iconos del proyecto. */
@@ -96,6 +133,27 @@ function GearIcon() {
     >
       <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
       <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+/** Puerta con una flecha saliendo: cerrar sesión. */
+function SignOutIcon() {
+  return (
+    <svg
+      width="18"
+      height="18"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <path d="M16 17l5-5-5-5" />
+      <path d="M21 12H9" />
     </svg>
   );
 }
