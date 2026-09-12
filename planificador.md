@@ -83,7 +83,7 @@ día en el móvil y abrir el portátil —que aún lo tiene— lo resucitaría.
 | `MONGODB_URI` | Si la ruta trae nombre de base, manda esa |
 | `MONGODB_DB` | Opcional. Manda sobre la anterior |
 | `BETTER_AUTH_SECRET` | `openssl rand -base64 32`. **Distinta en producción** |
-| `BETTER_AUTH_URL` | Origen público, sin barra final |
+| `BETTER_AUTH_URL` | Origen público **con esquema** y sin barra final |
 
 ---
 
@@ -208,8 +208,17 @@ de fe.
 
 ### Despliegue
 
+`GET /api/health` es el primer sitio al que mirar: dice si la función alcanza
+Atlas y con qué origen se configuró la sesión. No depende del middleware ni de
+que la sesión sea válida, precisamente para seguir contestando cuando lo demás
+no lo hace.
+
 - [ ] Las tres variables en el panel de Vercel, con `BETTER_AUTH_SECRET`
       **distinta** de la local.
+- [ ] `BETTER_AUTH_URL` **con `https://` delante**. Sin esquema, Better Auth
+      lanza al construirse; como el middleware lo importa, cae el sitio entero
+      con 500 vacíos. Hoy se completa solo y se avisa en el log, pero la
+      variable debería estar bien puesta.
 - [ ] *Network Access* de Atlas: con la IP propia en lista blanca en vez de
       `0.0.0.0/0`, las funciones de Vercel no entran.
 - [ ] `trustedOrigins` en `auth.ts` si se usan despliegues de vista previa: su
@@ -233,6 +242,9 @@ de fe.
 - [ ] `IMAGE_ACTION` en `DayModal.tsx` no se usa. Anterior a esta sesión.
 - [ ] La galería descarga en serie todas las imágenes que falten, sin límite ni
       desalojo. Con muchas notas conviene paginar.
+- [ ] `allowScripts` en `package.json` autoriza el `postinstall` de esbuild.
+      npm 11.6+ lo pide; sin ello solo avisa, no rompe el build. Sin anclar a
+      versión, para que no vuelva a preguntar en cada actualización.
 
 ---
 

@@ -18,15 +18,17 @@ export const prerender = false;
  */
 export const GET: APIRoute = async () => {
   const started = Date.now();
+  const auth = await authStatus();
 
   try {
     const db = await connect();
     // `ping` es la comprobación más barata: no lee datos ni crea la base.
     await db.command({ ping: 1 });
 
-    return json(200, {
-      ok: true,
+    return json(auth.ok ? 200 : 503, {
+      ok: auth.ok,
       db: currentDatabaseName(),
+      auth: auth.detail,
       latencyMs: Date.now() - started,
     });
   } catch (error) {
@@ -37,11 +39,29 @@ export const GET: APIRoute = async () => {
     return json(503, {
       ok: false,
       db: currentDatabaseName(),
+      auth: auth.detail,
       reason: error instanceof Error ? error.name : 'UnknownError',
       latencyMs: Date.now() - started,
     });
   }
 };
+
+/**
+ * ¿Se deja construir la sesión, y con qué origen?
+ *
+ * Va dentro de un `try` y con import dinámico porque una configuración mala
+ * —una `BETTER_AUTH_URL` sin esquema, por ejemplo— lanza al cargar el módulo.
+ * Que eso reviente el diagnóstico sería exactamente lo contrario de lo que
+ * este endpoint existe para hacer: aquí se convierte en la respuesta.
+ */
+async function authStatus(): Promise<{ ok: boolean; detail: string }> {
+  try {
+    const { baseURL } = await import('../../auth');
+    return { ok: true, detail: baseURL };
+  } catch (error) {
+    return { ok: false, detail: error instanceof Error ? error.message : 'no se pudo configurar' };
+  }
+}
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body, null, 2), {

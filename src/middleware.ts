@@ -1,5 +1,4 @@
 import { defineMiddleware } from 'astro:middleware';
-import { auth } from './auth';
 
 /**
  * Rutas que se sirven sin sesión. Todo lo demás la exige, de forma que una
@@ -20,6 +19,13 @@ export const onRequest = defineMiddleware(async (context, next) => {
   // consultarla abriría una conexión a Atlas desde el build.
   if (context.isPrerendered) return next();
 
+  // El diagnóstico se resuelve antes de tocar la sesión, y de ahí que el
+  // import de abajo sea dinámico: `/api/health` es la ruta a la que se acude
+  // cuando el despliegue no responde, y si dependiera de que la configuración
+  // de la sesión sea válida caería con ella, justo cuando hace falta.
+  if (context.url.pathname === '/api/health') return next();
+
+  const { auth } = await import('./auth');
   const result = await auth.api.getSession({ headers: context.request.headers });
   context.locals.user = result?.user ?? null;
   context.locals.session = result?.session ?? null;
