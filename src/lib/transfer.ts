@@ -37,8 +37,9 @@ export function parseImport(text: string): ImportResult {
 /** Envoltorio con metadatos: el importador también acepta el mapa a secas. */
 export function toJson(data: CalendarData, labels: ColorLabels): string {
   return JSON.stringify(
-    // v2: cada día lleva `images` (lista) en vez de `image`; el importador lee ambos.
-    { app: FILE_STEM, version: 2, exportedAt: new Date().toISOString(), labels, days: data },
+    // v3: el día lleva además `imageCount` y `thumb`. El importador acepta v1
+    // y v2 igual: lo que falte se deduce de las imágenes que sí vengan.
+    { app: FILE_STEM, version: 3, exportedAt: new Date().toISOString(), labels, days: data },
     null,
     2,
   );

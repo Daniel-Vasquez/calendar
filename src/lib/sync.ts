@@ -1,5 +1,6 @@
+import { isImageDataUrl, makeThumb } from './image';
 import { DEFAULT_COLOR } from './palette';
-import { loadData, saveData, type CalendarData, type DayEntry } from './storage';
+import { imageCount, loadData, saveData, type CalendarData, type DayEntry } from './storage';
 import { fromWire, MAX_DAYS_PER_REQUEST, sanitizeWireDay, toWire, type WireDay } from './wire';
 
 export const SYNC_KEY = 'calendar_2026_q4_sync';
@@ -20,9 +21,23 @@ type SyncMeta = {
   deleted: Record<string, number>;
   /** Claves con cambios que todavía no han llegado al servidor. */
   pending: string[];
+  /**
+   * Claves cuyas imágenes hay que subir. Va aparte de `pending` porque son dos
+   * viajes de tamaño incomparable: el día pesa cientos de bytes y sus adjuntos,
+   * megas. Mezclarlos haría que cambiar una coma en una nota reenviara las
+   * seis imágenes.
+   */
+  pendingImages: string[];
+  /**
+   * Cuándo se subieron por última vez los adjuntos de cada día. Es lo que
+   * distingue "el servidor sabe que hay dos imágenes" de "el servidor tiene
+   * las dos imágenes": la cuenta viajó con el día desde el primer momento, los
+   * adjuntos no.
+   */
+  imagesAt: Record<string, number>;
 };
 
-const EMPTY: SyncMeta = { stamps: {}, deleted: {}, pending: [] };
+const EMPTY: SyncMeta = { stamps: {}, deleted: {}, pending: [], pendingImages: [], imagesAt: {} };
 
 function sanitizeStamps(raw: unknown): Record<string, number> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
@@ -35,22 +50,26 @@ function sanitizeStamps(raw: unknown): Record<string, number> {
   return clean;
 }
 
+function sanitizeKeys(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return [...new Set(raw.filter((key): key is string => /^\d{4}-\d{2}-\d{2}$/.test(String(key))))];
+}
+
 function loadMeta(): SyncMeta {
-  if (typeof window === 'undefined') return { ...EMPTY };
+  if (typeof window === 'undefined') return { ...EMPTY, stamps: {}, deleted: {}, pending: [], pendingImages: [], imagesAt: {} };
   try {
     const raw = window.localStorage.getItem(SYNC_KEY);
-    if (!raw) return { stamps: {}, deleted: {}, pending: [] };
+    if (!raw) return { stamps: {}, deleted: {}, pending: [], pendingImages: [], imagesAt: {} };
     const value = JSON.parse(raw) as Record<string, unknown>;
-    const pending = Array.isArray(value.pending)
-      ? value.pending.filter((key): key is string => /^\d{4}-\d{2}-\d{2}$/.test(String(key)))
-      : [];
     return {
       stamps: sanitizeStamps(value.stamps),
       deleted: sanitizeStamps(value.deleted),
-      pending: [...new Set(pending)],
+      pending: sanitizeKeys(value.pending),
+      pendingImages: sanitizeKeys(value.pendingImages),
+      imagesAt: sanitizeStamps(value.imagesAt),
     };
   } catch {
-    return { stamps: {}, deleted: {}, pending: [] };
+    return { stamps: {}, deleted: {}, pending: [], pendingImages: [], imagesAt: {} };
   }
 }
 
@@ -65,15 +84,26 @@ function saveMeta(meta: SyncMeta): void {
 
 /** Cuántos cambios esperan a subir. Lo que enseña el indicador de la cabecera. */
 export function pendingCount(): number {
-  return loadMeta().pending.length;
+  const meta = loadMeta();
+  return new Set([...meta.pending, ...meta.pendingImages]).size;
 }
 
-/** ¿Dicen lo mismo las dos versiones de un día? Decide si hay algo que subir. */
-function sameEntry(a: DayEntry | undefined, b: DayEntry | undefined): boolean {
+/** ¿Dice lo mismo el documento del día? No mira los adjuntos, que van aparte. */
+function sameDay(a: DayEntry | undefined, b: DayEntry | undefined): boolean {
   if (!a || !b) return a === b;
-  if (a.marked !== b.marked || a.note !== b.note || (a.color ?? '') !== (b.color ?? '')) return false;
-  const left = a.images ?? [];
-  const right = b.images ?? [];
+  return (
+    a.marked === b.marked &&
+    a.note === b.note &&
+    (a.color ?? '') === (b.color ?? '') &&
+    imageCount(a) === imageCount(b) &&
+    (a.thumb ?? '') === (b.thumb ?? '')
+  );
+}
+
+/** ¿Los mismos adjuntos en el mismo orden? */
+function sameImages(a: DayEntry | undefined, b: DayEntry | undefined): boolean {
+  const left = a?.images ?? [];
+  const right = b?.images ?? [];
   return left.length === right.length && left.every((image, i) => image === right[i]);
 }
 
@@ -95,10 +125,18 @@ export function recordChanges(previous: CalendarData, next: CalendarData): void 
   let touched = false;
 
   for (const key of Object.keys(next)) {
-    if (sameEntry(previous[key], next[key])) continue;
+    const changedDay = !sameDay(previous[key], next[key]);
+    const changedImages = !sameImages(previous[key], next[key]);
+    if (!changedDay && !changedImages) continue;
+
     meta.stamps[key] = now;
     delete meta.deleted[key];
     enqueue(meta, key);
+    if (changedImages) {
+      if (!meta.pendingImages.includes(key)) meta.pendingImages.push(key);
+      // Lo de arriba ya no vale.
+      delete meta.imagesAt[key];
+    }
     touched = true;
   }
 
@@ -107,6 +145,9 @@ export function recordChanges(previous: CalendarData, next: CalendarData): void 
     meta.deleted[key] = now;
     delete meta.stamps[key];
     enqueue(meta, key);
+    // La lápida se lleva por delante los adjuntos: se borran en el servidor.
+    if (!meta.pendingImages.includes(key)) meta.pendingImages.push(key);
+    delete meta.imagesAt[key];
     touched = true;
   }
 
@@ -114,7 +155,7 @@ export function recordChanges(previous: CalendarData, next: CalendarData): void 
 }
 
 export type PullResult =
-  | { ok: true; data: CalendarData; fromServer: number; queued: number }
+  | { ok: true; data: CalendarData; fromServer: number; queued: number; queuedImages: number }
   | { ok: false; reason: string };
 
 /**
@@ -181,10 +222,20 @@ export async function pull(): Promise<PullResult> {
     queued++;
   }
 
+  // Días cuyos adjuntos están aquí pero nunca han llegado al servidor. Incluye
+  // los que se subieron antes de existir la colección de imágenes: entonces
+  // solo viajó la cuenta, y el contenido se quedó en este navegador.
+  let queuedImages = 0;
+  for (const [key, entry] of Object.entries(merged)) {
+    if (!entry.images?.length || meta.imagesAt[key]) continue;
+    if (!meta.pendingImages.includes(key)) meta.pendingImages.push(key);
+    queuedImages++;
+  }
+
   saveMeta(meta);
   saveData(merged);
 
-  return { ok: true, data: merged, fromServer, queued };
+  return { ok: true, data: merged, fromServer, queued, queuedImages };
 }
 
 export type FlushResult =
@@ -258,4 +309,114 @@ export async function flush(): Promise<FlushResult> {
   saveMeta(after);
 
   return { ok: true, sent: days.length, remaining: after.pending.length };
+}
+
+export type ImageFlushResult =
+  | { ok: true; sent: number; remaining: number; thumbs: Record<string, string> }
+  | { ok: false; reason: string };
+
+/**
+ * Sube los adjuntos de un día. Uno solo por vuelta, a propósito: son megas
+ * frente a los cientos de bytes de un día, y así el indicador avanza en vez de
+ * quedarse clavado durante toda una tanda.
+ *
+ * Se manda el conjunto entero del día aunque solo haya cambiado una imagen.
+ * Con seis como tope y ediciones contadas, comparar cuáles cambiaron costaría
+ * más código del que ahorra.
+ */
+export async function flushImages(): Promise<ImageFlushResult> {
+  const meta = loadMeta();
+  const key = meta.pendingImages[0];
+  if (!key) return { ok: true, sent: 0, remaining: 0, thumbs: {} };
+
+  const before = loadData();
+  // Un día borrado no tiene adjuntos: la lista vacía hace que el recorte de
+  // más abajo los borre en el servidor, que es justo lo que toca.
+  const images = before[key]?.images ?? [];
+
+  try {
+    for (let index = 0; index < images.length; index++) {
+      const response = await fetch('/api/images', {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ key, index, dataUrl: images[index], updatedAt: Date.now() }),
+      });
+      if (!response.ok) {
+        return {
+          ok: false,
+          reason: response.status === 401 ? 'Sesión caducada.' : 'El servidor rechazó una imagen.',
+        };
+      }
+    }
+
+    // Quitar un adjunto aquí tiene que quitarlo allí: se recorta la cola.
+    const trimmed = await fetch(`/api/images?key=${encodeURIComponent(key)}&from=${images.length}`, {
+      method: 'DELETE',
+    });
+    if (!trimmed.ok) return { ok: false, reason: 'No se pudieron retirar las imágenes sobrantes.' };
+  } catch {
+    return { ok: false, reason: 'Sin conexión con el servidor.' };
+  }
+
+  // La miniatura se hace aquí y no al adjuntar: es lo único de las imágenes
+  // que verán los demás dispositivos, y este es el momento en que se sabe que
+  // el conjunto ya está arriba y no va a cambiar.
+  const thumbs: Record<string, string> = {};
+  if (images[0]) {
+    const thumb = await makeThumb(images[0]);
+    if (thumb && thumb !== before[key]?.thumb) thumbs[key] = thumb;
+  }
+
+  const after = loadMeta();
+  // Solo sale de la cola si los adjuntos siguen siendo los que se enviaron.
+  if (sameImages(loadData()[key], before[key])) {
+    after.pendingImages = after.pendingImages.filter((pending) => pending !== key);
+    after.imagesAt[key] = Date.now();
+  }
+  saveMeta(after);
+
+  return { ok: true, sent: images.length, remaining: after.pendingImages.length, thumbs };
+}
+
+/**
+ * Trae los adjuntos de un día. Los pide el modal al abrirse en un dispositivo
+ * que aún no los tiene, y la galería al cargar.
+ */
+export async function fetchImages(key: string): Promise<string[] | null> {
+  try {
+    const response = await fetch(`/api/images?key=${encodeURIComponent(key)}`, {
+      headers: { accept: 'application/json' },
+    });
+    if (!response.ok) return null;
+    const body = (await response.json()) as { images?: unknown };
+    if (!Array.isArray(body.images)) return null;
+    return body.images.filter((image): image is string => isImageDataUrl(image));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Guarda unos adjuntos recién descargados y devuelve el calendario resultante.
+ *
+ * Se anota además en `imagesAt`: acaban de llegar del servidor, así que ya
+ * están arriba y volver a subirlos sería un viaje de megas para nada.
+ */
+export function storeImages(key: string, images: string[]): CalendarData {
+  const data = loadData();
+  const entry = data[key];
+  if (!entry) return data;
+
+  const next: CalendarData = {
+    ...data,
+    [key]: { ...entry, images, imageCount: images.length },
+  };
+  saveData(next);
+
+  const meta = loadMeta();
+  meta.imagesAt[key] = Date.now();
+  meta.pendingImages = meta.pendingImages.filter((pending) => pending !== key);
+  saveMeta(meta);
+
+  return next;
 }

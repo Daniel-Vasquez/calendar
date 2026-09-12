@@ -1,5 +1,5 @@
 import { DEFAULT_COLOR, isColorId, type ColorId } from './palette';
-import { isImageDataUrl, MAX_IMAGES_PER_DAY } from './image';
+import { isImageDataUrl, isThumb, MAX_IMAGES_PER_DAY } from './image';
 
 export const STORAGE_KEY = 'calendar_2026_q4_data';
 
@@ -8,10 +8,19 @@ export type DayEntry = {
   note: string;
   color?: ColorId;
   /**
-   * Imágenes adjuntas a la nota como data URL (JPEG, PNG o WebP), en el orden
-   * en que se añadieron. Ausente o vacío si la nota no lleva ninguna.
+   * Imágenes adjuntas como data URL (JPEG, PNG o WebP), en el orden en que se
+   * añadieron. Es la copia *de este navegador*: puede faltar entera en un
+   * dispositivo que aún no las ha pedido, y por eso no sirve para contar.
    */
   images?: string[];
+  /**
+   * Cuántas imágenes tiene la nota en realidad. Manda sobre `images.length`
+   * porque llega con el día desde el servidor, mientras que las imágenes en sí
+   * se piden aparte y bajo demanda.
+   */
+  imageCount?: number;
+  /** Miniatura de la primera imagen. Baja con el día; la pinta la agenda. */
+  thumb?: string;
 };
 
 /** ¿Hay algo que guardar? Una imagen sola ya es contenido, igual que una nota. */
@@ -19,9 +28,19 @@ export function hasContent(entry: DayEntry): boolean {
   return entry.marked || Boolean(entry.note) || hasImages(entry);
 }
 
-/** ¿Lleva la nota alguna imagen? Evita repetir el `?.length` por todas partes. */
+/** Cuántas imágenes tiene la nota, las tenga descargadas o no este navegador. */
+export function imageCount(entry: DayEntry | undefined): number {
+  return entry?.imageCount ?? entry?.images?.length ?? 0;
+}
+
+/** ¿Lleva la nota alguna imagen? Evita repetir la cuenta por todas partes. */
 export function hasImages(entry: DayEntry | undefined): boolean {
-  return Boolean(entry?.images?.length);
+  return imageCount(entry) > 0;
+}
+
+/** ¿Están aquí todas las imágenes que dice tener? Decide si hay que pedirlas. */
+export function imagesReady(entry: DayEntry | undefined): boolean {
+  return (entry?.images?.length ?? 0) >= imageCount(entry);
 }
 
 /**
@@ -61,12 +80,28 @@ export function sanitizeData(raw: unknown): CalendarData {
     const note = typeof entry.note === 'string' ? entry.note : '';
     // Una imagen corrupta se descarta sin tumbar el resto del día.
     const images = sanitizeImages(entry);
-    if (!marked && !note && images.length === 0) continue;
+
+    // La cuenta puede superar a las descargadas: otro dispositivo subió seis y
+    // este todavía no las ha pedido. Nunca puede ser menor, o el día se
+    // quedaría enseñando imágenes que dice no tener.
+    const declared = typeof entry.imageCount === 'number' ? Math.floor(entry.imageCount) : 0;
+    const count = Math.max(images.length, Math.min(Math.max(declared, 0), MAX_IMAGES_PER_DAY));
+
+    const thumb = isThumb(entry.thumb) ? entry.thumb : undefined;
+
+    if (!marked && !note && count === 0) continue;
 
     // Datos anteriores a los colores no traen `color`: se asume el teal base.
     const color = isColorId(entry.color) ? entry.color : DEFAULT_COLOR;
 
-    clean[key] = images.length ? { marked, note, color, images } : { marked, note, color };
+    clean[key] = {
+      marked,
+      note,
+      color,
+      ...(images.length ? { images } : {}),
+      ...(count ? { imageCount: count } : {}),
+      ...(thumb ? { thumb } : {}),
+    };
   }
   return clean;
 }

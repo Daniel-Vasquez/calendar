@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { dayTimeState, formatLongDate, formatWeekday } from '../lib/calendar';
 import { colorHex, DAY_COLORS, DEFAULT_COLOR, type ColorId } from '../lib/palette';
 import { hasCustomLabel, labelFor, type ColorLabels } from '../lib/labels';
-import { hasImages, type CalendarData } from '../lib/storage';
+import { hasImages, imageCount, type CalendarData } from '../lib/storage';
 
 type Props = {
   data: CalendarData;
@@ -145,6 +145,10 @@ export default function AgendaPanel({ data, labels, today, onSelectDay }: Props)
             const entry = data[key];
             const timeState = dayTimeState(key, today);
             const category = labelFor(labels, entry.color);
+            const images = imageCount(entry);
+            // La completa si este navegador la tiene; si no, la miniatura que
+            // baja con el día. Por eso la agenda no espera a ninguna descarga.
+            const preview = entry.images?.[0] ?? entry.thumb;
 
             return (
               <li key={key}>
@@ -194,9 +198,9 @@ export default function AgendaPanel({ data, labels, today, onSelectDay }: Props)
                       </span>
                     ) : hasImages(entry) ? (
                       <span className="mt-0.5 block text-sm text-ink-muted italic">
-                        {entry.images!.length === 1
+                        {images === 1
                           ? 'Imagen adjunta, sin texto'
-                          : `${entry.images!.length} imágenes adjuntas, sin texto`}
+                          : `${images} imágenes adjuntas, sin texto`}
                       </span>
                     ) : (
                       <span className="mt-0.5 block text-sm text-ink-muted italic">
@@ -205,16 +209,16 @@ export default function AgendaPanel({ data, labels, today, onSelectDay }: Props)
                     )}
                   </span>
 
-                  {hasImages(entry) && (
+                  {hasImages(entry) && preview && (
                     <span className="relative shrink-0">
                       <img
-                        src={entry.images![0]}
+                        src={preview}
                         alt=""
                         className="h-12 w-12 rounded-lg object-cover ring-1 ring-edge"
                       />
-                      {entry.images!.length > 1 && (
+                      {images > 1 && (
                         <span className="absolute -right-1 -bottom-1 rounded-md bg-ink px-1 text-[10px] font-semibold text-white">
-                          +{entry.images!.length - 1}
+                          +{images - 1}
                         </span>
                       )}
                     </span>

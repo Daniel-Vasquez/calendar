@@ -3,7 +3,7 @@ import { formatLongDate, formatWeekday } from '../lib/calendar';
 import { DAY_COLORS, DEFAULT_COLOR, colorHex, type ColorId } from '../lib/palette';
 import { labelFor, type ColorLabels } from '../lib/labels';
 import { dataUrlBytes, IMAGE_ACCEPT, MAX_IMAGES_PER_DAY, prepareImage } from '../lib/image';
-import { hasContent, type DayEntry } from '../lib/storage';
+import { hasContent, imageCount, imagesReady, type DayEntry } from '../lib/storage';
 import { useDialog } from './useDialog';
 
 type Props = {
@@ -14,6 +14,12 @@ type Props = {
   onSave: (key: string, entry: DayEntry) => void;
   onClear: (key: string) => void;
   onClose: () => void;
+  /**
+   * Pide al servidor los adjuntos de este día. Hace falta porque las imágenes
+   * ya no viajan con el calendario: en un dispositivo recién estrenado, el día
+   * llega sabiendo cuántas tiene pero sin ninguna.
+   */
+  onNeedImages: (key: string) => Promise<void>;
 };
 
 const IMAGE_ACTION =
@@ -33,7 +39,15 @@ function sameImages(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((image, i) => image === b[i]);
 }
 
-export default function DayModal({ dateKey, entry, labels, onSave, onClear, onClose }: Props) {
+export default function DayModal({
+  dateKey,
+  entry,
+  labels,
+  onSave,
+  onClear,
+  onClose,
+  onNeedImages,
+}: Props) {
   const [marked, setMarked] = useState(entry?.marked ?? false);
   const [note, setNote] = useState(entry?.note ?? '');
   const [color, setColor] = useState<ColorId>(entry?.color ?? DEFAULT_COLOR);
@@ -41,6 +55,8 @@ export default function DayModal({ dateKey, entry, labels, onSave, onClear, onCl
   const [images, setImages] = useState<string[]>(entry?.images ?? []);
   const [imageError, setImageError] = useState('');
   const [processing, setProcessing] = useState(false);
+  /** La descarga de adjuntos falló: se avisa y se protege lo que hay arriba. */
+  const [imagesLost, setImagesLost] = useState(false);
   const noteId = useId();
   const titleId = useId();
   const imageHelpId = useId();
@@ -50,6 +66,9 @@ export default function DayModal({ dateKey, entry, labels, onSave, onClear, onCl
   const attachRef = useRef<HTMLButtonElement>(null);
 
   const hasStoredData = Boolean(entry && hasContent(entry));
+  const total = imageCount(entry);
+  /** ¿Están aquí todas las que el día dice tener? */
+  const ready = imagesReady(entry);
 
   // El modal se reutiliza entre días: resincroniza el borrador al cambiar de fecha.
   useEffect(() => {
@@ -64,6 +83,23 @@ export default function DayModal({ dateKey, entry, labels, onSave, onClear, onCl
     closeRef.current?.focus();
   }, [dateKey]);
 
+  // Los adjuntos se piden al abrir, no al cargar el calendario: son megas, y
+  // la inmensa mayoría de los días no se llegan a abrir.
+  useEffect(() => {
+    if (ready) {
+      setImagesLost(false);
+      return;
+    }
+    let alive = true;
+    void onNeedImages(dateKey).then(() => {
+      // Si tras el intento siguen sin estar, no las hay o la red falló.
+      if (alive) setImagesLost(true);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [dateKey, ready, onNeedImages]);
+
   // Escape cierra, Tab queda atrapado y el fondo no hace scroll.
   useDialog(panelRef, onClose);
 
@@ -74,6 +110,7 @@ export default function DayModal({ dateKey, entry, labels, onSave, onClear, onCl
   }
 
   const remaining = MAX_IMAGES_PER_DAY - images.length;
+  const missing = Math.max(0, total - images.length);
   const totalBytes = images.reduce((sum, image) => sum + dataUrlBytes(image), 0);
   const unsaved = !sameImages(images, entry?.images ?? []);
 
@@ -110,6 +147,32 @@ export default function DayModal({ dateKey, entry, labels, onSave, onClear, onCl
       ...accepted.filter((image, i) => !current.includes(image) && accepted.indexOf(image) === i),
     ]);
     setImageError(problems.join(' '));
+  }
+
+  /**
+   * El día tal y como quedaría al guardar.
+   *
+   * Si los adjuntos no han llegado a este navegador se conservan intactos los
+   * campos que los describen. Sin esta salvedad, abrir un día en el móvil
+   * —donde aún no se han descargado— y pulsar Guardar borraría las imágenes
+   * de la cuenta, que es la peor forma posible de perder datos.
+   */
+  function draft(): DayEntry {
+    if (!ready) {
+      return { ...entry, marked, note: note.trim(), color };
+    }
+
+    // Si cambian las imágenes, la miniatura que había ya no las representa.
+    // Se descarta y la sincronía genera otra al subirlas.
+    const keepThumb = sameImages(images, entry?.images ?? []) ? entry?.thumb : undefined;
+
+    return {
+      marked,
+      note: note.trim(),
+      color,
+      ...(images.length ? { images, imageCount: images.length } : {}),
+      ...(keepThumb ? { thumb: keepThumb } : {}),
+    };
   }
 
   function removeImage(index: number) {
@@ -277,11 +340,26 @@ export default function DayModal({ dateKey, entry, labels, onSave, onClear, onCl
             </ul>
           )}
 
+          {missing > 0 && (
+            <p
+              className={
+                'mb-3 flex items-center gap-2 rounded-xl border px-3 py-2.5 text-xs ' +
+                (imagesLost
+                  ? 'border-highlight/40 bg-highlight-soft text-highlight'
+                  : 'border-edge bg-surface text-ink-muted')
+              }
+            >
+              {imagesLost
+                ? `No se pudieron traer ${missing === 1 ? 'la imagen' : `las ${missing} imágenes`} de tu cuenta. Siguen guardadas; puedes editar el resto del día sin riesgo.`
+                : `Trayendo ${missing === 1 ? 'una imagen' : `${missing} imágenes`} de tu cuenta…`}
+            </p>
+          )}
+
           <button
             ref={attachRef}
             type="button"
             onClick={() => fileRef.current?.click()}
-            disabled={processing || remaining === 0}
+            disabled={processing || remaining === 0 || !ready}
             aria-describedby={imageHelpId}
             className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-edge bg-surface px-4 py-3 text-sm font-medium text-ink-soft transition-colors hover:border-accent hover:text-accent-strong disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-edge disabled:hover:text-ink-soft focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none"
           >
@@ -304,7 +382,9 @@ export default function DayModal({ dateKey, entry, labels, onSave, onClear, onCl
               />
               <circle cx="10.5" cy="6.5" r="1" fill="currentColor" />
             </svg>
-            {processing
+            {!ready
+              ? 'Esperando a las imágenes de tu cuenta'
+              : processing
               ? 'Procesando imágenes…'
               : remaining === 0
                 ? `Máximo ${MAX_IMAGES_PER_DAY} imágenes`
@@ -343,14 +423,7 @@ export default function DayModal({ dateKey, entry, labels, onSave, onClear, onCl
         <div className="mt-6 flex flex-col gap-2 sm:flex-row-reverse">
           <button
             type="button"
-            onClick={() =>
-              onSave(dateKey, {
-                marked,
-                note: note.trim(),
-                color,
-                ...(images.length ? { images } : {}),
-              })
-            }
+            onClick={() => onSave(dateKey, draft())}
             disabled={processing}
             style={marked ? { backgroundColor: colorHex(color) } : undefined}
             className={

@@ -24,6 +24,18 @@ export const MAX_FILE_BYTES = 12 * 1024 * 1024;
 const MAX_SIDE = 1280;
 
 /**
+ * Lado mayor de la miniatura que acompaña al día.
+ *
+ * La imagen completa vive en su propia colección y solo se pide al abrir la
+ * nota o la galería. Pero la agenda enseña una miniatura en cada fila, así que
+ * necesita algo ligero que baje junto al día, sin un viaje por fila.
+ */
+const THUMB_SIDE = 192;
+
+/** Tope de la miniatura. Viaja dentro del documento del día, que baja entero. */
+export const MAX_THUMB_LENGTH = 20_000;
+
+/**
  * Tope de la data URL guardada. localStorage ronda los 5 MB por sitio y el
  * calendario entero comparte esa cuota, así que cada imagen debe quedar lejos.
  */
@@ -46,6 +58,16 @@ export function isImageDataUrl(value: unknown): value is string {
     value.length <= MAX_DATA_URL_LENGTH &&
     /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/.test(value)
   );
+}
+
+/** Decodifica una data URL ya guardada. Sin objeto temporal que revocar. */
+function loadDataUrl(dataUrl: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('decode'));
+    img.src = dataUrl;
+  });
 }
 
 function loadBitmap(file: File): Promise<HTMLImageElement> {
@@ -138,4 +160,31 @@ export async function prepareImage(file: File): Promise<ImageResult> {
 export function dataUrlBytes(dataUrl: string): number {
   const payload = dataUrl.slice(dataUrl.indexOf(',') + 1);
   return Math.floor((payload.length * 3) / 4);
+}
+
+/**
+ * Miniatura de una imagen ya procesada, para la fila de la agenda.
+ *
+ * Devuelve `null` en vez de lanzar: no tener miniatura degrada la agenda a un
+ * hueco, que es molesto pero inofensivo, y no vale la pena tumbar un guardado
+ * por ello. Si aun reducida no baja del tope, tampoco se guarda: engordaría el
+ * documento del día, que es justo lo que la miniatura viene a evitar.
+ */
+export async function makeThumb(dataUrl: string): Promise<string | null> {
+  try {
+    const img = await loadDataUrl(dataUrl);
+    const thumb = encode(draw(img, THUMB_SIDE), 'image/jpeg', 0.6);
+    return thumb.length <= MAX_THUMB_LENGTH ? thumb : null;
+  } catch {
+    return null;
+  }
+}
+
+/** ¿Tiene la forma de una miniatura generada aquí? */
+export function isThumb(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length <= MAX_THUMB_LENGTH &&
+    /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/.test(value)
+  );
 }

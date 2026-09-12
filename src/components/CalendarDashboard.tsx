@@ -37,7 +37,16 @@ import {
   type ColorLabels,
 } from '../lib/labels';
 import { downloadFile, exportFilename, parseImport, toIcs, toJson } from '../lib/transfer';
-import { flush, pendingCount, pull, recordChanges, SYNC_KEY } from '../lib/sync';
+import {
+  fetchImages,
+  flush,
+  flushImages,
+  pendingCount,
+  pull,
+  recordChanges,
+  storeImages,
+  SYNC_KEY,
+} from '../lib/sync';
 import {
   hasContent,
   hasImages,
@@ -126,17 +135,35 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
     try {
       // Se repite mientras quede cola: el lote tiene tope, y una edición
       // hecha en pleno vuelo la vuelve a llenar.
-      for (let round = 0; round < 10; round++) {
+      for (let round = 0; round < 20; round++) {
+        // Primero los días, que son baratos: así la cuenta de imágenes y la
+        // miniatura llegan aunque los adjuntos tarden.
         const result = await flush();
-
         if (!result.ok) {
           setSync('offline');
           setPending(pendingCount());
           return;
         }
 
-        setPending(result.remaining);
-        if (result.remaining === 0) {
+        const images = await flushImages();
+        if (!images.ok) {
+          setSync('offline');
+          setPending(pendingCount());
+          return;
+        }
+
+        // Las miniaturas nacen al subir los adjuntos. Entran por la vía
+        // normal —como una edición cualquiera— para que suban con su día en
+        // la tanda que el propio guardado programe.
+        const thumbs = Object.keys(images.thumbs);
+        if (thumbs.length > 0) {
+          setData((current) => withThumbs(current, images.thumbs));
+          setSync('saving');
+          return;
+        }
+
+        setPending(pendingCount());
+        if (result.remaining === 0 && images.remaining === 0) {
           setSync('synced');
           return;
         }
@@ -186,16 +213,24 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
       setPending(pendingCount());
 
       await runFlush();
-      if (!alive || result.queued === 0) return;
+      if (!alive) return;
+
+      const count = result.queued;
+      const withImages = result.queuedImages;
+      if (count === 0 && withImages === 0) return;
+
+      const parts: string[] = [];
+      if (count > 0) parts.push(`${count} ${count === 1 ? 'día' : 'días'}`);
+      if (withImages > 0) {
+        parts.push(`${withImages} ${withImages === 1 ? 'nota con imágenes' : 'notas con imágenes'}`);
+      }
 
       const left = pendingCount();
-      const count = result.queued;
-      const days = `${count} ${count === 1 ? 'día' : 'días'}`;
       setNotice({
         message:
           left === 0
-            ? `Se subieron ${days} de este navegador a tu cuenta.`
-            : `Subiendo ${days} de este navegador a tu cuenta; quedan ${left}.`,
+            ? `Se subió ${parts.join(' y ')} de este navegador a tu cuenta.`
+            : `Subiendo ${parts.join(' y ')} a tu cuenta; queda${left === 1 ? '' : 'n'} ${left}.`,
       });
     })();
 
@@ -332,6 +367,21 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
     return () => window.clearTimeout(timer);
   }, [notice]);
 
+  /**
+   * Pide los adjuntos de un día al servidor. Lo llama el modal cuando se abre
+   * en un dispositivo que solo conoce la cuenta y la miniatura.
+   *
+   * Actualiza la referencia antes que el estado a propósito: lo que acaba de
+   * bajar no es una edición y no debe volver a subir.
+   */
+  const loadImages = useCallback(async (key: string) => {
+    const images = await fetchImages(key);
+    if (!images) return;
+    const next = storeImages(key, images);
+    persistedRef.current = next;
+    setData(next);
+  }, []);
+
   const openDay = useCallback((key: string) => {
     setAnchorKey(key);
     setSelectedKey(key);
@@ -373,13 +423,14 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
       setData((current) => {
         const next = { ...current };
         for (const key of keys) {
-          // Marcar en bloque pinta el día; la nota e imágenes que ya tuviera se respetan.
+          // Marcar en bloque solo pinta el día: lo que ya tuviera —nota,
+          // adjuntos, cuenta y miniatura— se conserva tal cual.
           const previous = current[key];
           next[key] = {
+            ...previous,
             marked: true,
             note: previous?.note ?? '',
             color: lastColor,
-            ...(hasImages(previous) ? { images: previous!.images } : {}),
           };
         }
         return next;
@@ -664,6 +715,7 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
           dateKey={selectedKey}
           entry={data[selectedKey]}
           labels={labels}
+          onNeedImages={loadImages}
           onSave={handleSave}
           onClear={handleClear}
           onClose={() => setSelectedKey(null)}
@@ -671,6 +723,15 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
       )}
     </>
   );
+}
+
+/** Devuelve el calendario con las miniaturas recién generadas puestas. */
+function withThumbs(data: CalendarData, thumbs: Record<string, string>): CalendarData {
+  const next = { ...data };
+  for (const [key, thumb] of Object.entries(thumbs)) {
+    if (next[key]) next[key] = { ...next[key], thumb };
+  }
+  return next;
 }
 
 /** Botón cuadrado de la cabecera; el icono es su único contenido visible. */

@@ -1,6 +1,6 @@
 import { colorHex } from '../lib/palette';
 import type { DayTimeState } from '../lib/calendar';
-import type { DayEntry } from '../lib/storage';
+import { imageCount, type DayEntry } from '../lib/storage';
 
 type Props = {
   day: number;
@@ -105,9 +105,14 @@ export default function DayCell({
 }: Props) {
   const marked = entry?.marked ?? false;
   const note = entry?.note ?? '';
-  const images = entry?.images ?? [];
+  // La cuenta llega con el día; las imágenes en sí puede que aún no estén
+  // descargadas en este navegador, así que no sirven para contar.
+  const total = imageCount(entry);
   // Una imagen sin texto también es una nota: enciende el punto y el popover.
-  const hasNote = Boolean(note || images.length);
+  const hasNote = Boolean(note || total);
+  // Para la vista previa vale lo primero que haya: la imagen completa si está
+  // aquí, y si no la miniatura que sí viaja con el día.
+  const preview = entry?.images?.[0] ?? entry?.thumb;
   const isToday = timeState === 'today';
 
   const { className, style, solid } = getDayStyles(timeState, marked, isWeekend, entry?.color);
@@ -164,12 +169,12 @@ export default function DayCell({
                 {dateLabel}
               </p>
               {/* Solo asoma la primera imagen; el resto se cuenta encima. */}
-              {images.length > 0 && (
+              {total > 0 && preview && (
                 <span className="relative mt-2 block">
-                  <img src={images[0]} alt="" className="h-24 w-full rounded-lg object-cover" />
-                  {images.length > 1 && (
+                  <img src={preview} alt="" className="h-24 w-full rounded-lg object-cover" />
+                  {total > 1 && (
                     <span className="absolute right-1.5 bottom-1.5 rounded-md bg-ink/70 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                      +{images.length - 1}
+                      +{total - 1}
                     </span>
                   )}
                 </span>

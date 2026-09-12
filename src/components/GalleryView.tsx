@@ -3,7 +3,8 @@ import Lightbox from './Lightbox';
 import NavBar, { type NavUser } from './NavBar';
 import { formatLongDate } from '../lib/calendar';
 import { collectImages } from '../lib/gallery';
-import { loadData, STORAGE_KEY, type CalendarData } from '../lib/storage';
+import { fetchImages, storeImages } from '../lib/sync';
+import { imagesReady, loadData, STORAGE_KEY, type CalendarData } from '../lib/storage';
 
 /**
  * Todas las imágenes adjuntas a las notas del año, en una rejilla de
@@ -17,6 +18,8 @@ export default function GalleryView({ user }: { user: NavUser }) {
   const [openId, setOpenId] = useState<string | null>(null);
   /** Miniatura que abrió el visor, para devolverle el foco al cerrar. */
   const triggerRef = useRef<HTMLButtonElement | null>(null);
+  /** Días cuyas imágenes aún se están trayendo de la cuenta. */
+  const [missing, setMissing] = useState(0);
 
   // El primer render debe coincidir con el HTML del servidor, así que
   // localStorage se lee después de montar.
@@ -24,6 +27,45 @@ export default function GalleryView({ user }: { user: NavUser }) {
     setData(loadData());
     setHydrated(true);
   }, []);
+
+  /**
+   * Trae de la cuenta las imágenes que este navegador no tenga.
+   *
+   * El calendario las pide de una en una, al abrir un día; la galería las
+   * necesita todas, así que aquí sí se descargan en bloque. Van en serie y no
+   * en paralelo a propósito: son megas, y una ráfaga de peticiones simultáneas
+   * castigaría una conexión mala justo cuando menos conviene.
+   */
+  useEffect(() => {
+    if (!hydrated) return;
+
+    const pendientes = Object.keys(data).filter((key) => !imagesReady(data[key]));
+    if (pendientes.length === 0) {
+      setMissing(0);
+      return;
+    }
+
+    let alive = true;
+    setMissing(pendientes.length);
+
+    void (async () => {
+      for (const key of pendientes) {
+        const images = await fetchImages(key);
+        if (!alive) return;
+        // Si falla, se sigue con el resto: mejor una galería incompleta que
+        // ninguna, y al recargar se vuelve a intentar.
+        if (images) setData(storeImages(key, images));
+        setMissing((count) => count - 1);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+    // Se dispara al hidratar y cuando otra pestaña cambia el calendario; no en
+    // cada descarga, o la lista se recalcularía a mitad del propio bucle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated]);
 
   // Mantiene la galería en sincronía con el calendario abierto en otra pestaña.
   useEffect(() => {
@@ -58,9 +100,13 @@ export default function GalleryView({ user }: { user: NavUser }) {
               </h1>
               <p className="mt-2 text-sm text-ink-soft">
                 {/* El recuento espera a la hidratación: en el servidor siempre sería cero. */}
-                {hydrated && images.length > 0
-                  ? `${images.length} ${images.length === 1 ? 'imagen' : 'imágenes'} en tus notas del año.`
-                  : 'Las imágenes que adjuntes a tus notas aparecen aquí.'}
+                {!hydrated
+                  ? 'Las imágenes que adjuntes a tus notas aparecen aquí.'
+                  : missing > 0
+                    ? `Trayendo las imágenes de ${missing} ${missing === 1 ? 'nota' : 'notas'} de tu cuenta…`
+                    : images.length > 0
+                      ? `${images.length} ${images.length === 1 ? 'imagen' : 'imágenes'} en tus notas del año.`
+                      : 'Las imágenes que adjuntes a tus notas aparecen aquí.'}
               </p>
             </div>
           </div>
@@ -71,7 +117,11 @@ export default function GalleryView({ user }: { user: NavUser }) {
         {!hydrated ? (
           <div className="min-h-64" aria-busy="true" />
         ) : images.length === 0 ? (
-          <EmptyState />
+          missing > 0 ? (
+            <div className="min-h-64" aria-busy="true" />
+          ) : (
+            <EmptyState />
+          )
         ) : (
           <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5">
             {images.map((image) => {

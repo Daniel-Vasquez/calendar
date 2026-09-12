@@ -1,5 +1,6 @@
 import { DEFAULT_COLOR, isColorId, type ColorId } from './palette';
-import type { DayEntry } from './storage';
+import { isThumb } from './image';
+import { imageCount, type DayEntry } from './storage';
 
 /**
  * Forma en la que un día viaja entre el navegador y el servidor.
@@ -17,8 +18,14 @@ export type WireDay = {
   marked: boolean;
   note: string;
   color: ColorId;
-  /** Cuántas imágenes tiene la nota. Las imágenes en sí no viajan todavía. */
+  /** Cuántas imágenes tiene la nota. Las imágenes van en su propia colección. */
   imageCount: number;
+  /**
+   * Miniatura de la primera imagen. Es lo único de las imágenes que viaja con
+   * el día, y es deliberado: la agenda enseña una por fila y pedirlas de una
+   * en una convertiría abrir el calendario en una ráfaga de peticiones.
+   */
+  thumb?: string;
   /**
    * Cuándo se tocó por última vez, en milisegundos del reloj del cliente que
    * lo escribió. Es el árbitro de la fusión: entre dos versiones del mismo
@@ -68,6 +75,7 @@ export function sanitizeWireDay(raw: unknown): WireDay | null {
   }
 
   const count = typeof value.imageCount === 'number' ? Math.floor(value.imageCount) : 0;
+  const thumb = isThumb(value.thumb) ? value.thumb : undefined;
 
   return {
     key: value.key,
@@ -75,18 +83,20 @@ export function sanitizeWireDay(raw: unknown): WireDay | null {
     note: typeof value.note === 'string' ? value.note : '',
     color: isColorId(value.color) ? value.color : DEFAULT_COLOR,
     imageCount: Math.max(0, Math.min(count, 99)),
+    ...(thumb ? { thumb } : {}),
     updatedAt,
   };
 }
 
-/** El día tal y como se manda al servidor. Las imágenes se quedan en casa. */
+/** El día tal y como se manda al servidor: la cuenta y la miniatura, no las imágenes. */
 export function toWire(key: string, entry: DayEntry, updatedAt: number): WireDay {
   return {
     key,
     marked: entry.marked,
     note: entry.note,
     color: entry.color ?? DEFAULT_COLOR,
-    imageCount: entry.images?.length ?? 0,
+    imageCount: imageCount(entry),
+    ...(entry.thumb ? { thumb: entry.thumb } : {}),
     updatedAt,
   };
 }
@@ -100,11 +110,17 @@ export function toWire(key: string, entry: DayEntry, updatedAt: number): WireDay
  * tuviera más reciente.
  */
 export function fromWire(day: WireDay, local?: DayEntry): DayEntry {
-  const images = local?.images;
+  // Las que ya estuvieran descargadas aquí se quedan, pero solo si siguen
+  // cuadrando con la cuenta: si el servidor dice cuatro y aquí hay seis, las
+  // de aquí son de una versión anterior y se piden de nuevo.
+  const images = local?.images?.length === day.imageCount ? local.images : undefined;
+
   return {
     marked: day.marked,
     note: day.note,
     color: day.color,
     ...(images?.length ? { images } : {}),
+    ...(day.imageCount ? { imageCount: day.imageCount } : {}),
+    ...(day.thumb ? { thumb: day.thumb } : {}),
   };
 }

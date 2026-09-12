@@ -31,6 +31,8 @@ type MongoCache = {
   connecting: Promise<MongoClient> | null;
   /** Creación del índice de `days`. Ver `getDays`. */
   daysIndex: Promise<unknown> | null;
+  /** Creación del índice de `images`. Ver `getImages`. */
+  imagesIndex: Promise<unknown> | null;
 };
 
 /**
@@ -48,6 +50,7 @@ const cache: MongoCache = (globalForMongo.__planificadorMongo ??= {
   db: null,
   connecting: null,
   daysIndex: null,
+  imagesIndex: null,
 });
 
 /**
@@ -123,4 +126,31 @@ export async function getDays(): Promise<Collection<DayDoc>> {
     throw error;
   }
   return days;
+}
+
+/**
+ * Una imagen adjunta. Vive fuera del día a propósito: seis adjuntos son más de
+ * cuatro megas de data URL, y con ellos dentro el documento del día dejaría de
+ * poder bajarse con el resto del año.
+ */
+export type ImageDoc = {
+  userId: ObjectId;
+  key: string;
+  /** Posición dentro de la nota, desde cero. */
+  index: number;
+  dataUrl: string;
+  updatedAt: number;
+};
+
+/** La colección de imágenes, con su índice garantizado. */
+export async function getImages(): Promise<Collection<ImageDoc>> {
+  const images = getDb().collection<ImageDoc>('images');
+  cache.imagesIndex ??= images.createIndex({ userId: 1, key: 1, index: 1 }, { unique: true });
+  try {
+    await cache.imagesIndex;
+  } catch (error) {
+    cache.imagesIndex = null;
+    throw error;
+  }
+  return images;
 }
