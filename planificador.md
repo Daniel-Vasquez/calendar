@@ -215,10 +215,13 @@ no lo hace.
 
 - [ ] Las tres variables en el panel de Vercel, con `BETTER_AUTH_SECRET`
       **distinta** de la local.
-- [ ] `BETTER_AUTH_URL` **con `https://` delante**. Sin esquema, Better Auth
-      lanza al construirse; como el middleware lo importa, cae el sitio entero
-      con 500 vacíos. Hoy se completa solo y se avisa en el log, pero la
-      variable debería estar bien puesta.
+- [ ] `BETTER_AUTH_URL` **con `https://` delante**. Sin esquema lanza por dos
+      sitios distintos, y hoy los dos están cubiertos, pero la variable debería
+      estar bien puesta igualmente.
+- [ ] *Network Access* de Atlas en `0.0.0.0/0`. Con la IP propia en lista
+      blanca, las funciones de Vercel no entran: Atlas corta el saludo TLS y el
+      driver lo reporta como `tlsv1 alert internal error`, que no se parece en
+      nada a un problema de permisos.
 - [ ] *Network Access* de Atlas: con la IP propia en lista blanca en vez de
       `0.0.0.0/0`, las funciones de Vercel no entran.
 - [ ] `trustedOrigins` en `auth.ts` si se usan despliegues de vista previa: su
@@ -248,6 +251,29 @@ no lo hace.
 
 ---
 
+## Trampas que ya nos han mordido
+
+**`import.meta.env` no es `process.env`.** En `astro dev` las variables del
+`.env` llegan a `import.meta.env`, pero **no** a `process.env`. En Vercel están
+en `process.env`. Cualquier dependencia que lea `process.env` por su cuenta se
+comporta distinto en local y en producción, y no hay forma de verlo sin
+reproducirlo a mano.
+
+Eso fue exactamente lo que pasó con `BETTER_AUTH_URL` sin esquema: en local no
+fallaba nada, y en producción `/`, `/login` y `/galeria` devolvían 500 mientras
+las APIs funcionaban. La causa era `createAuthClient()`, que lanza al
+construirse si lee una URL sin esquema; `auth-client.ts` lo construye al
+importarse y lo importan NavBar y LoginForm, así que el renderizado de todas
+las páginas se caía. Las rutas de API no importan ese módulo, y por eso seguían
+respondiendo — que es lo que hacía el fallo tan desconcertante.
+
+Ahora el cliente recibe su origen explícito y ya no depende del entorno.
+Para reproducir algo así en local: compilar con `@astrojs/node`, arrancar
+`dist/server/entry.mjs` y poner la variable en `process.env` a mano.
+
+**Tocar `astro.config.mjs` obliga a reiniciar el servidor.** El esquema de
+`astro:env` se lee al arrancar; sin reinicio las variables llegan vacías.
+
 ## Trabajar en el proyecto
 
 ```bash
@@ -257,5 +283,11 @@ npx astro build              # build de producción
 curl localhost:4321/api/health   # ¿responde Atlas?
 ```
 
-Tocar `astro.config.mjs` obliga a **reiniciar** el servidor: el esquema de
-`astro:env` se lee al arrancar, y sin reinicio las variables llegan vacías.
+Reproducir un fallo que solo aparece desplegado:
+
+```bash
+npm i @astrojs/node --no-save
+sed 's|vercel()|node({ mode: "standalone" })|' astro.config.mjs > astro.config.node.mjs
+npx astro build --config astro.config.node.mjs
+BETTER_AUTH_URL="lo-que-haya-en-vercel" node --env-file=.env ./dist/server/entry.mjs
+```
