@@ -33,6 +33,10 @@ type MongoCache = {
   daysIndex: Promise<unknown> | null;
   /** Creación del índice de `images`. Ver `getImages`. */
   imagesIndex: Promise<unknown> | null;
+  /** Creación del índice de `settings`. Ver `getSettings`. */
+  settingsIndex: Promise<unknown> | null;
+  /** Creación del índice por hora de aviso. Ver `getDays`. */
+  remindersIndex: Promise<unknown> | null;
 };
 
 /**
@@ -51,6 +55,8 @@ const cache: MongoCache = (globalForMongo.__planificadorMongo ??= {
   connecting: null,
   daysIndex: null,
   imagesIndex: null,
+  settingsIndex: null,
+  remindersIndex: null,
 });
 
 /**
@@ -119,10 +125,21 @@ export type DayDoc = WireDay & { userId: ObjectId };
 export async function getDays(): Promise<Collection<DayDoc>> {
   const days = getDb().collection<DayDoc>('days');
   cache.daysIndex ??= days.createIndex({ userId: 1, key: 1 }, { unique: true });
+
+  // El cron pregunta por hora de aviso y no por usuario, que es al revés que
+  // todo lo demás: sin este índice recorrería todos los días de todo el mundo
+  // en cada pasada. Parcial porque la inmensa mayoría no llevan recordatorio,
+  // y el índice solo tiene que conocer a los que sí.
+  cache.remindersIndex ??= days.createIndex(
+    { 'reminder.at': 1 },
+    { partialFilterExpression: { 'reminder.at': { $exists: true } } },
+  );
+
   try {
-    await cache.daysIndex;
+    await Promise.all([cache.daysIndex, cache.remindersIndex]);
   } catch (error) {
     cache.daysIndex = null;
+    cache.remindersIndex = null;
     throw error;
   }
   return days;
@@ -141,6 +158,47 @@ export type ImageDoc = {
   dataUrl: string;
   updatedAt: number;
 };
+
+/**
+ * Ajustes de una persona que no son preferencias de un dispositivo.
+ *
+ * El `chatId` de Telegram vive aquí y no en `localStorage` porque es el destino
+ * de una alerta que manda el servidor: el navegador ni la manda ni tiene por
+ * qué saberlo. El token del bot **no** está aquí — es de la aplicación, vive en
+ * el entorno, y una filtración de la base no debe ser también una del bot.
+ */
+export type SettingsDoc = {
+  userId: ObjectId;
+  telegram?: {
+    /** A dónde se manda. Ausente mientras no se haya vinculado. */
+    chatId?: number;
+    /** Cómo llamar al chat al enseñarlo en los ajustes. */
+    name?: string;
+    linkedAt?: number;
+    /** Vinculación a medias: el código que se metió en el enlace `?start=`. */
+    pending?: { code: string; createdAt: number };
+    /**
+     * Cuándo contestó Telegram que el bot está bloqueado. Mientras esté puesto
+     * no se insiste: sin esto, cada pasada del cron volvería a intentarlo con
+     * alguien que ya dijo que no.
+     */
+    blockedAt?: number;
+  };
+  updatedAt: number;
+};
+
+/** Los ajustes del usuario, con su índice garantizado. Uno por persona. */
+export async function getSettings(): Promise<Collection<SettingsDoc>> {
+  const settings = getDb().collection<SettingsDoc>('settings');
+  cache.settingsIndex ??= settings.createIndex({ userId: 1 }, { unique: true });
+  try {
+    await cache.settingsIndex;
+  } catch (error) {
+    cache.settingsIndex = null;
+    throw error;
+  }
+  return settings;
+}
 
 /** La colección de imágenes, con su índice garantizado. */
 export async function getImages(): Promise<Collection<ImageDoc>> {

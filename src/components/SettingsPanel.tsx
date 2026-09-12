@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { DAY_COLORS, type ColorId } from '../lib/palette';
 import { MAX_LABEL_LENGTH, type ColorLabels } from '../lib/labels';
+import TelegramSettings from './TelegramSettings';
 
 type Props = {
   labels: ColorLabels;
@@ -104,6 +105,8 @@ export default function SettingsPanel({
           hay —y el aviso deja deshacerlo.
         </p>
       </section>
+
+      <TelegramSettings />
     </div>
   );
 }

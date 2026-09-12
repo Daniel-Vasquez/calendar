@@ -4,8 +4,12 @@ import { defineMiddleware } from 'astro:middleware';
  * Rutas que se sirven sin sesión. Todo lo demás la exige, de forma que una
  * página nueva nace protegida en lugar de nacer abierta y esperar a que
  * alguien se acuerde de ponerle el candado.
+ *
+ * `/api/cron/reminders` está aquí porque quien la llama es un programador
+ * externo y no una persona con cookie. No queda abierta: lleva su propio
+ * candado, una cabecera secreta que comprueba antes de mirar nada más.
  */
-const PUBLIC_PATHS = ['/login', '/api/health'];
+const PUBLIC_PATHS = ['/login', '/api/health', '/api/cron/reminders'];
 
 function isPublic(pathname: string): boolean {
   // Las rutas de Better Auth no pueden pedir sesión: son las que la crean.

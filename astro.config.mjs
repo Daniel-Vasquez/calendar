@@ -32,6 +32,27 @@ export default defineConfig({
       // Origen público del sitio. Better Auth lo usa para construir las URLs
       // de sus rutas y para decidir qué orígenes son de fiar.
       BETTER_AUTH_URL: envField.string({ context: 'server', access: 'secret' }),
+
+      /*
+       * Los recordatorios por Telegram. Van declarados como opcionales a
+       * propósito, al revés que los de arriba: sin ellos el calendario
+       * funciona entero y solo deja de haber avisos. Si fueran obligatorios,
+       * olvidar uno tumbaría el sitio completo por una función accesoria.
+       * Quien los necesita comprueba que estén y responde nombrando el que
+       * falte.
+       *
+       * El token es la llave entera del bot: con él se lee todo lo que le
+       * llega y se escribe a cualquiera que lo haya arrancado. Nunca sale del
+       * servidor y nunca se guarda en Mongo.
+       */
+      TELEGRAM_BOT_TOKEN: envField.string({ context: 'server', access: 'secret', optional: true }),
+      // El `@algo_bot` de BotFather. No es secreto —va dentro del enlace que
+      // se le da a la gente—, pero se sirve desde el servidor para no tener
+      // que arrastrarlo por media aplicación como propiedad.
+      TELEGRAM_BOT_USERNAME: envField.string({ context: 'server', access: 'secret', optional: true }),
+      // Autoriza al programador externo a disparar el envío. Ver
+      // `pages/api/cron/reminders.ts`.
+      CRON_SECRET: envField.string({ context: 'server', access: 'secret', optional: true }),
     },
   },
 

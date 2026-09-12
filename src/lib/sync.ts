@@ -194,6 +194,30 @@ export async function pull(): Promise<PullResult> {
     if (!day) continue;
     known.add(day.key);
 
+    /*
+     * «Este aviso ya salió» se adopta siempre, incluso de un día que por fecha
+     * se va a descartar entero.
+     *
+     * `reminder.sent` lo escribe **solo** el servidor, nunca este navegador, así
+     * que no puede entrar en conflicto con nada de aquí y no necesita ganar
+     * ninguna comparación de marcas de tiempo. Y tiene que ser así: el cron no
+     * toca `updatedAt` al marcarlo —subirlo le haría ganar a una edición local
+     * sin subir, borrándola—, de modo que el día vuelve con la misma marca de
+     * siempre y el filtro de abajo lo saltaría con el `sent` dentro.
+     *
+     * Se compara `at` porque un aviso movido de hora es otro aviso: el `sent`
+     * del anterior no le corresponde.
+     */
+    const here = merged[day.key];
+    if (
+      here?.reminder &&
+      day.reminder?.sent &&
+      !here.reminder.sent &&
+      here.reminder.at === day.reminder.at
+    ) {
+      merged[day.key] = { ...here, reminder: { ...here.reminder, sent: day.reminder.sent } };
+    }
+
     // Lo de aquí manda mientras sea igual de reciente o más.
     const mine = meta.deleted[day.key] ?? meta.stamps[day.key] ?? 0;
     if (day.updatedAt <= mine) continue;

@@ -1,3 +1,5 @@
+import { formatLongDate, formatWeekday } from './calendar';
+
 /**
  * Recordatorio de un día: una hora, un texto y el rastro de si ya salió.
  *
@@ -179,4 +181,20 @@ export function defaultReminderText(note: string): string {
 /** El texto que se manda de verdad. Nunca vacío: sin nota queda el genérico. */
 export function reminderText(reminder: Reminder, note: string): string {
   return reminder.text?.trim() || defaultReminderText(note) || 'Recordatorio del día';
+}
+
+/** Tope de un mensaje de Telegram. Lo que pase de ahí lo rechaza con un 400. */
+export const MAX_MESSAGE_LENGTH = 4096;
+
+/**
+ * El aviso tal y como llega al teléfono.
+ *
+ * Va en texto plano y sin `parse_mode` a propósito: el cuerpo sale de una nota
+ * que escribe una persona, y un guion bajo suelto —o un asterisco, o un
+ * corchete— tumbaría el envío entero con un 400 por Markdown mal formado.
+ * Escapar quince caracteres para poder poner negritas no vale ese riesgo.
+ */
+export function reminderMessage(key: string, note: string, reminder: Reminder): string {
+  const cuando = `${formatWeekday(key)} ${formatLongDate(key)} · ${reminder.time}`;
+  return `🔔 ${reminderText(reminder, note)}\n${cuando}`.slice(0, MAX_MESSAGE_LENGTH);
 }
