@@ -1,5 +1,6 @@
 import { DEFAULT_COLOR, isColorId, type ColorId } from './palette';
 import { isImageDataUrl, isThumb, MAX_IMAGES_PER_DAY } from './image';
+import { sanitizeReminder, type Reminder } from './reminder';
 
 export const STORAGE_KEY = 'calendar_2026_q4_data';
 
@@ -21,11 +22,19 @@ export type DayEntry = {
   imageCount?: number;
   /** Miniatura de la primera imagen. Baja con el día; la pinta la agenda. */
   thumb?: string;
+  /** Aviso a una hora del día. Ver `reminder.ts`. */
+  reminder?: Reminder;
 };
 
-/** ¿Hay algo que guardar? Una imagen sola ya es contenido, igual que una nota. */
+/**
+ * ¿Hay algo que guardar? Una imagen sola ya es contenido, igual que una nota.
+ *
+ * **El recordatorio cuenta.** Sin esta línea, poner una hora y guardar deja un
+ * día que no tiene marca, ni nota, ni imagen: `handleSave` lo lee como vacío y
+ * lo borra en el acto, con el aviso dentro.
+ */
 export function hasContent(entry: DayEntry): boolean {
-  return entry.marked || Boolean(entry.note) || hasImages(entry);
+  return entry.marked || Boolean(entry.note) || hasImages(entry) || Boolean(entry.reminder);
 }
 
 /** Cuántas imágenes tiene la nota, las tenga descargadas o no este navegador. */
@@ -88,8 +97,11 @@ export function sanitizeData(raw: unknown): CalendarData {
     const count = Math.max(images.length, Math.min(Math.max(declared, 0), MAX_IMAGES_PER_DAY));
 
     const thumb = isThumb(entry.thumb) ? entry.thumb : undefined;
+    const reminder = sanitizeReminder(entry.reminder, key);
 
-    if (!marked && !note && count === 0) continue;
+    // La misma regla que `hasContent`, aplicada al leer: un día que solo lleva
+    // un recordatorio es un día con contenido y no puede caerse aquí.
+    if (!marked && !note && count === 0 && !reminder) continue;
 
     // Datos anteriores a los colores no traen `color`: se asume el teal base.
     const color = isColorId(entry.color) ? entry.color : DEFAULT_COLOR;
@@ -101,6 +113,7 @@ export function sanitizeData(raw: unknown): CalendarData {
       ...(images.length ? { images } : {}),
       ...(count ? { imageCount: count } : {}),
       ...(thumb ? { thumb } : {}),
+      ...(reminder ? { reminder } : {}),
     };
   }
   return clean;

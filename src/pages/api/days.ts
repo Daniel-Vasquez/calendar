@@ -74,15 +74,31 @@ export const POST: APIRoute = async ({ locals, request }) => {
   }
   if (clean.length === 0) return json(400, { error: 'Ningún día reconocible' });
 
-  const operations = clean.map((day) => ({
-    updateOne: {
-      // El filtro es la mitad del mecanismo: si lo guardado es igual de
-      // reciente o más, no encaja y no se escribe nada.
-      filter: { userId, key: day.key, updatedAt: { $lt: day.updatedAt } },
-      update: { $set: { ...day, userId } },
-      upsert: true,
-    },
-  }));
+  const operations = clean.map((day) => {
+    // `$set` solo escribe los campos que vienen, así que un opcional que ha
+    // *desaparecido* seguiría en el documento: apagar el recordatorio en el
+    // portátil dejaría el suyo intacto en la base, y el móvil se lo bajaría de
+    // vuelta en la siguiente lectura. Un campo ausente se borra a propósito.
+    const gone: Record<string, ''> = {};
+    if (!day.reminder) gone.reminder = '';
+    if (!day.thumb) gone.thumb = '';
+
+    return {
+      updateOne: {
+        // El filtro es la mitad del mecanismo: si lo guardado es igual de
+        // reciente o más, no encaja y no se escribe nada.
+        filter: { userId, key: day.key, updatedAt: { $lt: day.updatedAt } },
+        // El `$unset` solo va si tiene algo que borrar: Mongo rechaza un
+        // operador de actualización vacío, y un día con aviso y miniatura no
+        // deja nada que quitar.
+        update: {
+          $set: { ...day, userId },
+          ...(Object.keys(gone).length ? { $unset: gone } : {}),
+        },
+        upsert: true,
+      },
+    };
+  });
 
   try {
     const days = await getDays();

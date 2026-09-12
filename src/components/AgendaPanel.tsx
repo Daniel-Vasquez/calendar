@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { dayTimeState, formatLongDate, formatWeekday } from '../lib/calendar';
 import { colorHex, DAY_COLORS, DEFAULT_COLOR, type ColorId } from '../lib/palette';
 import { hasCustomLabel, labelFor, type ColorLabels } from '../lib/labels';
+import { reminderState, type Reminder } from '../lib/reminder';
 import { hasImages, imageCount, type CalendarData } from '../lib/storage';
 
 type Props = {
@@ -18,12 +19,66 @@ const CHIP =
   'focus-visible:outline-none';
 
 /**
+ * Aspecto de la hora del aviso según en qué punto esté. El ámbar queda para lo
+ * que se pasó sin enviarse, que es lo único que pide atención; lo ya enviado se
+ * apaga, porque enterarse de que un aviso salió no es urgente.
+ */
+const REMINDER_TONE: Record<ReturnType<typeof reminderState>, string> = {
+  pending: 'bg-accent/10 text-accent-strong',
+  due: 'bg-accent/10 text-accent-strong',
+  missed: 'bg-highlight-soft text-highlight',
+  sent: 'bg-edge text-ink-muted',
+};
+
+const REMINDER_TITLE: Record<ReturnType<typeof reminderState>, string> = {
+  pending: 'Aviso pendiente',
+  due: 'Aviso pendiente de envío',
+  missed: 'El aviso se pasó sin enviarse',
+  sent: 'Aviso enviado',
+};
+
+/** La hora del recordatorio, junto a los demás indicadores de la fila. */
+function ReminderChip({ reminder, now }: { reminder: Reminder; now: number }) {
+  const state = reminderState(reminder, now);
+  return (
+    <span
+      title={REMINDER_TITLE[state]}
+      className={
+        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ' +
+        REMINDER_TONE[state]
+      }
+    >
+      <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path
+          d="M8 2a4 4 0 00-4 4v2.6L2.8 11h10.4L12 8.6V6a4 4 0 00-4-4z"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinejoin="round"
+        />
+        <path
+          d="M6.4 13a1.7 1.7 0 003.2 0"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+        />
+      </svg>
+      {reminder.time}
+      <span className="sr-only"> · {REMINDER_TITLE[state]}</span>
+    </span>
+  );
+}
+
+/**
  * Lista cronológica de todo lo registrado en el año.
  *
  * La rejilla responde a "¿qué pasa este día?"; esta lista responde a "¿qué
  * tengo por delante?" sin recorrer doce meses cazando puntos de color.
  */
 export default function AgendaPanel({ data, labels, today, onSelectDay }: Props) {
+  // Un solo instante para toda la lista: pedir la hora por fila daría estados
+  // distintos dentro del mismo repintado.
+  const now = Date.now();
+
   // Los filtros son una lente sobre la lista, no un ajuste del calendario:
   // viven aquí y se olvidan al recargar.
   const [colorFilter, setColorFilter] = useState<ColorId | 'all'>('all');
@@ -190,6 +245,7 @@ export default function AgendaPanel({ data, labels, today, onSelectDay }: Props)
                       {entry.marked && hasCustomLabel(labels, entry.color) && (
                         <span className="text-[11px] font-medium text-ink-muted">{category}</span>
                       )}
+                      {entry.reminder && <ReminderChip reminder={entry.reminder} now={now} />}
                     </span>
 
                     {entry.note ? (
@@ -202,9 +258,15 @@ export default function AgendaPanel({ data, labels, today, onSelectDay }: Props)
                           ? 'Imagen adjunta, sin texto'
                           : `${images} imágenes adjuntas, sin texto`}
                       </span>
-                    ) : (
+                    ) : entry.marked ? (
                       <span className="mt-0.5 block text-sm text-ink-muted italic">
                         Día marcado, sin nota
+                      </span>
+                    ) : (
+                      // Queda el caso del día que solo existe por su aviso: ni
+                      // marcado, ni con nota, ni con imágenes.
+                      <span className="mt-0.5 block text-sm text-ink-muted italic">
+                        Solo recordatorio
                       </span>
                     )}
                   </span>

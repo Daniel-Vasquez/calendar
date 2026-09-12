@@ -108,8 +108,10 @@ export default function DayCell({
   // La cuenta llega con el día; las imágenes en sí puede que aún no estén
   // descargadas en este navegador, así que no sirven para contar.
   const total = imageCount(entry);
-  // Una imagen sin texto también es una nota: enciende el punto y el popover.
-  const hasNote = Boolean(note || total);
+  const reminder = entry?.reminder;
+  // Una imagen sin texto también es una nota, y una hora sola también:
+  // cualquiera de las tres enciende el punto y el popover.
+  const hasNote = Boolean(note || total || reminder);
   // Para la vista previa vale lo primero que haya: la imagen completa si está
   // aquí, y si no la miniatura que sí viaja con el día.
   const preview = entry?.images?.[0] ?? entry?.thumb;
@@ -143,6 +145,36 @@ export default function DayCell({
           />
         )}
 
+        {/* La campana vive arriba a la derecha, lejos del punto del día
+            marcado: las dos cosas pueden coincidir en la misma casilla.
+
+            El icono es decorativo, así que la hora se dice aparte: el
+            `aria-label` lo pone MonthCard y no sabe nada del recordatorio. */}
+        {reminder && <span className="sr-only">, aviso a las {reminder.time}</span>}
+        {reminder && (
+          <svg
+            aria-hidden="true"
+            width="9"
+            height="9"
+            viewBox="0 0 16 16"
+            fill="none"
+            className={'absolute top-1 right-1 ' + (solid ? 'text-white' : 'text-ink-muted')}
+          >
+            <path
+              d="M8 2a4 4 0 00-4 4v2.6L2.8 11h10.4L12 8.6V6a4 4 0 00-4-4z"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinejoin="round"
+            />
+            <path
+              d="M6.4 13a1.7 1.7 0 003.2 0"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
+          </svg>
+        )}
+
         {hasNote && (
           <span
             aria-hidden="true"
@@ -168,6 +200,11 @@ export default function DayCell({
               <p className="text-[11px] font-semibold tracking-wide text-ink-muted uppercase">
                 {dateLabel}
               </p>
+              {reminder && (
+                <p className="mt-1 text-[11px] font-semibold text-accent-strong">
+                  Aviso a las {reminder.time}
+                </p>
+              )}
               {/* Solo asoma la primera imagen; el resto se cuenta encima. */}
               {total > 0 && preview && (
                 <span className="relative mt-2 block">

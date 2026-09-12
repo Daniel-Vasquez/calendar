@@ -1,5 +1,6 @@
 import { DEFAULT_COLOR, isColorId, type ColorId } from './palette';
 import { isThumb } from './image';
+import { sanitizeReminder, type Reminder } from './reminder';
 import { imageCount, type DayEntry } from './storage';
 
 /**
@@ -32,6 +33,11 @@ export type WireDay = {
    * día gana la más reciente.
    */
   updatedAt: number;
+  /**
+   * Aviso del día. Sí viaja, al revés que las imágenes: son cuatro campos y el
+   * cron los necesita en el servidor para saber qué mandar y cuándo.
+   */
+  reminder?: Reminder;
   /**
    * Lápida. Un día borrado no se quita de la base: se marca. Sin esto, borrar
    * un día en el móvil y abrir el portátil —que aún lo tiene— lo resucitaría
@@ -76,6 +82,7 @@ export function sanitizeWireDay(raw: unknown): WireDay | null {
 
   const count = typeof value.imageCount === 'number' ? Math.floor(value.imageCount) : 0;
   const thumb = isThumb(value.thumb) ? value.thumb : undefined;
+  const reminder = sanitizeReminder(value.reminder, value.key);
 
   return {
     key: value.key,
@@ -84,6 +91,7 @@ export function sanitizeWireDay(raw: unknown): WireDay | null {
     color: isColorId(value.color) ? value.color : DEFAULT_COLOR,
     imageCount: Math.max(0, Math.min(count, 99)),
     ...(thumb ? { thumb } : {}),
+    ...(reminder ? { reminder } : {}),
     updatedAt,
   };
 }
@@ -97,6 +105,7 @@ export function toWire(key: string, entry: DayEntry, updatedAt: number): WireDay
     color: entry.color ?? DEFAULT_COLOR,
     imageCount: imageCount(entry),
     ...(entry.thumb ? { thumb: entry.thumb } : {}),
+    ...(entry.reminder ? { reminder: entry.reminder } : {}),
     updatedAt,
   };
 }
@@ -122,5 +131,6 @@ export function fromWire(day: WireDay, local?: DayEntry): DayEntry {
     ...(images?.length ? { images } : {}),
     ...(day.imageCount ? { imageCount: day.imageCount } : {}),
     ...(day.thumb ? { thumb: day.thumb } : {}),
+    ...(day.reminder ? { reminder: day.reminder } : {}),
   };
 }

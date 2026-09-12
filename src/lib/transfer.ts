@@ -1,4 +1,5 @@
 import { labelFor, type ColorLabels } from './labels';
+import { reminderText } from './reminder';
 import { sanitizeData, type CalendarData } from './storage';
 
 /** Nombre base de los archivos que se descargan. */
@@ -37,9 +38,10 @@ export function parseImport(text: string): ImportResult {
 /** Envoltorio con metadatos: el importador también acepta el mapa a secas. */
 export function toJson(data: CalendarData, labels: ColorLabels): string {
   return JSON.stringify(
-    // v3: el día lleva además `imageCount` y `thumb`. El importador acepta v1
-    // y v2 igual: lo que falte se deduce de las imágenes que sí vengan.
-    { app: FILE_STEM, version: 3, exportedAt: new Date().toISOString(), labels, days: data },
+    // v4: el día lleva además `reminder`. Antes, v3 añadió `imageCount` y
+    // `thumb`. El importador acepta todas las anteriores igual: lo que falte se
+    // deduce de lo que sí venga, y un día sin aviso es un día sin aviso.
+    { app: FILE_STEM, version: 4, exportedAt: new Date().toISOString(), labels, days: data },
     null,
     2,
   );
@@ -66,8 +68,9 @@ function fold(line: string): string {
   return parts.join('\r\n');
 }
 
-function icsStamp(now: Date): string {
-  return now.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+/** Instante en UTC con la forma `20260115T080000Z` que pide el RFC. */
+function icsUtc(date: Date): string {
+  return date.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
 }
 
 /**
@@ -75,7 +78,7 @@ function icsStamp(now: Date): string {
  * para llevarse el año a Google Calendar, Outlook o Apple Calendario.
  */
 export function toIcs(data: CalendarData, labels: ColorLabels, now: Date = new Date()): string {
-  const stamp = icsStamp(now);
+  const stamp = icsUtc(now);
 
   const events = Object.keys(data)
     .sort()
@@ -95,6 +98,20 @@ export function toIcs(data: CalendarData, labels: ColorLabels, now: Date = new D
       const firstLine = entry.note.split('\n')[0].trim();
       const summary = firstLine || labelFor(labels, entry.color);
 
+      // La alarma se ancla a un instante absoluto en vez de a un desfase desde
+      // el comienzo del evento: `DTSTART` es una fecha sin hora, y cada
+      // calendario decide por su cuenta a qué hora empieza un día completo.
+      // Con `at` en UTC no queda nada que interpretar.
+      const alarm = entry.reminder
+        ? [
+            'BEGIN:VALARM',
+            'ACTION:DISPLAY',
+            `TRIGGER;VALUE=DATE-TIME:${icsUtc(new Date(entry.reminder.at))}`,
+            fold(`DESCRIPTION:${escapeText(reminderText(entry.reminder, entry.note))}`),
+            'END:VALARM',
+          ]
+        : [];
+
       return [
         'BEGIN:VEVENT',
         fold(`UID:${compact}-${FILE_STEM}@local`),
@@ -104,6 +121,7 @@ export function toIcs(data: CalendarData, labels: ColorLabels, now: Date = new D
         fold(`SUMMARY:${escapeText(summary)}`),
         ...(entry.note ? [fold(`DESCRIPTION:${escapeText(entry.note)}`)] : []),
         ...(entry.marked ? [fold(`CATEGORIES:${escapeText(labelFor(labels, entry.color))}`)] : []),
+        ...alarm,
         'END:VEVENT',
       ];
     });

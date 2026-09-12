@@ -4,6 +4,8 @@ import { DAY_COLORS, DEFAULT_COLOR, colorHex, type ColorId } from '../lib/palett
 import { labelFor, type ColorLabels } from '../lib/labels';
 import { dataUrlBytes, IMAGE_ACCEPT, MAX_IMAGES_PER_DAY, prepareImage } from '../lib/image';
 import { hasContent, imageCount, imagesReady, type DayEntry } from '../lib/storage';
+import type { Reminder } from '../lib/reminder';
+import ReminderField from './ReminderField';
 import { useDialog } from './useDialog';
 
 type Props = {
@@ -53,6 +55,7 @@ export default function DayModal({
   const [color, setColor] = useState<ColorId>(entry?.color ?? DEFAULT_COLOR);
   /** Data URL de cada imagen adjunta, en el orden en que se añadieron. */
   const [images, setImages] = useState<string[]>(entry?.images ?? []);
+  const [reminder, setReminder] = useState<Reminder | undefined>(entry?.reminder);
   const [imageError, setImageError] = useState('');
   const [processing, setProcessing] = useState(false);
   /** La descarga de adjuntos falló: se avisa y se protege lo que hay arriba. */
@@ -76,8 +79,9 @@ export default function DayModal({
     setNote(entry?.note ?? '');
     setColor(entry?.color ?? DEFAULT_COLOR);
     setImages(entry?.images ?? []);
+    setReminder(entry?.reminder);
     setImageError('');
-  }, [dateKey, entry?.marked, entry?.note, entry?.color, entry?.images]);
+  }, [dateKey, entry?.marked, entry?.note, entry?.color, entry?.images, entry?.reminder]);
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -159,7 +163,16 @@ export default function DayModal({
    */
   function draft(): DayEntry {
     if (!ready) {
-      return { ...entry, marked, note: note.trim(), color };
+      // `entry` puede traer un recordatorio que aquí se acaba de apagar, así
+      // que el campo se quita primero y se vuelve a poner solo si sigue vivo.
+      const { reminder: _previous, ...rest } = entry ?? ({} as DayEntry);
+      return {
+        ...rest,
+        marked,
+        note: note.trim(),
+        color,
+        ...(reminder ? { reminder } : {}),
+      };
     }
 
     // Si cambian las imágenes, la miniatura que había ya no las representa.
@@ -172,6 +185,7 @@ export default function DayModal({
       color,
       ...(images.length ? { images, imageCount: images.length } : {}),
       ...(keepThumb ? { thumb: keepThumb } : {}),
+      ...(reminder ? { reminder } : {}),
     };
   }
 
@@ -301,6 +315,8 @@ export default function DayModal({
             className="w-full resize-none rounded-xl border border-edge bg-white px-4 py-3 text-sm text-ink placeholder:text-ink-muted focus:border-accent focus:ring-2 focus:ring-accent/30 focus:outline-none"
           />
         </div>
+
+        <ReminderField dateKey={dateKey} note={note} value={reminder} onChange={setReminder} />
 
         <div className="mt-4">
           <div className="mb-2 flex items-baseline justify-between">
