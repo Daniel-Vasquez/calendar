@@ -3,6 +3,9 @@
 Calendario anual con notas, colores, imágenes adjuntas y —próximamente—
 recordatorios por WhatsApp. Astro + React, MongoDB Atlas, desplegado en Vercel.
 
+**En producción:** <https://planificador.danielvasquez.lat>
+· estado: <https://planificador.danielvasquez.lat/api/health>
+
 Este archivo es el mapa del proyecto y la lista de lo que falta. El *por qué* de
 cada decisión está en los comentarios del código; aquí va lo que no cabe en un
 comentario.
@@ -34,7 +37,8 @@ middleware ───────────────────────
 | Archivo | Qué hace |
 |---|---|
 | `src/lib/mongo.ts` | Cliente cacheado en `globalThis`, colecciones e índices |
-| `src/auth.ts` · `src/auth-client.ts` | Better Auth, servidor y navegador |
+| `src/auth.ts` | Better Auth en el servidor; normaliza el origen público |
+| `src/auth-client.ts` | Better Auth en el navegador, con **origen explícito** (ver Trampas) |
 | `src/middleware.ts` | Sesión en `Astro.locals`; candado por defecto |
 | `src/lib/wire.ts` | Formato en que un día viaja; lo importan los dos lados |
 | `src/lib/sync.ts` | Cola, fusión, subida y descarga bajo demanda |
@@ -87,9 +91,11 @@ día en el móvil y abrir el portátil —que aún lo tiene— lo resucitaría.
 
 ---
 
-## Lo hecho en esta sesión
+## Historial
 
-### 1 · Servidor y conexión — `af32cfc`
+### Migración de localStorage a MongoDB — septiembre de 2026
+
+#### 1 · Servidor y conexión — `af32cfc`
 
 Adaptador de Vercel y `astro:env`, para que una variable ausente falle
 nombrándose en vez de aparecer como un error de conexión a mitad de petición.
@@ -105,7 +111,7 @@ duración máxima de la función en Hobby.
 
 Comprobado: 1272 ms en frío → 80 ms en la segunda llamada.
 
-### 2 · Login — `af32cfc`
+#### 2 · Login — `af32cfc`
 
 Better Auth con adaptador de Mongo. No hay esquema que declarar ni migración
 que correr; las colecciones se crean solas.
@@ -124,7 +130,7 @@ la colección `session` antes de pintar nada.
 
 Sesiones de 30 días, renovadas una vez al día como mucho.
 
-### 3 · Sincronía de los días — `af32cfc`
+#### 3 · Sincronía de los días — `af32cfc`
 
 La sincronía se engancha en **un único punto**: el efecto que ya guardaba en
 `localStorage` compara contra la versión anterior —guardada en un `ref`, sin
@@ -139,7 +145,7 @@ Un día solo sale de la cola si su marca de tiempo sigue siendo la que se envió
 Sin eso, editarlo mientras subía lo habría borrado de la cola sin haber llegado
 nunca al servidor.
 
-### 4 · Imágenes en su propia colección — `03b92ff`
+#### 4 · Imágenes en su propia colección — `03b92ff`
 
 Seis adjuntos son más de 4 MB de data URL. Ahora viajan aparte y bajo demanda;
 con el día solo van la cuenta y una miniatura.
@@ -160,6 +166,16 @@ móvil antes de que lleguen sus imágenes y pulsar Guardar habría mandado
 
 `imagesAt` distingue «el servidor sabe que hay dos» de «el servidor tiene las
 dos»: la cuenta viajó desde la tanda 3, los adjuntos no.
+
+#### 5 · Puesta en producción — `943751b`, `0cedf42`
+
+Dos fallos que solo aparecían desplegados, ambos por la misma variable mal
+escrita. Están contados en **Trampas que ya nos han mordido**, que es donde hay
+que mirar antes de volver a pelearse con un 500 que en local no se reproduce.
+
+De paso, `/api/health` dejó de depender del middleware y ahora informa también
+del origen con el que se configuró la sesión, para poder comprobarlo desde
+fuera sin entrar en el panel de Vercel.
 
 ---
 
@@ -213,17 +229,20 @@ Atlas y con qué origen se configuró la sesión. No depende del middleware ni d
 que la sesión sea válida, precisamente para seguir contestando cuando lo demás
 no lo hace.
 
-- [ ] Las tres variables en el panel de Vercel, con `BETTER_AUTH_SECRET`
-      **distinta** de la local.
-- [ ] `BETTER_AUTH_URL` **con `https://` delante**. Sin esquema lanza por dos
-      sitios distintos, y hoy los dos están cubiertos, pero la variable debería
-      estar bien puesta igualmente.
-- [ ] *Network Access* de Atlas en `0.0.0.0/0`. Con la IP propia en lista
-      blanca, las funciones de Vercel no entran: Atlas corta el saludo TLS y el
-      driver lo reporta como `tlsv1 alert internal error`, que no se parece en
-      nada a un problema de permisos.
-- [ ] *Network Access* de Atlas: con la IP propia en lista blanca en vez de
-      `0.0.0.0/0`, las funciones de Vercel no entran.
+Ya resuelto, y anotado para cuando haya que montarlo otra vez:
+
+- [x] Las tres variables en el panel de Vercel. `BETTER_AUTH_SECRET` conviene
+      que sea **distinta** de la local; hoy es la misma.
+- [x] `BETTER_AUTH_URL` **con `https://` delante**. Sin esquema lanza por dos
+      sitios distintos —el servidor y el cliente— y ambos están cubiertos por
+      código, pero la variable debe estar bien puesta igualmente.
+- [x] *Network Access* de Atlas en `0.0.0.0/0`. Con la IP propia en lista
+      blanca las funciones de Vercel no entran, y el síntoma despista: Atlas
+      corta el saludo TLS y el driver lo reporta como `tlsv1 alert internal
+      error`, que no se parece en nada a un problema de permisos.
+
+Pendiente:
+
 - [ ] `trustedOrigins` en `auth.ts` si se usan despliegues de vista previa: su
       URL no coincide con `BETTER_AUTH_URL` y el login devuelve `403`.
 - [ ] Campo `engines` en `package.json`: local es Node 26, Vercel usa la 24.
@@ -245,9 +264,6 @@ no lo hace.
 - [ ] `IMAGE_ACTION` en `DayModal.tsx` no se usa. Anterior a esta sesión.
 - [ ] La galería descarga en serie todas las imágenes que falten, sin límite ni
       desalojo. Con muchas notas conviene paginar.
-- [ ] `allowScripts` en `package.json` autoriza el `postinstall` de esbuild.
-      npm 11.6+ lo pide; sin ello solo avisa, no rompe el build. Sin anclar a
-      versión, para que no vuelva a preguntar en cada actualización.
 
 ---
 
@@ -274,6 +290,12 @@ Para reproducir algo así en local: compilar con `@astrojs/node`, arrancar
 **Tocar `astro.config.mjs` obliga a reiniciar el servidor.** El esquema de
 `astro:env` se lee al arrancar; sin reinicio las variables llegan vacías.
 
+**El aviso de npm sobre `esbuild` al desplegar no rompe nada.** npm 11.6+ pide
+autorizar los `postinstall`; está concedido en `allowScripts` de
+`package.json`, sin anclar a versión para que no vuelva a preguntar en cada
+actualización. Si aparece de nuevo con otro paquete:
+`npm approve-scripts <pkg> --no-allow-scripts-pin`.
+
 ## Trabajar en el proyecto
 
 ```bash
@@ -287,7 +309,14 @@ Reproducir un fallo que solo aparece desplegado:
 
 ```bash
 npm i @astrojs/node --no-save
-sed 's|vercel()|node({ mode: "standalone" })|' astro.config.mjs > astro.config.node.mjs
+sed -e "s|import vercel from '@astrojs/vercel';|import node from '@astrojs/node';|" \
+    -e 's|adapter: vercel(),|adapter: node({ mode: "standalone" }),|' \
+    astro.config.mjs > astro.config.node.mjs
 npx astro build --config astro.config.node.mjs
-BETTER_AUTH_URL="lo-que-haya-en-vercel" node --env-file=.env ./dist/server/entry.mjs
+BETTER_AUTH_URL="lo-que-haya-en-vercel" PORT=4403 node --env-file=.env ./dist/server/entry.mjs
+rm astro.config.node.mjs   # al terminar
 ```
+
+Hay que sustituir también el `import`, no solo la llamada. Y la variable va
+**delante** del comando: `--env-file` no pisa lo que ya venga del shell, que es
+justo lo que aquí interesa.
