@@ -1,7 +1,14 @@
 import { useId, useMemo, useState } from 'react';
 import { dayTimeState, formatLongDate, formatWeekday } from '../lib/calendar';
-import { colorHex, DAY_COLORS, DEFAULT_COLOR, type ColorId } from '../lib/palette';
-import { hasCustomLabel, labelFor, type ColorLabels } from '../lib/labels';
+import {
+  colorVar,
+  DAY_COLORS,
+  DEFAULT_COLOR,
+  hasCustomLabel,
+  labelFor,
+  type ColorId,
+  type ColorPalette,
+} from '../lib/palette';
 import ReminderChip from './ReminderChip';
 import {
   AGENDA_TYPES,
@@ -17,7 +24,7 @@ import { hasImages, imageCount, type CalendarData } from '../lib/storage';
 
 type Props = {
   data: CalendarData;
-  labels: ColorLabels;
+  palette: ColorPalette;
   /** Clave `YYYY-MM-DD` de hoy; vacía hasta que el cliente hidrata. */
   today: string;
   /**
@@ -62,7 +69,7 @@ const IDLE = ' border-edge bg-raised text-ink-soft hover:bg-edge';
  * mismo que el de la rejilla, así que se puede hacer lo mismo sin salir; para
  * ver el día con su mes alrededor, el modal lleva su propio enlace.
  */
-export default function AgendaList({ data, labels, today, onSelect }: Props) {
+export default function AgendaList({ data, palette, today, onSelect }: Props) {
   // Un solo instante para toda la lista: pedir la hora por fila daría estados
   // distintos dentro del mismo repintado.
   const now = Date.now();
@@ -91,7 +98,7 @@ export default function AgendaList({ data, labels, today, onSelect }: Props) {
 
   // El texto buscable se arma una vez por calendario, no una vez por tecla:
   // quitarle tildes a trescientos días en cada pulsación se nota al escribir.
-  const index = useMemo(() => buildSearchIndex(data, labels), [data, labels]);
+  const index = useMemo(() => buildSearchIndex(data, palette), [data, palette]);
   const tokens = useMemo(() => tokenize(query), [query]);
 
   /**
@@ -213,9 +220,9 @@ export default function AgendaList({ data, labels, today, onSelect }: Props) {
                     <span
                       aria-hidden="true"
                       className="h-2.5 w-2.5 rounded-full"
-                      style={{ backgroundColor: color.hex }}
+                      style={{ backgroundColor: colorVar(color.id) }}
                     />
-                    {labelFor(labels, color.id)}
+                    {labelFor(palette, color.id)}
                   </button>
                 );
               })}
@@ -241,7 +248,7 @@ export default function AgendaList({ data, labels, today, onSelect }: Props) {
           {keys.map((key) => {
             const entry = data[key];
             const timeState = dayTimeState(key, today);
-            const category = labelFor(labels, entry.color);
+            const category = labelFor(palette, entry.color);
             const images = imageCount(entry);
             // La completa si este navegador la tiene; si no, la miniatura que
             // baja con el día. Por eso la agenda no espera a ninguna descarga.
@@ -270,7 +277,7 @@ export default function AgendaList({ data, labels, today, onSelect }: Props) {
                       // el hueco perfilado mantiene la lista alineada.
                       (entry.marked ? '' : 'ring-1 ring-edge ring-inset')
                     }
-                    style={entry.marked ? { backgroundColor: colorHex(entry.color) } : undefined}
+                    style={entry.marked ? { backgroundColor: colorVar(entry.color) } : undefined}
                   />
 
                   <span className="min-w-0 flex-1">
@@ -285,7 +292,7 @@ export default function AgendaList({ data, labels, today, onSelect }: Props) {
                       )}
                       {/* El nombre de fábrica no aporta nada aquí: el color ya
                           se ve. Solo se enseña la categoría con nombre propio. */}
-                      {entry.marked && hasCustomLabel(labels, entry.color) && (
+                      {entry.marked && hasCustomLabel(palette, entry.color) && (
                         <span className="text-[11px] font-medium text-ink-muted">{category}</span>
                       )}
                       {entry.reminder && <ReminderChip reminder={entry.reminder} now={now} />}

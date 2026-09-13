@@ -4,6 +4,7 @@ import ReminderChip, { BellIcon } from './ReminderChip';
 import ReminderModal from './ReminderModal';
 import SyncBadge from './SyncBadge';
 import { useCalendarStore } from './useCalendarStore';
+import { usePalette } from './usePalette';
 import {
   dayHref,
   dayTimeState,
@@ -13,7 +14,7 @@ import {
   todayKey,
   YEAR,
 } from '../lib/calendar';
-import { colorHex } from '../lib/palette';
+import { colorVar } from '../lib/palette';
 import { reminderText, type Reminder } from '../lib/reminder';
 import {
   collectReminders,
@@ -68,6 +69,10 @@ export default function RemindersView({ user }: { user: NavUser }) {
   const [notice, setNotice] = useState<Notice | null>(null);
   const announce = useCallback((message: string) => setNotice({ message }), []);
   const { data, setData, hydrated, sync, pending, retry } = useCalendarStore(announce);
+  // Esta página no nombra categorías, solo pinta el punto del día: de la paleta
+  // le basta con que sus variables queden puestas y sigan a lo que se retoque
+  // en otra pestaña. Por eso se llama y no se mira lo que devuelve.
+  usePalette();
 
   const [filter, setFilter] = useState<ReminderFilter>('pending');
   /**
@@ -465,7 +470,7 @@ function ReminderCard({
               <span
                 aria-hidden="true"
                 className="h-2.5 w-2.5 rounded-full"
-                style={{ backgroundColor: colorHex(item.color) }}
+                style={{ backgroundColor: colorVar(item.color) }}
               />
             )}
             {/* Lo que ya no va a pasar se dice con palabras, no solo con el

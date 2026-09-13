@@ -4,8 +4,8 @@ import DayModal from './DayModal';
 import NavBar, { type NavUser } from './NavBar';
 import SyncBadge from './SyncBadge';
 import { useCalendarStore } from './useCalendarStore';
+import { usePalette } from './usePalette';
 import { formatLongDate, msUntilNextMidnight, todayKey } from '../lib/calendar';
-import { LABELS_KEY, loadLabels, type ColorLabels } from '../lib/labels';
 import { fetchImages, storeImages } from '../lib/sync';
 import { hasContent, hasImages, moveDay, type CalendarData, type DayEntry } from '../lib/storage';
 
@@ -42,27 +42,12 @@ export default function AgendaView({ user }: { user: NavUser }) {
    */
   const announce = useCallback((message: string) => setNotice({ message }), []);
   const { data, setData, hydrated, sync, pending, retry, adopt } = useCalendarStore(announce);
-  const [labels, setLabels] = useState<ColorLabels>({});
+  const { palette } = usePalette();
   const [today, setToday] = useState('');
   /** Día abierto en el modal, o `null` si no hay ninguno. */
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   /** Fila desde la que se abrió: a ella vuelve el foco al cerrarse el modal. */
   const triggerRef = useRef<HTMLElement | null>(null);
-
-  // Igual que en el calendario: localStorage se lee después de montar para que
-  // el primer render coincida con el HTML del servidor.
-  useEffect(() => {
-    setLabels(loadLabels());
-  }, []);
-
-  // Y se vigila, por si se renombra una categoría en otra pestaña.
-  useEffect(() => {
-    function onStorage(event: StorageEvent) {
-      if (event.key === null || event.key === LABELS_KEY) setLabels(loadLabels());
-    }
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, []);
 
   // La fecha del cliente puede no ser la del servidor, así que "hoy" se resuelve
   // tras montar. Se reprograma en cada medianoche para que la marca pase al día
@@ -262,7 +247,7 @@ export default function AgendaView({ user }: { user: NavUser }) {
         {!hydrated ? (
           <div className="min-h-64" aria-busy="true" />
         ) : (
-          <AgendaList data={data} labels={labels} today={today} onSelect={handleSelect} />
+          <AgendaList data={data} palette={palette} today={today} onSelect={handleSelect} />
         )}
       </main>
 
@@ -311,7 +296,7 @@ export default function AgendaView({ user }: { user: NavUser }) {
         <DayModal
           dateKey={selectedKey}
           entry={openEntry}
-          labels={labels}
+          palette={palette}
           onNeedImages={loadImages}
           onSave={handleSave}
           onClear={handleClear}

@@ -1,4 +1,4 @@
-import { colorHex } from '../lib/palette';
+import { colorVar } from '../lib/palette';
 import type { DayTimeState } from '../lib/calendar';
 import { imageCount, type DayEntry } from '../lib/storage';
 
@@ -83,8 +83,10 @@ function getDayStyles(
   return {
     // El color marcado es dinámico por día, así que va como estilo en línea:
     // Tailwind no puede generar utilidades para valores decididos en runtime.
+    // Y no es el hexadecimal sino su variable, para que retocar la categoría en
+    // Ajustes repinte el año sin que a esta casilla llegue prop alguna.
     className: `${BASE} ${tone} ${fade}`.trimEnd(),
-    style: showColor ? { backgroundColor: colorHex(color) } : undefined,
+    style: showColor ? { backgroundColor: colorVar(color) } : undefined,
     // Fondo oscuro (violeta de hoy o color marcado): el texto va en blanco y
     // los puntos necesitan aro para no fundirse con él.
     solid: showColor || isToday,
@@ -141,7 +143,7 @@ export default function DayCell({
           <span
             aria-hidden="true"
             className="absolute top-1 left-1 h-1.5 w-1.5 rounded-full ring-1 ring-white"
-            style={{ backgroundColor: colorHex(entry?.color) }}
+            style={{ backgroundColor: colorVar(entry?.color) }}
           />
         )}
 

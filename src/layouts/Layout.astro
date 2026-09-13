@@ -1,6 +1,7 @@
 ---
 import '../styles/global.css';
 import { DARK_CLASS, THEME_KEY } from '../lib/theme';
+import { PALETTE_KEY } from '../lib/palette';
 
 interface Props {
   title: string;
@@ -41,6 +42,30 @@ const { title, description = 'Dashboard de planificación para el año 2026.' } 
         if (dark) document.documentElement.classList.add(cls);
       } catch (error) {
         /* Sin almacenamiento no hay preferencia guardada: se queda el claro. */
+      }
+    </script>
+
+    {/* Los colores retocados, por el mismo motivo y en el mismo momento que el
+        tema: si esto se montara en React, el calendario se pintaría un cuadro
+        con los colores de fábrica y otro con los suyos.
+
+        No hace falta conocer los ids: lo que no case con la forma esperada se
+        ignora, y lo que sobre queda en una variable que nadie pide. El
+        hexadecimal **sí** se comprueba, y esa comprobación no es cosmética: el
+        valor entra en una propiedad personalizada del documento y se sustituye
+        tal cual allí donde se use, así que un texto cualquiera podría colar
+        más CSS del que aparenta. */}
+    <script is:inline define:vars={{ key: PALETTE_KEY }}>
+      try {
+        var saved = JSON.parse(localStorage.getItem(key) || '{}');
+        for (var id in saved) {
+          var tone = saved[id] && saved[id].hex;
+          if (/^[a-z]+$/.test(id) && /^#[0-9a-f]{6}$/i.test(tone)) {
+            document.documentElement.style.setProperty('--day-' + id, tone);
+          }
+        }
+      } catch (error) {
+        /* Sin almacenamiento o con algo estropeado dentro: paleta de fábrica. */
       }
     </script>
 

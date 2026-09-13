@@ -48,7 +48,7 @@ MongoDB es la fuente de verdad, pero **no** el camino crítico.
 
 | Caso | Cómo se resuelve |
 |---|---|
-| 🗓️ **Planificar el año de un vistazo** | Los doce meses en una rejilla; marcar días con ocho colores y renombrar cada color como una categoría propia («Entrega», «Guardia», «Viaje») |
+| 🗓️ **Planificar el año de un vistazo** | Los doce meses en una rejilla; marcar días con ocho colores y convertir cada uno en una categoría propia con su nombre y su tono («Entrega», «Guardia», «Viaje») |
 | 🔍 **Recuperar algo que apuntaste** | La agenda busca por texto, fecha o categoría —sin tildes y combinando palabras— y deja editar el día sin salir de los resultados |
 | 🔔 **No olvidar una cita** | Un recordatorio con hora que llega por Telegram al teléfono, con su lista de pendientes y completados |
 | 🖼️ **Guardar el justificante, la receta, el ticket** | Hasta seis imágenes por día, redimensionadas en el navegador, y una galería cronológica de todo el año |
@@ -65,7 +65,11 @@ MongoDB es la fuente de verdad, pero **no** el camino crítico.
 - Los **doce meses de 2026** en una rejilla, con la semana empezando en lunes.
 - **Ocho colores** para marcar días (el violeta queda reservado a «hoy», para que
   siga identificándose de un vistazo).
-- **Categorías renombrables**: la leyenda deja de decir «Rosa» y dice «Entrega».
+- **Categorías propias**: cada color se renombra —la leyenda deja de decir «Rosa»
+  y dice «Entrega»— y se tiñe del tono que quieras desde Ajustes. Un día guarda
+  la **categoría**, nunca el color, así que retocar el tono repinta al instante
+  todos sus días, notas y recordatorios sin mover un solo dato. Un botón devuelve
+  la paleta de fábrica.
 - **Shift + clic** marca de una vez todo el tramo entre dos días.
 - Navegación **con las flechas del teclado**, meses plegables y botón *Ir a hoy*.
 - Cada cambio destructivo deja un aviso con **Deshacer**.
@@ -329,6 +333,7 @@ src/
 │   ├── sync.ts                 # Cola, fusión, subida y descarga bajo demanda
 │   ├── wire.ts                 # Formato en que un día viaja; lo importan los dos lados
 │   ├── reminder.ts             # Hora, texto y estado del aviso
+│   ├── palette.ts              # Los colores: los de fábrica y los de cada persona
 │   ├── search.ts               # La lente de la agenda: buscar y filtrar
 │   ├── image.ts                # Redimensionado, compresión y miniaturas
 │   ├── mongo.ts                # Cliente cacheado, colecciones e índices

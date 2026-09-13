@@ -1,4 +1,4 @@
-import { labelFor, type ColorLabels } from './labels';
+import { labelFor, type ColorPalette } from './palette';
 import { reminderText } from './reminder';
 import { sanitizeData, type CalendarData } from './storage';
 
@@ -36,12 +36,14 @@ export function parseImport(text: string): ImportResult {
 }
 
 /** Envoltorio con metadatos: el importador también acepta el mapa a secas. */
-export function toJson(data: CalendarData, labels: ColorLabels): string {
+export function toJson(data: CalendarData, palette: ColorPalette): string {
   return JSON.stringify(
-    // v4: el día lleva además `reminder`. Antes, v3 añadió `imageCount` y
-    // `thumb`. El importador acepta todas las anteriores igual: lo que falte se
-    // deduce de lo que sí venga, y un día sin aviso es un día sin aviso.
-    { app: FILE_STEM, version: 4, exportedAt: new Date().toISOString(), labels, days: data },
+    // v5: las categorías pasan de ser un nombre suelto por color a llevar
+    // también su tono, así que `labels` deja sitio a `palette`. Antes, v4 añadió
+    // `reminder` al día y v3, `imageCount` y `thumb`. El importador acepta todas
+    // las anteriores igual: solo lee `days`, y lo que falte de un día se deduce
+    // de lo que sí venga.
+    { app: FILE_STEM, version: 5, exportedAt: new Date().toISOString(), palette, days: data },
     null,
     2,
   );
@@ -77,7 +79,7 @@ function icsUtc(date: Date): string {
  * Calendario iCalendar con un evento de día completo por cada día registrado,
  * para llevarse el año a Google Calendar, Outlook o Apple Calendario.
  */
-export function toIcs(data: CalendarData, labels: ColorLabels, now: Date = new Date()): string {
+export function toIcs(data: CalendarData, palette: ColorPalette, now: Date = new Date()): string {
   const stamp = icsUtc(now);
 
   const events = Object.keys(data)
@@ -96,7 +98,7 @@ export function toIcs(data: CalendarData, labels: ColorLabels, now: Date = new D
       // El resumen es lo único que se ve en la rejilla del calendario ajeno:
       // manda la primera línea de la nota y, sin nota, la categoría del color.
       const firstLine = entry.note.split('\n')[0].trim();
-      const summary = firstLine || labelFor(labels, entry.color);
+      const summary = firstLine || labelFor(palette, entry.color);
 
       // La alarma se ancla a un instante absoluto en vez de a un desfase desde
       // el comienzo del evento: `DTSTART` es una fecha sin hora, y cada
@@ -120,7 +122,7 @@ export function toIcs(data: CalendarData, labels: ColorLabels, now: Date = new D
         `DTEND;VALUE=DATE:${endCompact}`,
         fold(`SUMMARY:${escapeText(summary)}`),
         ...(entry.note ? [fold(`DESCRIPTION:${escapeText(entry.note)}`)] : []),
-        ...(entry.marked ? [fold(`CATEGORIES:${escapeText(labelFor(labels, entry.color))}`)] : []),
+        ...(entry.marked ? [fold(`CATEGORIES:${escapeText(labelFor(palette, entry.color))}`)] : []),
         ...alarm,
         'END:VEVENT',
       ];

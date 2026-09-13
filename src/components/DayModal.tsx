@@ -1,7 +1,13 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import { dayHref, formatLongDate, formatWeekday, isInQuarter, YEAR } from '../lib/calendar';
-import { DAY_COLORS, DEFAULT_COLOR, colorHex, type ColorId } from '../lib/palette';
-import { labelFor, type ColorLabels } from '../lib/labels';
+import {
+  colorVar,
+  DAY_COLORS,
+  DEFAULT_COLOR,
+  labelFor,
+  type ColorId,
+  type ColorPalette,
+} from '../lib/palette';
 import { dataUrlBytes, IMAGE_ACCEPT, MAX_IMAGES_PER_DAY, prepareImage } from '../lib/image';
 import { hasContent, imageCount, imagesReady, type DayEntry } from '../lib/storage';
 import { isDateKey } from '../lib/wire';
@@ -12,8 +18,8 @@ import { useDialog } from './useDialog';
 type Props = {
   dateKey: string;
   entry?: DayEntry;
-  /** Nombres que el usuario le ha puesto a los colores (ver SettingsPanel). */
-  labels: ColorLabels;
+  /** Los nombres y tonos que el usuario les haya puesto (ver SettingsPanel). */
+  palette: ColorPalette;
   onSave: (key: string, entry: DayEntry) => void;
   onClear: (key: string) => void;
   onClose: () => void;
@@ -69,7 +75,7 @@ function sameImages(a: string[], b: string[]): boolean {
 export default function DayModal({
   dateKey,
   entry,
-  labels,
+  palette,
   onSave,
   onClear,
   onClose,
@@ -356,7 +362,7 @@ export default function DayModal({
         <fieldset className="mt-4">
           <legend className="mb-2 flex w-full items-baseline justify-between text-sm font-medium text-ink-soft">
             <span>Color del recuadro</span>
-            <span className="text-xs font-normal text-ink-muted">{labelFor(labels, color)}</span>
+            <span className="text-xs font-normal text-ink-muted">{labelFor(palette, color)}</span>
           </legend>
           {/* Columnas de ancho fijo, no ocho partes iguales del modal: repartido,
               cada muestra se iba a los setenta píxeles en un portátil —un mural
@@ -372,7 +378,7 @@ export default function DayModal({
           >
             {DAY_COLORS.map((option) => {
               const selected = option.id === color;
-              const name = labelFor(labels, option.id);
+              const name = labelFor(palette, option.id);
               return (
                 <button
                   key={option.id}
@@ -382,7 +388,7 @@ export default function DayModal({
                   aria-label={name}
                   title={name}
                   onClick={() => pickColor(option.id)}
-                  style={{ backgroundColor: option.hex }}
+                  style={{ backgroundColor: colorVar(option.id) }}
                   className={
                     // El radio baja con la muestra: a 2.75rem, `rounded-lg`
                     // pesaba de más y redondeaba el recuadro casi a pastilla.
@@ -555,7 +561,7 @@ export default function DayModal({
             type="button"
             onClick={save}
             disabled={processing || !validDay}
-            style={marked ? { backgroundColor: colorHex(color) } : undefined}
+            style={marked ? { backgroundColor: colorVar(color) } : undefined}
             className={
               'flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none ' +
               (marked ? 'hover:brightness-90' : 'bg-accent hover:bg-accent-strong')

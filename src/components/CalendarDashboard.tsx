@@ -28,15 +28,16 @@ import {
   saveExpansion,
   type MonthExpansion,
 } from '../lib/collapse';
-import { DAY_COLORS, DEFAULT_COLOR, type ColorId } from '../lib/palette';
 import {
+  colorHex,
+  colorVar,
+  DAY_COLORS,
+  DEFAULT_COLOR,
   labelFor,
-  loadLabels,
-  saveLabels,
-  LABELS_KEY,
   MAX_LABEL_LENGTH,
-  type ColorLabels,
-} from '../lib/labels';
+  type ColorId,
+} from '../lib/palette';
+import { usePalette } from './usePalette';
 import { downloadFile, exportFilename, parseImport, toIcs, toJson } from '../lib/transfer';
 import { fetchImages, storeImages } from '../lib/sync';
 import { hasContent, type CalendarData, type DayEntry } from '../lib/storage';
@@ -56,7 +57,7 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
   const announce = useCallback((message: string) => setNotice({ message }), []);
   const { data, setData, hydrated, sync, pending, retry, adopt } = useCalendarStore(announce);
 
-  const [labels, setLabels] = useState<ColorLabels>({});
+  const { palette, update: updatePalette } = usePalette();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   /** Engrane de la cabecera: de él brota el modal de ajustes y a él vuelve el foco. */
@@ -69,13 +70,6 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
   /** Qué meses están desplegados. El servidor los dibuja todos abiertos. */
   const [expansion, setExpansion] = useState<MonthExpansion>(DEFAULT_EXPANSION);
   const [expansionLoaded, setExpansionLoaded] = useState(false);
-
-  // Las etiquetas de color son solo del calendario, así que se leen aquí y no
-  // en el almacén. Igual que él: después de montar, para que el primer render
-  // coincida con el HTML del servidor.
-  useEffect(() => {
-    setLabels(loadLabels());
-  }, []);
 
   // Los meses plegados se leen en un efecto de layout: el cambio de estado se
   // pinta en el mismo cuadro que la hidratación. Hasta entonces la hoja de
@@ -93,11 +87,6 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
   useEffect(() => {
     if (expansionLoaded) saveExpansion(expansion);
   }, [expansion, expansionLoaded]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    saveLabels(labels);
-  }, [labels, hydrated]);
 
   // La fecha del cliente puede no ser la del servidor, así que "hoy" también
   // se resuelve tras montar. Se reprograma en cada medianoche para que el día
@@ -126,11 +115,10 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
   }, []);
 
   // Mantiene el calendario en sincronía con otras pestañas abiertas. Los días
-  // y la cola de subida los vigila el almacén; aquí quedan los ajustes que son
-  // solo de esta página.
+  // y la cola de subida los vigila el almacén, y la paleta, `usePalette`; aquí
+  // queda el plegado de los meses, que es lo único que es solo de esta página.
   useEffect(() => {
     function onStorage(event: StorageEvent) {
-      if (event.key === null || event.key === LABELS_KEY) setLabels(loadLabels());
       if (event.key === null || event.key === EXPANSION_KEY) setExpansion(loadExpansion());
     }
     window.addEventListener('storage', onStorage);
@@ -265,13 +253,13 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
       });
 
       setNotice({
-        message: `Se marcaron ${keys.length} ${keys.length === 1 ? 'día' : 'días'} en ${labelFor(labels, lastColor)}.`,
+        message: `Se marcaron ${keys.length} ${keys.length === 1 ? 'día' : 'días'} en ${labelFor(palette, lastColor)}.`,
         snapshot,
       });
       // El rango deja su ancla en el extremo recién tocado, para encadenar otro.
       setAnchorKey(to);
     },
-    [data, labels, lastColor],
+    [data, palette, lastColor],
   );
 
   const handleSelectDay = useCallback(
@@ -286,24 +274,52 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
     [anchorKey, markRange, openDay],
   );
 
-  const handleRenameColor = useCallback((id: ColorId, label: string) => {
-    setLabels((current) => {
-      const next = { ...current };
-      const clean = label.slice(0, MAX_LABEL_LENGTH);
-      // Sin texto vuelve a mandar el nombre de fábrica del color.
-      if (clean.trim()) next[id] = clean;
-      else delete next[id];
-      return next;
-    });
-  }, []);
+  /**
+   * Cambia una pieza de un color y tira lo que quede vacío.
+   *
+   * El color sin nombre propio ni tono propio **se borra del todo** en lugar de
+   * quedarse como `{}`: es lo que hace que «Restablecer» sepa si le queda algo
+   * por hacer, y lo que deja que un color afinado en el código llegue a quien
+   * nunca lo tocó.
+   */
+  const changeColor = useCallback(
+    (id: ColorId, change: { name?: string; hex?: string }) => {
+      updatePalette((current) => {
+        const next = { ...current };
+        const merged = { ...next[id], ...change };
+        // Sin texto vuelve a mandar el nombre de fábrica del color.
+        if (!merged.name?.trim()) delete merged.name;
+        // Y el tono de fábrica, escrito a mano, tampoco es un retoque.
+        if (!merged.hex || merged.hex === colorHex(id)) delete merged.hex;
+
+        if (merged.name || merged.hex) next[id] = merged;
+        else delete next[id];
+        return next;
+      });
+    },
+    [updatePalette],
+  );
+
+  const handleRenameColor = useCallback(
+    (id: ColorId, label: string) => changeColor(id, { name: label.slice(0, MAX_LABEL_LENGTH) }),
+    [changeColor],
+  );
+
+  const handleRecolor = useCallback(
+    (id: ColorId, hex: string) => changeColor(id, { hex: hex.toLowerCase() }),
+    [changeColor],
+  );
+
+  /** Devuelve los ocho colores a como vinieron: nombres y tonos de una vez. */
+  const handleResetPalette = useCallback(() => updatePalette(() => ({})), [updatePalette]);
 
   const handleExportJson = useCallback(() => {
-    downloadFile(toJson(data, labels), exportFilename('json', today), 'application/json');
-  }, [data, labels, today]);
+    downloadFile(toJson(data, palette), exportFilename('json', today), 'application/json');
+  }, [data, palette, today]);
 
   const handleExportIcs = useCallback(() => {
-    downloadFile(toIcs(data, labels), exportFilename('ics', today), 'text/calendar');
-  }, [data, labels, today]);
+    downloadFile(toIcs(data, palette), exportFilename('ics', today), 'text/calendar');
+  }, [data, palette, today]);
 
   const handleImport = useCallback(
     async (file: File) => {
@@ -445,9 +461,9 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
               {DAY_COLORS.map((color) => (
                 <span
                   key={color.id}
-                  title={labelFor(labels, color.id)}
+                  title={labelFor(palette, color.id)}
                   className="h-3 w-3 rounded"
-                  style={{ backgroundColor: color.hex }}
+                  style={{ backgroundColor: colorVar(color.id) }}
                 />
               ))}
             </span>
@@ -513,9 +529,11 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
         <SettingsModal
           triggerRef={settingsButtonRef}
           onClose={() => setSettingsOpen(false)}
-          labels={labels}
+          palette={palette}
           hasData={Object.keys(data).length > 0}
           onRenameColor={handleRenameColor}
+          onRecolor={handleRecolor}
+          onResetPalette={handleResetPalette}
           onExportJson={handleExportJson}
           onExportIcs={handleExportIcs}
           onImport={handleImport}
@@ -526,7 +544,7 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
         <DayModal
           dateKey={selectedKey}
           entry={data[selectedKey]}
-          labels={labels}
+          palette={palette}
           onNeedImages={loadImages}
           onSave={handleSave}
           onClear={handleClear}

@@ -1,5 +1,5 @@
 import { formatLongDate, formatWeekday } from './calendar';
-import { labelFor, type ColorLabels } from './labels';
+import { labelFor, type ColorPalette } from './palette';
 import { hasImages, type CalendarData, type DayEntry } from './storage';
 
 /**
@@ -77,7 +77,7 @@ export function matchesType(entry: DayEntry, type: AgendaType): boolean {
  * su hora y el nombre de la categoría. Lo que no entra son las imágenes: no
  * tienen texto que mirar.
  */
-export function searchableText(key: string, entry: DayEntry, labels: ColorLabels): string {
+export function searchableText(key: string, entry: DayEntry, palette: ColorPalette): string {
   const [year, month, day] = key.split('-').map(Number);
 
   const parts = [
@@ -91,7 +91,7 @@ export function searchableText(key: string, entry: DayEntry, labels: ColorLabels
     entry.reminder?.time ?? '',
     // El nombre de fábrica del color también vale: quien no ha renombrado nada
     // busca "rosa" igual que quien sí lo hizo busca "Entrega".
-    entry.marked ? labelFor(labels, entry.color) : '',
+    entry.marked ? labelFor(palette, entry.color) : '',
   ];
 
   return normalize(parts.join(' '));
@@ -100,10 +100,10 @@ export function searchableText(key: string, entry: DayEntry, labels: ColorLabels
 /** Texto buscable de cada día, listo para comparar sin rehacerlo por tecla. */
 export type SearchIndex = Record<string, string>;
 
-export function buildSearchIndex(data: CalendarData, labels: ColorLabels): SearchIndex {
+export function buildSearchIndex(data: CalendarData, palette: ColorPalette): SearchIndex {
   const index: SearchIndex = {};
   for (const [key, entry] of Object.entries(data)) {
-    index[key] = searchableText(key, entry, labels);
+    index[key] = searchableText(key, entry, palette);
   }
   return index;
 }
