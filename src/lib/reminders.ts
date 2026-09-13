@@ -39,6 +39,8 @@ export type ReminderItem = {
   state: ReminderState;
   /** Lo ha dado por hecho la persona. Es lo que separa las dos pestañas. */
   done: boolean;
+  /** Las etiquetas del día. Son del día, no del aviso; ver `tags.ts`. */
+  tags?: string[];
 };
 
 /**
@@ -64,6 +66,7 @@ export function collectReminders(data: CalendarData, now: number = Date.now()): 
           color: entry.color,
           state: reminderState(reminder, now),
           done: Boolean(reminder.done),
+          ...(entry.tags?.length ? { tags: entry.tags } : {}),
         },
       ];
     });

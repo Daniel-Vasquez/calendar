@@ -5,6 +5,7 @@ import NavBar, { type NavUser } from './NavBar';
 import SyncBadge from './SyncBadge';
 import { useCalendarStore } from './useCalendarStore';
 import { usePalette } from './usePalette';
+import { useTags } from './useTags';
 import { formatLongDate, msUntilNextMidnight, todayKey } from '../lib/calendar';
 import { fetchImages, storeImages } from '../lib/sync';
 import { hasContent, hasImages, moveDay, type CalendarData, type DayEntry } from '../lib/storage';
@@ -43,6 +44,7 @@ export default function AgendaView({ user }: { user: NavUser }) {
   const announce = useCallback((message: string) => setNotice({ message }), []);
   const { data, setData, hydrated, sync, pending, retry, adopt } = useCalendarStore(announce);
   const { palette } = usePalette();
+  const { catalogue } = useTags();
   const [today, setToday] = useState('');
   /** Día abierto en el modal, o `null` si no hay ninguno. */
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -247,7 +249,13 @@ export default function AgendaView({ user }: { user: NavUser }) {
         {!hydrated ? (
           <div className="min-h-64" aria-busy="true" />
         ) : (
-          <AgendaList data={data} palette={palette} today={today} onSelect={handleSelect} />
+          <AgendaList
+            data={data}
+            palette={palette}
+            catalogue={catalogue}
+            today={today}
+            onSelect={handleSelect}
+          />
         )}
       </main>
 
@@ -297,6 +305,7 @@ export default function AgendaView({ user }: { user: NavUser }) {
           dateKey={selectedKey}
           entry={openEntry}
           palette={palette}
+          catalogue={catalogue}
           onNeedImages={loadImages}
           onSave={handleSave}
           onClear={handleClear}

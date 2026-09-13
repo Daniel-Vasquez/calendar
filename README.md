@@ -49,7 +49,7 @@ MongoDB es la fuente de verdad, pero **no** el camino crítico.
 | Caso | Cómo se resuelve |
 |---|---|
 | 🗓️ **Planificar el año de un vistazo** | Los doce meses en una rejilla; marcar días con ocho colores y convertir cada uno en una categoría propia con su nombre y su tono («Entrega», «Guardia», «Viaje») |
-| 🔍 **Recuperar algo que apuntaste** | La agenda busca por texto, fecha o categoría —sin tildes y combinando palabras— y deja editar el día sin salir de los resultados |
+| 🔍 **Recuperar algo que apuntaste** | La agenda busca por texto, fecha, categoría o etiqueta —sin tildes y combinando palabras— y deja editar el día sin salir de los resultados |
 | 🔔 **No olvidar una cita** | Un recordatorio con hora que llega por Telegram al teléfono, con su lista de pendientes y completados |
 | 🖼️ **Guardar el justificante, la receta, el ticket** | Hasta seis imágenes por día, redimensionadas en el navegador, y una galería cronológica de todo el año |
 | 🏖️ **Marcar tramos largos** | Shift + clic pinta de golpe todas las vacaciones, la baja o el proyecto entre dos fechas |
@@ -70,6 +70,10 @@ MongoDB es la fuente de verdad, pero **no** el camino crítico.
   la **categoría**, nunca el color, así que retocar el tono repinta al instante
   todos sus días, notas y recordatorios sin mover un solo dato. Un botón devuelve
   la paleta de fábrica.
+- **Etiquetas**: siete de fábrica —Deporte, Ejercicio, Diversión, Descanso, No
+  molestar, Trabajo y Estudio—, y las que añadas. Clasifican el día por lo que es,
+  al margen del color, se ponen desde la nota o el recordatorio y se buscan por su
+  nombre en la agenda.
 - **Shift + clic** marca de una vez todo el tramo entre dos días.
 - Navegación **con las flechas del teclado**, meses plegables y botón *Ir a hoy*.
 - Cada cambio destructivo deja un aviso con **Deshacer**.
@@ -170,7 +174,7 @@ MongoDB es la fuente de verdad, pero **no** el camino crítico.
 | Colección | Contenido | Índice |
 |---|---|---|
 | `user` `session` `account` | Las crea Better Auth | propios |
-| `days` | Un día por usuario: marca, nota, color, `imageCount`, `thumb`, `reminder` | `{userId, key}` único |
+| `days` | Un día por usuario: marca, nota, color, `imageCount`, `thumb`, `reminder`, `tags` | `{userId, key}` único |
 | `images` | Una imagen por documento, con su posición dentro del día | `{userId, key, index}` único |
 | `settings` | Ajustes que no son del dispositivo: hoy, el chat de Telegram | `{userId}` único |
 | `allowlist` | Qué correos pueden **crearse** una cuenta | `{email}` único |
@@ -334,6 +338,7 @@ src/
 │   ├── wire.ts                 # Formato en que un día viaja; lo importan los dos lados
 │   ├── reminder.ts             # Hora, texto y estado del aviso
 │   ├── palette.ts              # Los colores: los de fábrica y los de cada persona
+│   ├── tags.ts                 # El catálogo de etiquetas y las que lleva un día
 │   ├── search.ts               # La lente de la agenda: buscar y filtrar
 │   ├── image.ts                # Redimensionado, compresión y miniaturas
 │   ├── mongo.ts                # Cliente cacheado, colecciones e índices

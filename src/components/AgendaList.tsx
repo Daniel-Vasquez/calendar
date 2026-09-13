@@ -10,6 +10,8 @@ import {
   type ColorPalette,
 } from '../lib/palette';
 import ReminderChip from './ReminderChip';
+import { TagBadges } from './TagChips';
+import type { Tag } from '../lib/tags';
 import {
   AGENDA_TYPES,
   buildSearchIndex,
@@ -25,6 +27,8 @@ import { hasImages, imageCount, type CalendarData } from '../lib/storage';
 type Props = {
   data: CalendarData;
   palette: ColorPalette;
+  /** Las etiquetas que existen, para escribir las que lleva cada día. */
+  catalogue: Tag[];
   /** Clave `YYYY-MM-DD` de hoy; vacía hasta que el cliente hidrata. */
   today: string;
   /**
@@ -69,7 +73,7 @@ const IDLE = ' border-edge bg-raised text-ink-soft hover:bg-edge';
  * mismo que el de la rejilla, así que se puede hacer lo mismo sin salir; para
  * ver el día con su mes alrededor, el modal lleva su propio enlace.
  */
-export default function AgendaList({ data, palette, today, onSelect }: Props) {
+export default function AgendaList({ data, palette, catalogue, today, onSelect }: Props) {
   // Un solo instante para toda la lista: pedir la hora por fila daría estados
   // distintos dentro del mismo repintado.
   const now = Date.now();
@@ -98,7 +102,7 @@ export default function AgendaList({ data, palette, today, onSelect }: Props) {
 
   // El texto buscable se arma una vez por calendario, no una vez por tecla:
   // quitarle tildes a trescientos días en cada pulsación se nota al escribir.
-  const index = useMemo(() => buildSearchIndex(data, palette), [data, palette]);
+  const index = useMemo(() => buildSearchIndex(data, palette, catalogue), [data, palette, catalogue]);
   const tokens = useMemo(() => tokenize(query), [query]);
 
   /**
@@ -312,13 +316,21 @@ export default function AgendaList({ data, palette, today, onSelect }: Props) {
                       <span className="mt-0.5 block text-sm text-ink-muted italic">
                         Día marcado, sin nota
                       </span>
-                    ) : (
+                    ) : entry.reminder ? (
                       // Queda el caso del día que solo existe por su aviso: ni
                       // marcado, ni con nota, ni con imágenes.
                       <span className="mt-0.5 block text-sm text-ink-muted italic">
                         Solo recordatorio
                       </span>
+                    ) : (
+                      // Y el del día que solo existe por sus etiquetas, que se
+                      // enseñan aquí abajo y harían redundante repetirlas.
+                      <span className="mt-0.5 block text-sm text-ink-muted italic">
+                        Solo etiquetas
+                      </span>
                     )}
+
+                    <TagBadges catalogue={catalogue} tags={entry.tags} className="mt-1.5" />
                   </span>
 
                   {hasImages(entry) && preview && (

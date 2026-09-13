@@ -1,6 +1,7 @@
 import { isImageDataUrl, makeThumb } from './image';
 import { DEFAULT_COLOR } from './palette';
 import { sameReminder } from './reminder';
+import { sameTags } from './tags';
 import { imageCount, loadData, saveData, type CalendarData, type DayEntry } from './storage';
 import { fromWire, MAX_DAYS_PER_REQUEST, sanitizeWireDay, toWire, type WireDay } from './wire';
 
@@ -100,7 +101,10 @@ function sameDay(a: DayEntry | undefined, b: DayEntry | undefined): boolean {
     (a.thumb ?? '') === (b.thumb ?? '') &&
     // Sin esto, poner una hora y no tocar nada más no encolaría nada: el día
     // se guardaría aquí y el servidor no se enteraría jamás.
-    sameReminder(a.reminder, b.reminder)
+    sameReminder(a.reminder, b.reminder) &&
+    // Lo mismo con las etiquetas: son el único cambio que puede llevar un día
+    // cuya nota, color y adjuntos no se han tocado.
+    sameTags(a.tags, b.tags)
   );
 }
 

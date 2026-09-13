@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import MonthCard from './MonthCard';
 import DayModal from './DayModal';
@@ -38,15 +38,22 @@ import {
   type ColorId,
 } from '../lib/palette';
 import { usePalette } from './usePalette';
+import { useTags } from './useTags';
 import { downloadFile, exportFilename, parseImport, toIcs, toJson } from '../lib/transfer';
 import { fetchImages, storeImages } from '../lib/sync';
 import { hasContent, type CalendarData, type DayEntry } from '../lib/storage';
+import { addTag, removeTag, type Tag } from '../lib/tags';
 
 /**
  * Aviso efímero del pie. Con `snapshot` ofrece deshacer —guarda el calendario
  * entero anterior al cambio—; sin él es solo un mensaje de error.
+ *
+ * `tags` va aparte porque el catálogo no vive en el calendario: borrar una
+ * etiqueta cambia las dos cosas a la vez —el catálogo y los días que la
+ * llevaban— y deshacer a medias dejaría la etiqueta puesta en días que ya no
+ * pueden quitársela, o el catálogo con una etiqueta que ya no usa nadie.
  */
-type Notice = { message: string; snapshot?: CalendarData };
+type Notice = { message: string; snapshot?: CalendarData; tags?: Tag[] };
 
 export default function CalendarDashboard({ user }: { user: NavUser }) {
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -58,6 +65,7 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
   const { data, setData, hydrated, sync, pending, retry, adopt } = useCalendarStore(announce);
 
   const { palette, update: updatePalette } = usePalette();
+  const { catalogue, update: updateTags } = useTags();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   /** Engrane de la cabecera: de él brota el modal de ajustes y a él vuelve el foco. */
@@ -171,8 +179,9 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
   const handleUndo = useCallback(() => {
     if (!notice?.snapshot) return;
     setData(notice.snapshot);
+    if (notice.tags) updateTags(() => notice.tags!);
     setNotice(null);
-  }, [notice]);
+  }, [notice, updateTags]);
 
   // El aviso caduca solo. Cada cambio crea un objeto nuevo, así que el
   // temporizador se reinicia con él en lugar de heredar la cuenta anterior.
@@ -313,13 +322,66 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
   /** Devuelve los ocho colores a como vinieron: nombres y tonos de una vez. */
   const handleResetPalette = useCallback(() => updatePalette(() => ({})), [updatePalette]);
 
+  const handleAddTag = useCallback(
+    (label: string) => updateTags((current) => addTag(current, label)),
+    [updateTags],
+  );
+
+  /**
+   * Borra una etiqueta del catálogo **y de todos los días que la llevaban**.
+   *
+   * La alternativa era dejarlas puestas y que siguieran viéndose sin poder
+   * elegirse. Es defendible —no se pierde nada— pero deja la única forma de
+   * quitarlas en abrir uno a uno los días, y eso no es una salida. Así que se
+   * quitan de golpe y el aviso del pie ofrece deshacerlo, catálogo incluido.
+   */
+  const handleDeleteTag = useCallback(
+    (slug: string) => {
+      const snapshot = data;
+      const tags = catalogue;
+      const label = catalogue.find((tag) => tag.slug === slug)?.label ?? slug;
+
+      let touched = 0;
+      setData((current) => {
+        const next = { ...current };
+        for (const [key, entry] of Object.entries(current)) {
+          if (!entry.tags?.includes(slug)) continue;
+          const left = entry.tags.filter((tag) => tag !== slug);
+          const { tags: _quitadas, ...rest } = entry;
+          next[key] = { ...rest, ...(left.length ? { tags: left } : {}) };
+          touched++;
+        }
+        return next;
+      });
+
+      updateTags((current) => removeTag(current, slug));
+      setNotice({
+        message: touched
+          ? `Se borró «${label}» y se quitó de ${touched} ${touched === 1 ? 'día' : 'días'}.`
+          : `Se borró la etiqueta «${label}».`,
+        snapshot,
+        tags,
+      });
+    },
+    [data, catalogue, updateTags],
+  );
+
+  /** En cuántos días está puesta cada etiqueta. Lo enseña Ajustes antes de borrar. */
+  const tagUsage = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const entry of Object.values(data)) {
+      for (const slug of entry.tags ?? []) counts[slug] = (counts[slug] ?? 0) + 1;
+    }
+    return counts;
+  }, [data]);
+
   const handleExportJson = useCallback(() => {
-    downloadFile(toJson(data, palette), exportFilename('json', today), 'application/json');
-  }, [data, palette, today]);
+    downloadFile(toJson(data, palette, catalogue), exportFilename('json', today), 'application/json');
+  }, [data, palette, catalogue, today]);
 
   const handleExportIcs = useCallback(() => {
-    downloadFile(toIcs(data, palette), exportFilename('ics', today), 'text/calendar');
-  }, [data, palette, today]);
+    downloadFile(toIcs(data, palette, catalogue), exportFilename('ics', today), 'text/calendar');
+  }, [data, palette, catalogue, today]);
 
   const handleImport = useCallback(
     async (file: File) => {
@@ -534,6 +596,10 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
           onRenameColor={handleRenameColor}
           onRecolor={handleRecolor}
           onResetPalette={handleResetPalette}
+          catalogue={catalogue}
+          tagUsage={tagUsage}
+          onAddTag={handleAddTag}
+          onDeleteTag={handleDeleteTag}
           onExportJson={handleExportJson}
           onExportIcs={handleExportIcs}
           onImport={handleImport}
@@ -545,6 +611,7 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
           dateKey={selectedKey}
           entry={data[selectedKey]}
           palette={palette}
+          catalogue={catalogue}
           onNeedImages={loadImages}
           onSave={handleSave}
           onClear={handleClear}

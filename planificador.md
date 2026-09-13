@@ -53,6 +53,7 @@ middleware ───────────────────────
 | `src/pages/agenda.astro` | La agenda del año y las cuentas del calendario |
 | `src/lib/theme.ts` | Claro u oscuro: dónde se guarda y quién manda |
 | `src/lib/palette.ts` | Los ocho colores, la paleta propia de cada persona y su variable CSS |
+| `src/lib/tags.ts` | El catálogo de etiquetas, el `slug` y lo que lleva puesto un día |
 | `src/components/usePalette.ts` | Lee, guarda, aplica y vigila la paleta; lo usa toda página que pinte |
 | `src/components/ThemeToggle.tsx` | El sol y la luna de la barra |
 | `src/lib/telegram.ts` | El bot: enviar, leer `getUpdates`, clasificar fallos |
@@ -69,7 +70,7 @@ middleware ───────────────────────
 | Colección | Contenido | Índice |
 |---|---|---|
 | `user` `session` `account` | Las crea Better Auth. Tu nombre vive en `user` | propios |
-| `days` | Un día por usuario: marca, nota, color, `imageCount`, `thumb`, `reminder` | `{userId, key}` único |
+| `days` | Un día por usuario: marca, nota, color, `imageCount`, `thumb`, `reminder`, `tags` | `{userId, key}` único |
 | `settings` | Ajustes que no son de este dispositivo: hoy, el chat de Telegram | `{userId}` único |
 | `allowlist` | Qué correos pueden **crearse** una cuenta. No afecta a quien ya la tiene | `{email}` único |
 | `images` | Una imagen por documento, con su posición. Hoy guarda la imagen entera como data URL; la tanda 8 deja aquí solo la referencia a Cloudinary | `{userId, key, index}` único |
@@ -78,7 +79,8 @@ middleware ───────────────────────
 
 Los meses plegados **no** suben: son preferencia de este dispositivo y se
 quedan en `localStorage`. La paleta —el nombre y el tono de cada categoría—
-tampoco, y esa sí duele: ver *Deuda conocida*.
+tampoco, y esa sí duele: ver *Deuda conocida*. El **catálogo** de etiquetas está
+en el mismo caso; lo que un día lleva puesto sí sube, porque es del día.
 
 ### Más de una persona
 
@@ -589,7 +591,7 @@ llega ninguno, que es justo cuando dejaría la clase puesta para siempre.
 El bloque oscuro va dentro de `@media screen`: en papel manda siempre la paleta
 clara, que es la que ya contemplan las reglas de impresión.
 
-### Editar sin salir, y colores propios — septiembre de 2026
+### Editar sin salir, colores propios y etiquetas — septiembre de 2026
 
 #### El día se edita donde se está mirando
 
@@ -711,6 +713,72 @@ el calendario y en la agenda; la tercera copia habría sido la que se desviara.
 Escribe por una función y no por un `useEffect` que vigile el estado, porque ese
 efecto corre también en el primer render —cuando la paleta aún está vacía porque
 no se ha leído— y guardaría ese vacío encima de lo que hubiera.
+
+#### Etiquetas
+
+Siete de fábrica —Deporte, Ejercicio, Diversión, Descanso, No molestar, Trabajo,
+Estudio— y las que se quieran añadir. Clasifican el día por lo que **es**, que es
+otra pregunta que la del color: el color dice de qué va —«Entrega», «Guardia»— y
+es uno solo; las etiquetas son varias y se cruzan con él.
+
+**Son dos cosas y viven en dos sitios, y eso es lo único importante de esta
+tanda.** El catálogo —qué etiquetas existen— es configuración de este
+dispositivo, como la paleta, y se queda en `localStorage`. Lo que un día lleva
+puesto es **contenido del día**: va dentro del `DayEntry`, sube a la cuenta y se
+resuelve en conflictos por la misma vía que la nota. Guardar las asignaciones en
+`localStorage` con el catálogo habría sido más fácil de escribir y habría dejado
+fuera de la sincronía la mitad que importa: etiquetar en el portátil no se vería
+en el móvil, y un día borrado o mudado de fecha dejaría las suyas colgando de una
+clave que ya no existe.
+
+El día guarda el **`slug`**, no el rótulo: la misma indirección que con los
+colores, y por lo mismo. Con el texto dentro, «Trabajo» y «trabajo» serían dos
+etiquetas y no habría forma de volver a juntarlas.
+
+Que viajen obligó a tocar la cadena entera, y conviene tenerlo escrito porque el
+siguiente campo del día pasará por los mismos cinco sitios: `DayEntry`, el
+saneado de `storage.ts`, `WireDay` con su saneado, `toWire`/`fromWire`, y
+`sameDay` en `sync.ts`. **Ese último es el que se olvida**: sin él, poner una
+etiqueta y no tocar nada más se guardaría aquí y no se encolaría jamás, que es
+exactamente lo que ya pasó con `reminder`. El sexto sitio lo exige el compilador:
+`OPTIONAL_FIELDS` en `days.ts` es un `Record` sobre las claves opcionales, así
+que el build no pasa hasta que `tags` está en la lista de campos que hay que
+borrar cuando desaparecen.
+
+Un día que solo lleva etiquetas **cuenta como contenido**. Es discutible —una
+etiqueta clasifica algo, y sola no clasifica nada— pero la alternativa es peor:
+elegir «Descanso» en un día vacío, guardar, y que no pase nada sin que nada lo
+explique. `hasContent` y el saneado de `sanitizeData` tienen que decir lo mismo o
+el día se guardaría y desaparecería al recargar.
+
+Borrar una etiqueta del catálogo **la quita de todos los días que la llevaban**.
+La alternativa era dejarlas puestas y que se vieran sin poder elegirse, que no
+pierde nada pero deja la única forma de quitarlas en abrir los días uno a uno.
+Así que se quitan de golpe, Ajustes dice de cuántos días antes de hacerlo, y el
+aviso del pie lo deshace —el catálogo también, por eso `Notice` ganó un campo
+`tags`: deshacer solo la mitad dejaría etiquetas puestas que ya nadie puede
+quitar.
+
+Lo que un día lleva **no se comprueba contra el catálogo**. Un día etiquetado en
+el portátil no puede perder su etiqueta por abrirse en un móvil que aún no
+conoce el catálogo, que no viaja; por eso `labelOf` sabe componer un rótulo a
+partir del `slug`, y el selector enseña —y deja quitar— lo que lleva puesto
+aunque ya no esté en la lista.
+
+En el selector no se renombran. Cambiar el rótulo cambiaría el `slug`, y eso
+dejaría a los días apuntando a algo que ya no existe: sería borrar y crear con
+otro nombre, disfrazado de edición. En dos pasos se puede hacer igual, viendo lo
+que se pierde.
+
+Las etiquetas del recordatorio son **las del día**. Un día tiene como mucho un
+aviso, así que separarlas daría dos juegos de etiquetas para la misma fecha sin
+nada que los distinga. Por eso el modal rápido pregunta por el día **elegido** y
+no por el de origen, igual que ya hacía con la nota: mover el aviso a otra fecha
+enseña —y escribe— las de esa fecha.
+
+Donde no se ven es en la casilla del calendario. No cabe: son cuarenta píxeles
+que ya llevan el color, el punto de la nota, la campana del aviso y el aro de
+hoy. Se ven en la agenda, en las tarjetas de recordatorio y dentro del día.
 
 #### Un `README.md`
 
@@ -950,8 +1018,14 @@ Pendiente:
       colores; con los tonos se nota mucho más, porque ya no es un rótulo sino
       el aspecto del año entero. Subirla es meterla en `settings`, que existe
       justo para lo que no es de este dispositivo.
-- [ ] La exportación lleva la paleta (`palette`, v5) pero el importador solo lee
-      `days`: reimportar un archivo no devuelve ni los nombres ni los tonos.
+- [ ] La exportación lleva la paleta y el catálogo de etiquetas (`palette` y
+      `tags`, v6) pero el importador solo lee `days`: reimportar un archivo no
+      devuelve ni los nombres, ni los tonos, ni las etiquetas que existían. Las
+      que lleven los días sí vuelven, porque van dentro del día.
+- [ ] El catálogo de etiquetas tampoco llega a la cuenta, con el mismo arreglo
+      que la paleta: `settings`. Duele menos —lo que un día lleva puesto sí
+      viaja, y `labelOf` sabe escribirlo sin catálogo— pero en un dispositivo
+      nuevo salen las siete de fábrica y hay que volver a crear las propias.
 - [ ] No hay recuperación de contraseña: haría falta un servidor de correo.
 - [ ] `IMAGE_ACTION` en `DayModal.tsx` no se usa. Anterior a esta sesión.
 - [ ] Dar por hecho un aviso que el servidor acaba de marcar como enviado —sin

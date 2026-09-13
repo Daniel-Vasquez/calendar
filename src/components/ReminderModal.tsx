@@ -9,6 +9,8 @@ import {
   type Reminder,
 } from '../lib/reminder';
 import { isDateKey } from '../lib/wire';
+import { sanitizeTags, type Tag } from '../lib/tags';
+import { TagPicker } from './TagChips';
 import { useDialog } from './useDialog';
 
 type Props = {
@@ -29,9 +31,17 @@ type Props = {
   noteOf: (key: string) => string;
   /** ¿Tiene ya aviso este día? Se pregunta por el destino, para avisar antes. */
   hasReminder: (key: string) => boolean;
+  /** Las etiquetas que existen, y las que lleva el día que se está editando. */
+  catalogue: Tag[];
+  /**
+   * Las etiquetas de un día cualquiera. Se pregunta por el **elegido**, igual
+   * que la nota: las etiquetas son del día, así que mover el aviso a otra fecha
+   * enseña las de esa fecha y no las de la que se abandona.
+   */
+  tagsOf: (key: string) => string[];
   /** Botón desde el que se abrió: a él vuelve el foco al cerrarse. */
   triggerRef: React.RefObject<HTMLElement | null>;
-  onSave: (from: string | null, to: string, reminder: Reminder) => void;
+  onSave: (from: string | null, to: string, reminder: Reminder, tags: string[]) => void;
   onDelete: (key: string) => void;
   onClose: () => void;
 };
@@ -62,6 +72,8 @@ export default function ReminderModal({
   defaultKey,
   noteOf,
   hasReminder,
+  catalogue,
+  tagsOf,
   triggerRef,
   onSave,
   onDelete,
@@ -73,6 +85,13 @@ export default function ReminderModal({
   const [day, setDay] = useState(dateKey ?? defaultKey);
   const [time, setTime] = useState(reminder?.time ?? DEFAULT_REMINDER_TIME);
   const [text, setText] = useState(reminder?.text ?? '');
+  /**
+   * Las etiquetas del día elegido. Se siguen al cambiar de fecha porque son de
+   * la fecha y no del aviso: mover el recordatorio a otro día enseña —y
+   * escribe— las de ese día. El estado arranca en las del día de origen.
+   */
+  const [tags, setTags] = useState<string[]>(() => (dateKey ? tagsOf(dateKey) : []));
+  const shownDay = useRef(dateKey ?? defaultKey);
   const titleId = useId();
   const dayId = useId();
   const timeId = useId();
@@ -93,6 +112,13 @@ export default function ReminderModal({
     return () => trigger?.focus();
   }, [creating, triggerRef]);
 
+  // Cambiar de día trae las etiquetas del nuevo. Se hace al pintar y no en un
+  // efecto para que no se vea un cuadro con las del día anterior.
+  if (isDateKey(day) && day !== shownDay.current) {
+    shownDay.current = day;
+    setTags(tagsOf(day));
+  }
+
   const validDay = isDateKey(day) && isInQuarter(day);
   const validTime = isTime(time);
   const moves = validDay && !creating && day !== dateKey;
@@ -112,7 +138,7 @@ export default function ReminderModal({
     // con él la respuesta a «¿ya salió?» y a «¿ya está hecho?». Pasarle el
     // previo dejaría un aviso nuevo marcado como enviado, que no sonaría nunca.
     const next = makeReminder(day, time, text, moves ? undefined : reminder);
-    if (next) onSave(dateKey, day, next);
+    if (next) onSave(dateKey, day, next, sanitizeTags(tags));
   }
 
   return (
@@ -183,6 +209,15 @@ export default function ReminderModal({
             />
           </div>
         </div>
+
+        <fieldset className="mt-4">
+          <legend className="mb-1.5 text-xs font-medium text-ink-muted">Etiquetas</legend>
+          {/* Son del **día**, no del aviso: el día no tiene más que un
+              recordatorio, así que separarlas daría dos juegos de etiquetas
+              para la misma fecha sin nada que los distinga. Lo que se ponga
+              aquí es lo que enseña su nota en el calendario. */}
+          <TagPicker catalogue={catalogue} value={tags} onChange={setTags} />
+        </fieldset>
 
         <div className="mt-4">
           <label htmlFor={textId} className="mb-1.5 block text-xs font-medium text-ink-muted">

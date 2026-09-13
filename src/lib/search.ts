@@ -1,6 +1,7 @@
 import { formatLongDate, formatWeekday } from './calendar';
 import { labelFor, type ColorPalette } from './palette';
 import { hasImages, type CalendarData, type DayEntry } from './storage';
+import { labelOf, type Tag } from './tags';
 
 /**
  * La lente de la agenda: buscar por texto y filtrar por tipo.
@@ -74,10 +75,15 @@ export function matchesType(entry: DayEntry, type: AgendaType): boolean {
  *
  * Entra la fecha en las formas en que alguien la escribiría —"jueves",
  * "octubre", "15/10", la clave entera—, la nota, el texto propio del aviso con
- * su hora y el nombre de la categoría. Lo que no entra son las imágenes: no
- * tienen texto que mirar.
+ * su hora, el nombre de la categoría y las etiquetas. Lo que no entra son las
+ * imágenes: no tienen texto que mirar.
  */
-export function searchableText(key: string, entry: DayEntry, palette: ColorPalette): string {
+export function searchableText(
+  key: string,
+  entry: DayEntry,
+  palette: ColorPalette,
+  catalogue: Tag[],
+): string {
   const [year, month, day] = key.split('-').map(Number);
 
   const parts = [
@@ -92,6 +98,8 @@ export function searchableText(key: string, entry: DayEntry, palette: ColorPalet
     // El nombre de fábrica del color también vale: quien no ha renombrado nada
     // busca "rosa" igual que quien sí lo hizo busca "Entrega".
     entry.marked ? labelFor(palette, entry.color) : '',
+    // Por su rótulo, no por su `slug`: se busca «no molestar», no «no-molestar».
+    ...(entry.tags ?? []).map((slug) => labelOf(catalogue, slug)),
   ];
 
   return normalize(parts.join(' '));
@@ -100,10 +108,14 @@ export function searchableText(key: string, entry: DayEntry, palette: ColorPalet
 /** Texto buscable de cada día, listo para comparar sin rehacerlo por tecla. */
 export type SearchIndex = Record<string, string>;
 
-export function buildSearchIndex(data: CalendarData, palette: ColorPalette): SearchIndex {
+export function buildSearchIndex(
+  data: CalendarData,
+  palette: ColorPalette,
+  catalogue: Tag[],
+): SearchIndex {
   const index: SearchIndex = {};
   for (const [key, entry] of Object.entries(data)) {
-    index[key] = searchableText(key, entry, palette);
+    index[key] = searchableText(key, entry, palette, catalogue);
   }
   return index;
 }

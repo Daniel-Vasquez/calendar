@@ -1,5 +1,6 @@
 import { labelFor, type ColorPalette } from './palette';
 import { reminderText } from './reminder';
+import { labelOf, type Tag } from './tags';
 import { sanitizeData, type CalendarData } from './storage';
 
 /** Nombre base de los archivos que se descargan. */
@@ -36,14 +37,14 @@ export function parseImport(text: string): ImportResult {
 }
 
 /** Envoltorio con metadatos: el importador también acepta el mapa a secas. */
-export function toJson(data: CalendarData, palette: ColorPalette): string {
+export function toJson(data: CalendarData, palette: ColorPalette, tags: Tag[]): string {
   return JSON.stringify(
-    // v5: las categorías pasan de ser un nombre suelto por color a llevar
-    // también su tono, así que `labels` deja sitio a `palette`. Antes, v4 añadió
-    // `reminder` al día y v3, `imageCount` y `thumb`. El importador acepta todas
-    // las anteriores igual: solo lee `days`, y lo que falte de un día se deduce
-    // de lo que sí venga.
-    { app: FILE_STEM, version: 5, exportedAt: new Date().toISOString(), palette, days: data },
+    // v6: el día puede llevar `tags`, y el catálogo que las nombra viaja al
+    // lado. Antes, v5 dio tono a las categorías, v4 añadió `reminder` al día y
+    // v3, `imageCount` y `thumb`. El importador acepta todas las anteriores
+    // igual: solo lee `days`, y lo que falte de un día se deduce de lo que sí
+    // venga.
+    { app: FILE_STEM, version: 6, exportedAt: new Date().toISOString(), palette, tags, days: data },
     null,
     2,
   );
@@ -79,7 +80,12 @@ function icsUtc(date: Date): string {
  * Calendario iCalendar con un evento de día completo por cada día registrado,
  * para llevarse el año a Google Calendar, Outlook o Apple Calendario.
  */
-export function toIcs(data: CalendarData, palette: ColorPalette, now: Date = new Date()): string {
+export function toIcs(
+  data: CalendarData,
+  palette: ColorPalette,
+  tags: Tag[],
+  now: Date = new Date(),
+): string {
   const stamp = icsUtc(now);
 
   const events = Object.keys(data)
@@ -122,7 +128,17 @@ export function toIcs(data: CalendarData, palette: ColorPalette, now: Date = new
         `DTEND;VALUE=DATE:${endCompact}`,
         fold(`SUMMARY:${escapeText(summary)}`),
         ...(entry.note ? [fold(`DESCRIPTION:${escapeText(entry.note)}`)] : []),
-        ...(entry.marked ? [fold(`CATEGORIES:${escapeText(labelFor(palette, entry.color))}`)] : []),
+        // La categoría del color y las etiquetas comparten campo: para un
+        // calendario ajeno las dos son lo mismo, una clasificación del evento.
+        ...(() => {
+          const categories = [
+            ...(entry.marked ? [labelFor(palette, entry.color)] : []),
+            ...(entry.tags ?? []).map((slug) => labelOf(tags, slug)),
+          ];
+          return categories.length
+            ? [fold(`CATEGORIES:${categories.map(escapeText).join(',')}`)]
+            : [];
+        })(),
         ...alarm,
         'END:VEVENT',
       ];

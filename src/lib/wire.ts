@@ -1,6 +1,7 @@
 import { DEFAULT_COLOR, isColorId, type ColorId } from './palette';
 import { isThumb } from './image';
 import { sanitizeReminder, type Reminder } from './reminder';
+import { sanitizeTags } from './tags';
 import { imageCount, type DayEntry } from './storage';
 
 /**
@@ -38,6 +39,11 @@ export type WireDay = {
    * cron los necesita en el servidor para saber qué mandar y cuándo.
    */
   reminder?: Reminder;
+  /**
+   * Etiquetas del día, por su `slug`. Viajan, al revés que el catálogo: son
+   * del día, y sin ellas etiquetar en el portátil no se vería en el móvil.
+   */
+  tags?: string[];
   /**
    * Lápida. Un día borrado no se quita de la base: se marca. Sin esto, borrar
    * un día en el móvil y abrir el portátil —que aún lo tiene— lo resucitaría
@@ -94,6 +100,7 @@ export function sanitizeWireDay(raw: unknown): WireDay | null {
   const count = typeof value.imageCount === 'number' ? Math.floor(value.imageCount) : 0;
   const thumb = isThumb(value.thumb) ? value.thumb : undefined;
   const reminder = sanitizeReminder(value.reminder, value.key);
+  const tags = sanitizeTags(value.tags);
 
   return {
     key: value.key,
@@ -103,6 +110,7 @@ export function sanitizeWireDay(raw: unknown): WireDay | null {
     imageCount: Math.max(0, Math.min(count, 99)),
     ...(thumb ? { thumb } : {}),
     ...(reminder ? { reminder } : {}),
+    ...(tags.length ? { tags } : {}),
     updatedAt,
   };
 }
@@ -117,6 +125,7 @@ export function toWire(key: string, entry: DayEntry, updatedAt: number): WireDay
     imageCount: imageCount(entry),
     ...(entry.thumb ? { thumb: entry.thumb } : {}),
     ...(entry.reminder ? { reminder: entry.reminder } : {}),
+    ...(entry.tags?.length ? { tags: entry.tags } : {}),
     updatedAt,
   };
 }
@@ -143,5 +152,6 @@ export function fromWire(day: WireDay, local?: DayEntry): DayEntry {
     ...(day.imageCount ? { imageCount: day.imageCount } : {}),
     ...(day.thumb ? { thumb: day.thumb } : {}),
     ...(day.reminder ? { reminder: day.reminder } : {}),
+    ...(day.tags?.length ? { tags: day.tags } : {}),
   };
 }

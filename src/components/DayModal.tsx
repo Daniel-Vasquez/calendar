@@ -11,6 +11,8 @@ import {
 import { dataUrlBytes, IMAGE_ACCEPT, MAX_IMAGES_PER_DAY, prepareImage } from '../lib/image';
 import { hasContent, imageCount, imagesReady, type DayEntry } from '../lib/storage';
 import { isDateKey } from '../lib/wire';
+import { sanitizeTags, type Tag } from '../lib/tags';
+import { TagPicker } from './TagChips';
 import type { Reminder } from '../lib/reminder';
 import ReminderField from './ReminderField';
 import { useDialog } from './useDialog';
@@ -20,6 +22,8 @@ type Props = {
   entry?: DayEntry;
   /** Los nombres y tonos que el usuario les haya puesto (ver SettingsPanel). */
   palette: ColorPalette;
+  /** Las etiquetas que existen. Se administran en Ajustes; ver `tags.ts`. */
+  catalogue: Tag[];
   onSave: (key: string, entry: DayEntry) => void;
   onClear: (key: string) => void;
   onClose: () => void;
@@ -76,6 +80,7 @@ export default function DayModal({
   dateKey,
   entry,
   palette,
+  catalogue,
   onSave,
   onClear,
   onClose,
@@ -91,6 +96,7 @@ export default function DayModal({
   /** Data URL de cada imagen adjunta, en el orden en que se añadieron. */
   const [images, setImages] = useState<string[]>(entry?.images ?? []);
   const [reminder, setReminder] = useState<Reminder | undefined>(entry?.reminder);
+  const [tags, setTags] = useState<string[]>(entry?.tags ?? []);
   /** Fecha elegida. Mientras nadie la toque es la del día que se abrió. */
   const [day, setDay] = useState(dateKey);
   const [imageError, setImageError] = useState('');
@@ -118,9 +124,18 @@ export default function DayModal({
     setColor(entry?.color ?? DEFAULT_COLOR);
     setImages(entry?.images ?? []);
     setReminder(entry?.reminder);
+    setTags(entry?.tags ?? []);
     setDay(dateKey);
     setImageError('');
-  }, [dateKey, entry?.marked, entry?.note, entry?.color, entry?.images, entry?.reminder]);
+  }, [
+    dateKey,
+    entry?.marked,
+    entry?.note,
+    entry?.color,
+    entry?.images,
+    entry?.reminder,
+    entry?.tags,
+  ]);
 
   useEffect(() => {
     closeRef.current?.focus();
@@ -218,15 +233,17 @@ export default function DayModal({
    */
   function draft(): DayEntry {
     if (!ready) {
-      // `entry` puede traer un recordatorio que aquí se acaba de apagar, así
-      // que el campo se quita primero y se vuelve a poner solo si sigue vivo.
-      const { reminder: _previous, ...rest } = entry ?? ({} as DayEntry);
+      // `entry` puede traer un recordatorio o unas etiquetas que aquí se acaban
+      // de quitar, así que los campos se sueltan primero y se vuelven a poner
+      // solo si siguen vivos.
+      const { reminder: _previous, tags: _dropped, ...rest } = entry ?? ({} as DayEntry);
       return {
         ...rest,
         marked,
         note: note.trim(),
         color,
         ...(reminder ? { reminder } : {}),
+        ...(tags.length ? { tags: sanitizeTags(tags) } : {}),
       };
     }
 
@@ -241,6 +258,7 @@ export default function DayModal({
       ...(images.length ? { images, imageCount: images.length } : {}),
       ...(keepThumb ? { thumb: keepThumb } : {}),
       ...(reminder ? { reminder } : {}),
+      ...(tags.length ? { tags: sanitizeTags(tags) } : {}),
     };
   }
 
@@ -420,6 +438,19 @@ export default function DayModal({
               Elegir un color marcará el día automáticamente.
             </p>
           )}
+        </fieldset>
+
+        {/* Las etiquetas van pegadas al color porque son lo mismo para quien
+            mira: las dos clasifican el día sin escribir nada. La diferencia es
+            que el color es uno y estas son varias. */}
+        <fieldset className="mt-4">
+          <legend className="mb-2 flex w-full items-baseline justify-between text-sm font-medium text-ink-soft">
+            <span>Etiquetas</span>
+            {tags.length > 0 && (
+              <span className="text-xs font-normal text-ink-muted">{tags.length} puestas</span>
+            )}
+          </legend>
+          <TagPicker catalogue={catalogue} value={tags} onChange={setTags} />
         </fieldset>
 
         <div className="mt-4">

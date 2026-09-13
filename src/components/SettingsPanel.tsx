@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useId, useRef, useState } from 'react';
 import {
   DAY_COLORS,
   hexFor,
@@ -7,6 +7,13 @@ import {
   type ColorId,
   type ColorPalette,
 } from '../lib/palette';
+import {
+  cleanLabel,
+  MAX_TAG_LENGTH,
+  MAX_TAGS,
+  slugify,
+  type Tag,
+} from '../lib/tags';
 import TelegramSettings from './TelegramSettings';
 
 type Props = {
@@ -18,6 +25,12 @@ type Props = {
   onRecolor: (id: ColorId, hex: string) => void;
   /** Devuelve los ocho colores a los nombres y tonos de fábrica. */
   onResetPalette: () => void;
+  /** Las etiquetas que existen. Ver `tags.ts`. */
+  catalogue: Tag[];
+  /** En cuántos días está puesta cada una, por `slug`. Se dice antes de borrar. */
+  tagUsage: Record<string, number>;
+  onAddTag: (label: string) => void;
+  onDeleteTag: (slug: string) => void;
   onExportJson: () => void;
   onExportIcs: () => void;
   onImport: (file: File) => void;
@@ -39,7 +52,8 @@ const ACTION =
   'disabled:cursor-not-allowed disabled:text-ink-muted disabled:hover:bg-raised';
 
 /**
- * Ajustes secundarios: nombrar y teñir los colores, y sacar o meter los datos.
+ * Ajustes secundarios: nombrar y teñir los colores, administrar las etiquetas y
+ * sacar o meter los datos.
  * Es solo el contenido; el marco (cabecera, cierre, animación) lo pone
  * SettingsModal, que lo abre desde el engrane de la cabecera.
  */
@@ -49,6 +63,10 @@ export default function SettingsPanel({
   onRenameColor,
   onRecolor,
   onResetPalette,
+  catalogue,
+  tagUsage,
+  onAddTag,
+  onDeleteTag,
   onExportJson,
   onExportIcs,
   onImport,
@@ -147,6 +165,13 @@ export default function SettingsPanel({
         </div>
       </section>
 
+      <TagSettings
+        catalogue={catalogue}
+        usage={tagUsage}
+        onAdd={onAddTag}
+        onDelete={onDeleteTag}
+      />
+
       <section>
         <h3 className="text-sm font-semibold text-ink-soft">Copia de seguridad</h3>
         <p className="mt-1 text-xs text-ink-muted">
@@ -182,5 +207,154 @@ export default function SettingsPanel({
 
       <TelegramSettings />
     </div>
+  );
+}
+
+/**
+ * Alta y baja de etiquetas.
+ *
+ * Solo eso: no se renombran. Cambiar el rótulo de una etiqueta cambiaría su
+ * identidad —el `slug` sale del texto— y dejaría a los días apuntando a algo
+ * que ya no existe, así que sería borrar y crear con otro nombre disfrazado de
+ * edición. Quien quiera eso puede hacerlo en dos pasos, viendo lo que pierde.
+ */
+function TagSettings({
+  catalogue,
+  usage,
+  onAdd,
+  onDelete,
+}: {
+  catalogue: Tag[];
+  usage: Record<string, number>;
+  onAdd: (label: string) => void;
+  onDelete: (slug: string) => void;
+}) {
+  const [draft, setDraft] = useState('');
+  /** Qué etiqueta está preguntando si de verdad. Una cada vez. */
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const inputId = useId();
+
+  const clean = cleanLabel(draft);
+  const slug = slugify(clean);
+  const repeated = Boolean(slug) && catalogue.some((tag) => tag.slug === slug);
+  const full = catalogue.length >= MAX_TAGS;
+  const canAdd = Boolean(slug) && !repeated && !full;
+
+  function add() {
+    if (!canAdd) return;
+    onAdd(clean);
+    setDraft('');
+  }
+
+  return (
+    <section>
+      <h3 className="text-sm font-semibold text-ink-soft">Etiquetas</h3>
+      <p className="mt-1 text-xs text-ink-muted">
+        Clasifican un día por lo que es —«Trabajo», «Descanso»— al margen de su color, y se ponen
+        desde la nota o el recordatorio. Las etiquetas viajan con el día; esta lista es de este
+        navegador.
+      </p>
+
+      {catalogue.length > 0 ? (
+        <ul className="mt-3 flex flex-wrap gap-2">
+          {catalogue.map((tag) => {
+            const count = usage[tag.slug] ?? 0;
+            const asking = confirming === tag.slug;
+
+            return (
+              <li key={tag.slug}>
+                {asking ? (
+                  <span className="flex items-center gap-1 rounded-full border border-highlight/40 bg-highlight-soft py-1 pr-1 pl-3 text-xs font-medium text-highlight">
+                    {count > 0
+                      ? `¿Quitar «${tag.label}» de ${count} ${count === 1 ? 'día' : 'días'}?`
+                      : `¿Borrar «${tag.label}»?`}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onDelete(tag.slug);
+                        setConfirming(null);
+                      }}
+                      className="rounded-full bg-highlight px-2 py-0.5 font-semibold text-white transition-colors hover:brightness-90 focus-visible:ring-2 focus-visible:ring-highlight focus-visible:ring-offset-2 focus-visible:outline-none"
+                    >
+                      Sí
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirming(null)}
+                      className="rounded-full px-2 py-0.5 text-ink-soft transition-colors hover:bg-edge focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+                    >
+                      No
+                    </button>
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 rounded-full border border-edge bg-raised py-1 pr-1 pl-3 text-xs font-medium text-ink-soft">
+                    {tag.label}
+                    {count > 0 && <span className="text-ink-muted tabular-nums">{count}</span>}
+                    <button
+                      type="button"
+                      onClick={() => setConfirming(tag.slug)}
+                      aria-label={`Borrar la etiqueta ${tag.label}`}
+                      title={
+                        count > 0
+                          ? `Borrar «${tag.label}» y quitarla de ${count} ${count === 1 ? 'día' : 'días'}`
+                          : `Borrar «${tag.label}»`
+                      }
+                      className="rounded-full p-1 text-ink-muted transition-colors hover:bg-highlight-soft hover:text-highlight focus-visible:ring-2 focus-visible:ring-highlight focus-visible:outline-none"
+                    >
+                      <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                        <path
+                          d="M4 4l8 8M12 4l-8 8"
+                          stroke="currentColor"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                        />
+                      </svg>
+                    </button>
+                  </span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      ) : (
+        <p className="mt-3 rounded-xl border border-dashed border-edge bg-surface px-3 py-4 text-center text-xs text-ink-muted">
+          No queda ninguna. Crea la primera aquí abajo.
+        </p>
+      )}
+
+      <div className="mt-3 flex gap-2">
+        <label htmlFor={inputId} className="sr-only">
+          Nueva etiqueta
+        </label>
+        <input
+          id={inputId}
+          type="text"
+          value={draft}
+          maxLength={MAX_TAG_LENGTH}
+          placeholder={full ? `Máximo ${MAX_TAGS} etiquetas` : 'Nueva etiqueta…'}
+          disabled={full}
+          onChange={(event) => setDraft(event.target.value)}
+          // Enter añade, que es lo que se espera de un campo con un botón al
+          // lado. No hay `<form>`: este panel vive dentro de un modal y un
+          // envío de verdad recargaría la página.
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              add();
+            }
+          }}
+          className="w-full min-w-0 rounded-lg border border-edge bg-raised px-2.5 py-1.5 text-sm text-ink placeholder:text-ink-muted focus:border-accent focus:ring-2 focus:ring-accent/30 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+        />
+        <button type="button" onClick={add} disabled={!canAdd} className={ACTION}>
+          Añadir
+        </button>
+      </div>
+
+      {repeated && (
+        <p className="mt-1.5 text-xs font-medium text-highlight">
+          «{clean}» ya está en la lista.
+        </p>
+      )}
+    </section>
   );
 }

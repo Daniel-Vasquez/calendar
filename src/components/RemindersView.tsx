@@ -5,6 +5,8 @@ import ReminderModal from './ReminderModal';
 import SyncBadge from './SyncBadge';
 import { useCalendarStore } from './useCalendarStore';
 import { usePalette } from './usePalette';
+import { useTags } from './useTags';
+import { TagBadges } from './TagChips';
 import {
   dayHref,
   dayTimeState,
@@ -28,7 +30,8 @@ import {
   type ReminderFilter,
   type ReminderItem,
 } from '../lib/reminders';
-import type { CalendarData } from '../lib/storage';
+import { withTags, type CalendarData } from '../lib/storage';
+import type { Tag } from '../lib/tags';
 
 /**
  * Aviso efímero del pie. Con `snapshot` ofrece deshacer —guarda el calendario
@@ -73,6 +76,7 @@ export default function RemindersView({ user }: { user: NavUser }) {
   // le basta con que sus variables queden puestas y sigan a lo que se retoque
   // en otra pestaña. Por eso se llama y no se mira lo que devuelve.
   usePalette();
+  const { catalogue } = useTags();
 
   const [filter, setFilter] = useState<ReminderFilter>('pending');
   /**
@@ -166,12 +170,18 @@ export default function RemindersView({ user }: { user: NavUser }) {
    * deshacer.
    */
   const handleSaveEditor = useCallback(
-    (from: string | null, to: string, reminder: Reminder) => {
+    (from: string | null, to: string, reminder: Reminder, tags: string[]) => {
       const snapshot = data;
       const pisa = from !== to && Boolean(data[to]?.reminder);
-      setData((current) =>
-        from === null ? withReminder(current, to, reminder) : moveReminder(current, from, to, reminder),
-      );
+      setData((current) => {
+        const next =
+          from === null
+            ? withReminder(current, to, reminder)
+            : moveReminder(current, from, to, reminder);
+        // Las etiquetas son del día de destino, así que se escriben después de
+        // mover: antes, `moveReminder` las dejaría en el día que se abandona.
+        return withTags(next, to, tags);
+      });
       setEditor(null);
 
       const cuando = formatLongDate(to);
@@ -197,6 +207,7 @@ export default function RemindersView({ user }: { user: NavUser }) {
 
   const hasReminder = useCallback((key: string) => Boolean(data[key]?.reminder), [data]);
   const noteOf = useCallback((key: string) => data[key]?.note ?? '', [data]);
+  const tagsOf = useCallback((key: string) => data[key]?.tags ?? [], [data]);
 
   /** Día que se propone al crear: hoy, o el principio del año si queda fuera. */
   const defaultKey = clock.today && isInQuarter(clock.today) ? clock.today : `${YEAR}-01-01`;
@@ -210,6 +221,7 @@ export default function RemindersView({ user }: { user: NavUser }) {
     <ReminderCard
       key={item.key}
       item={item}
+      catalogue={catalogue}
       now={clock.now}
       today={clock.today}
       onToggle={handleToggle}
@@ -369,6 +381,8 @@ export default function RemindersView({ user }: { user: NavUser }) {
           defaultKey={defaultKey}
           noteOf={noteOf}
           hasReminder={hasReminder}
+          catalogue={catalogue}
+          tagsOf={tagsOf}
           triggerRef={triggerRef}
           onSave={handleSaveEditor}
           onDelete={handleDelete}
@@ -403,6 +417,7 @@ function SectionTitle({
  */
 function ReminderCard({
   item,
+  catalogue,
   now,
   today,
   onToggle,
@@ -410,6 +425,7 @@ function ReminderCard({
   onDelete,
 }: {
   item: ReminderItem;
+  catalogue: Tag[];
   now: number;
   today: string;
   onToggle: (key: string, done: boolean) => void;
@@ -492,6 +508,8 @@ function ReminderCard({
           {fromNote && (
             <p className="mt-0.5 text-xs text-ink-muted italic">Texto tomado de la nota del día</p>
           )}
+
+          <TagBadges catalogue={catalogue} tags={item.tags} className="mt-2" />
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button type="button" onClick={(event) => onEdit(key, event)} className={ROW_ACTION}>

@@ -1,6 +1,7 @@
 import { DEFAULT_COLOR, isColorId, type ColorId } from './palette';
 import { isImageDataUrl, isThumb, MAX_IMAGES_PER_DAY } from './image';
 import { makeReminder, sanitizeReminder, type Reminder } from './reminder';
+import { sanitizeTags } from './tags';
 
 export const STORAGE_KEY = 'calendar_2026_q4_data';
 
@@ -24,6 +25,13 @@ export type DayEntry = {
   thumb?: string;
   /** Aviso a una hora del día. Ver `reminder.ts`. */
   reminder?: Reminder;
+  /**
+   * Etiquetas del día, por su `slug`. Van dentro del día y no en una lista
+   * aparte porque son suyas: se mudan con él, se borran con él y suben a la
+   * cuenta con él. El catálogo —qué etiquetas existen— sí es de este
+   * dispositivo y vive en `localStorage`. Ver `tags.ts`.
+   */
+  tags?: string[];
 };
 
 /**
@@ -32,9 +40,19 @@ export type DayEntry = {
  * **El recordatorio cuenta.** Sin esta línea, poner una hora y guardar deja un
  * día que no tiene marca, ni nota, ni imagen: `handleSave` lo lee como vacío y
  * lo borra en el acto, con el aviso dentro.
+ *
+ * **Y las etiquetas también.** Es discutible —una etiqueta clasifica algo, y
+ * sola no clasifica nada—, pero la alternativa es peor: elegir «Descanso» en un
+ * día vacío, guardar y ver que no ha pasado nada, sin que nada lo explique.
  */
 export function hasContent(entry: DayEntry): boolean {
-  return entry.marked || Boolean(entry.note) || hasImages(entry) || Boolean(entry.reminder);
+  return (
+    entry.marked ||
+    Boolean(entry.note) ||
+    hasImages(entry) ||
+    Boolean(entry.reminder) ||
+    Boolean(entry.tags?.length)
+  );
 }
 
 /**
@@ -135,10 +153,12 @@ export function sanitizeData(raw: unknown): CalendarData {
 
     const thumb = isThumb(entry.thumb) ? entry.thumb : undefined;
     const reminder = sanitizeReminder(entry.reminder, key);
+    const tags = sanitizeTags(entry.tags);
 
     // La misma regla que `hasContent`, aplicada al leer: un día que solo lleva
-    // un recordatorio es un día con contenido y no puede caerse aquí.
-    if (!marked && !note && count === 0 && !reminder) continue;
+    // un recordatorio —o solo etiquetas— es un día con contenido y no puede
+    // caerse aquí. Las dos reglas tienen que decir lo mismo.
+    if (!marked && !note && count === 0 && !reminder && tags.length === 0) continue;
 
     // Datos anteriores a los colores no traen `color`: se asume el teal base.
     const color = isColorId(entry.color) ? entry.color : DEFAULT_COLOR;
@@ -151,9 +171,31 @@ export function sanitizeData(raw: unknown): CalendarData {
       ...(count ? { imageCount: count } : {}),
       ...(thumb ? { thumb } : {}),
       ...(reminder ? { reminder } : {}),
+      ...(tags.length ? { tags } : {}),
     };
   }
   return clean;
+}
+
+/**
+ * Pone las etiquetas de un día, creándolo si hacía falta y borrándolo si se
+ * queda sin nada. Las mismas dos reglas que `withReminder` en `reminders.ts`,
+ * por las que un día puede nacer de un aviso o morir al quitárselo.
+ *
+ * Lo usa la lista de recordatorios, que edita el día sin abrir su modal.
+ */
+export function withTags(data: CalendarData, key: string, tags: string[]): CalendarData {
+  const entry = data[key];
+  const clean = sanitizeTags(tags);
+  if (!entry && clean.length === 0) return data;
+
+  const next = { ...(entry ?? { marked: false, note: '' }), ...(clean.length ? { tags: clean } : {}) };
+  if (clean.length === 0) delete next.tags;
+
+  const result = { ...data };
+  if (hasContent(next)) result[key] = next;
+  else delete result[key];
+  return result;
 }
 
 export function loadData(): CalendarData {
