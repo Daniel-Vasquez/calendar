@@ -1,8 +1,8 @@
 # Planificador 2026
 
-Calendario anual con notas, colores, imágenes adjuntas y —próximamente—
-recordatorios por Telegram. Astro + React, MongoDB Atlas, desplegado en Vercel;
-las imágenes van camino de Cloudinary (tanda 8).
+Calendario anual con notas, colores, imágenes adjuntas y recordatorios diarios
+por Telegram. Astro + React, MongoDB Atlas, desplegado en Vercel; las imágenes
+van camino de Cloudinary (tanda 8).
 
 **En producción:** <https://planificador.danielvasquez.lat>
 · estado: <https://planificador.danielvasquez.lat/api/health>
@@ -299,65 +299,61 @@ Comprobado de punta a punta contra Atlas: el cron encontró un aviso pendiente
 real y lo saltó como «sin destino» por no haber chat vinculado todavía, sin
 marcarlo como enviado. `getMe` confirma el bot y no hay webhook puesto.
 
+##### Quién llama al cron — `6a0f8da`, `824738a`, `d7551c6`
+
+El endpoint no se despierta solo: en Vercel no corre ningún proceso nuestro, una
+función solo vive mientras contesta. Sin alguien que pregunte «¿hay algo que
+mandar?» cada pocos minutos, el aviso se queda en Mongo esperando a nadie. Fue
+justo el primer síntoma al probarlo en producción: los recordatorios solo
+llegaban al lanzar el `curl` a mano.
+
+**GitHub Actions no sirvió.** El workflow está en
+`.github/workflows/recordatorios.yml` y es correcto —las ejecuciones manuales
+salen en verde—, pero su `schedule` no se ejecutó **ni una vez**: cero de unas
+veintisiete esperadas en 137 minutos, contadas contra la API, con el workflow
+`active`, en la rama por defecto y sin ser un fork. No es configuración del
+repositorio; GitHub sencillamente no atiende los `*/5` aquí. Se queda de todas
+formas, porque el botón *Run workflow* es la forma cómoda de disparar a mano
+mientras se prueba algo.
+
+**El programador de verdad es una cuenta gratuita en cron-job.org**, con un job
+que hace `POST` cada 5 minutos, cuerpo `{}` y tipo `application/json`.
+
+Y ahí vino lo caro. El secreto viajaba bien desde una terminal y no llegaba
+desde cron-job.org, con las dos cabeceras probadas y el mismo valor de 64
+caracteres. Un `401` no distingue «secreto equivocado» de «cabecera que nunca
+salió», y el formulario no enseña qué envía: no queda nada que depurar, solo que
+adivinar. La salida fue dejar de exigir una única forma. El endpoint acepta el
+secreto en cinco sitios —cabecera propia, `Bearer`, pelado, `Basic` en
+cualquiera de sus dos mitades, y `?secret=` en la URL— y **la que funcionó fue
+la de la URL**:
+
+```
+https://planificador.danielvasquez.lat/api/cron/reminders?secret=<el secreto>
+```
+
+Es la peor de las cinco y la única que deja rastro: lo que va en una URL acaba
+en los registros de acceso, en el historial del programador y en cualquier
+intermediario. El riesgo está acotado —quien la consiga solo puede pedir que
+salgan los avisos que ya tocaban, a los chats de siempre; no lee ni borra nada—
+pero **ese secreto conviene rotarlo más a menudo que los demás**. Está ahí
+porque rodear un formulario opaco sale más barato que seguir adivinando qué no
+le gusta.
+
+Por el camino salieron dos trampas, contadas en **Trampas que ya nos han
+mordido**: las casillas de cabecera no son JSON, y la URL tiene que llevar
+`https://` porque el 308 desde `http` se lleva por delante las credenciales.
+
+Y un fallo de verdad que el diagnóstico destapó, sin relación con el cron: un
+día borrado y vuelto a crear se quedaba marcado como borrado en el servidor.
+Ver `b0935f2`.
+
+Con esto **la tanda de recordatorios queda cerrada**: se programan en el
+calendario, salen solos y llegan a Telegram sin que nadie toque nada.
+
 ---
 
 ## Lo que falta
-
-### Lo que queda de los recordatorios
-
-- [x] **Telegram vinculado.** Ajustes → *Recordatorios por Telegram* → abrir el
-      chat, **Start**, volver y *Comprobar conexión*. Un bot no puede escribir
-      primero: hasta ese Start, Telegram no le deja mandar nada y el cron cuenta
-      el aviso como «sin destino».
-- [x] **`CRON_SECRET` y las tres variables de Telegram en Vercel.**
-- [ ] **Quien llame cada cinco minutos.** Es lo único que falta, y sin ello los
-      recordatorios solo salen cuando alguien dispara el endpoint a mano.
-
-**GitHub Actions no sirve para esto.** El workflow está en
-`.github/workflows/recordatorios.yml` y funciona —las ejecuciones manuales
-salen en verde—, pero **el `schedule` no se ejecuta**: cero ejecuciones de unas
-veintisiete esperadas en 137 minutos, medido contra la API. No es configuración
-del repositorio: el workflow figura como `active`, está en la rama por defecto y
-no es un fork. GitHub sencillamente no atiende los `*/5` aquí.
-
-Se queda igualmente, porque el botón *Run workflow* es la forma cómoda de
-disparar a mano al probar algo.
-
-El programador de verdad va en **cron-job.org**: `POST` cada 5 minutos a
-`https://planificador.danielvasquez.lat/api/cron/reminders`, con el cuerpo en
-`{}` y tipo `application/json` —eso satisface la protección CSRF de Astro sin
-añadir la cabecera a mano; ver *Trampas*—.
-
-El secreto se acepta de **cinco formas**, y son tantas por una razón concreta:
-cuando un programador no manda lo que le configuras, la petición llega desnuda y
-el `401` no distingue «secreto equivocado» de «cabecera perdida por el camino».
-Sin poder ver qué envía, se depura a ciegas.
-
-| Dónde | Valor |
-|---|---|
-| Cabecera `x-cron-secret` | el secreto |
-| Cabecera `Authorization` | `Bearer <secreto>` |
-| Cabecera `Authorization` | el secreto pelado |
-| Cabecera `Authorization` | `Basic` — las casillas de usuario y contraseña del programador; vale en cualquiera de las dos mitades |
-| **URL** | `?secret=<secreto>` |
-
-La de la URL es el último recurso y la única que deja rastro: lo que va en una
-URL acaba en los registros de acceso, en el historial del programador y en
-cualquier intermediario. Si se usa, ese secreto conviene rotarlo más a menudo.
-El riesgo está acotado —quien lo consiga solo puede pedir que salgan los avisos
-que ya tocaban, a los chats de siempre; no lee ni borra nada—, pero es real.
-
-Dos cosas que costaron una tarde con el formulario de cron-job.org:
-
-- Los campos de cabecera son **dos casillas de texto plano**, no JSON. Escribir
-  `{x-cron-secret: …}` crea una cabecera llamada `{x-cron-secret`, que se
-  descarta.
-- **La URL tiene que empezar por `https://`.** El campo suele traer `http://`
-  de fábrica, y el sitio responde con un 308 hacia `https`. Los clientes HTTP
-  descartan las credenciales al seguir una redirección a otro origen, así que la
-  cabecera no sobrevive al salto y la petición llega sin nada. El síntoma —un
-  401 idéntico se ponga la cabecera que se ponga— manda a revisar el secreto,
-  que es justo lo que no falla.
 
 ### Tanda 8 · Multimedia en Cloudinary
 
@@ -549,12 +545,13 @@ Pendiente:
 - [ ] `trustedOrigins` en `auth.ts` si se usan despliegues de vista previa: su
       URL no coincide con `BETTER_AUTH_URL` y el login devuelve `403`.
 - [ ] Campo `engines` en `package.json`: local es Node 26, Vercel usa la 24.
-- [ ] Las tres variables de Cloudinary y el `TELEGRAM_BOT_TOKEN` en el panel,
-      cuando lleguen sus tandas. Hay que reiniciar `astro dev` después de
-      declararlas en `astro.config.mjs`, o llegarán vacías.
-- [ ] El programador externo necesita el `CRON_SECRET` y la URL del endpoint.
-      Conviene comprobar que sin la cabecera contesta `401` **antes** de
-      dejarlo corriendo.
+- [x] Las variables de Telegram y el `CRON_SECRET` en el panel. Hay que
+      reiniciar `astro dev` tras declararlas en `astro.config.mjs`, o llegarán
+      vacías — y **en Vercel hay que volver a desplegar**: editar una variable
+      en el panel no la mete en la función que ya está corriendo.
+- [x] El programador externo, con `CRON_SECRET` y la URL del endpoint. Está en
+      cron-job.org; ver *Quién llama al cron* en el historial.
+- [ ] Las tres variables de Cloudinary en el panel, cuando llegue la tanda 8.
 
 ### Deuda conocida
 
