@@ -469,11 +469,17 @@ descartó: leer una barra donde un enlace lleva texto y el de al lado no cuesta
 más que el ancho que ahorra.
 
 **Nada de lo que se oculta desaparece.** El nombre accesible vive en
-`aria-label`, que es lo único que sigue en pie cuando el texto se va; el rótulo
-del indicador de sincronía pasa a `sr-only`, no a `display:none`, porque un
-`role="status"` sin texto no tendría nada que anunciar justo en las pantallas
-donde menos sitio hay para enterarse de otro modo; y los rótulos de los
-contadores ya vivían en su `<dt>`.
+`aria-label`, que es lo único que sigue en pie cuando el texto se va, y los
+rótulos de los contadores ya vivían en su `<dt>`.
+
+El indicador de sincronía se probó condensado del todo y **se echó atrás**: un
+visto suelto no dice «Al día», así que el estado normal dice su palabra en todas
+las pantallas. Lo único que sigue escondido en un teléfono es la frase «cambios
+sin subir», y ahí sí hay un motivo de sitio: en la cabecera del calendario este
+distintivo ocupa media fila —unos 160 px— y ya lleva el icono, el número y el
+botón de reintentar, que es lo que hace falta. Se va con `sr-only` y no con
+`display:none`, para que el `role="status"` siga teniendo qué anunciar justo
+donde menos sitio hay para enterarse de otro modo.
 
 El enlace «Calendario» se fue entero: la marca ya lleva a la portada, y
 repetirlo al lado gastaba el ancho que hacía falta para el resto. Por eso la
