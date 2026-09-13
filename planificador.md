@@ -589,6 +589,110 @@ Pendiente:
 
 ---
 
+## Que siga funcionando
+
+Nada de esto necesita vigilancia diaria, pero **tres cosas se apagan solas** y
+ninguna avisa por su cuenta si no se lo pides. Este apartado es para no
+descubrirlo el día que hagas falta un recordatorio.
+
+### Lo que se apaga solo
+
+| Qué | Cuándo | Cómo te enteras |
+|---|---|---|
+| El job de cron-job.org | Tras **25 fallos seguidos** — con intervalo de 5 min, unas **2 horas** de caída | Solo si activas el aviso por correo |
+| El clúster de Atlas | Tras **30 días sin ninguna conexión** | No avisa: el sitio deja de responder |
+| El workflow de GitHub | Tras **60 días sin commits** en el repositorio | Correo de GitHub |
+
+**Y encadenan.** Es lo que más conviene entender: si el job de cron-job.org se
+desactiva y además nadie abre el calendario durante un mes, Atlas se pausa por
+inactividad —porque el cron era justo lo que lo mantenía despierto, con una
+conexión cada cinco minutos— y entonces no funciona ya nada. Cada eslabón es
+silencioso por separado.
+
+Las 2 horas del primero son el número peligroso: **un despliegue que rompa el
+endpoint y no se arregle esa misma tarde deja el cron desactivado para
+siempre**, y los recordatorios dejan de salir sin que nada lo diga. El caso más
+fácil de provocar es rotar `CRON_SECRET` en Vercel y olvidarse de cambiarlo en
+cron-job.org: a partir de ahí todo son 401 y en dos horas el job está muerto.
+
+### Enciende los avisos y olvídate
+
+Es la diferencia entre monitorizar y no tener que hacerlo.
+
+- [ ] **cron-job.org → el job → notificaciones.** Activa *notify on failure* y
+      *notify on disable*. Con el umbral en 2 o 3 fallos te enteras de una
+      caída de verdad sin que un fallo suelto te despierte.
+- [ ] **Vercel → Settings → Notifications.** Que avise de despliegues fallidos.
+- [ ] **Atlas → Alerts.** Trae alertas de fábrica; comprueba que el correo de
+      destino es uno que leas.
+
+Con eso, el único caso que no te llega por correo es que cron-job.org se caiga
+entero. De ahí lo de abajo.
+
+### Comprobación rápida cuando sospeches
+
+```bash
+# ¿responde el endpoint? (401 es correcto: significa vivo y protegido)
+curl -s -o /dev/null -w "%{http_code}\n" -X POST \
+  -H 'content-type: application/json' \
+  https://planificador.danielvasquez.lat/api/cron/reminders
+
+# ¿alcanza Atlas la función desplegada?
+curl -s https://planificador.danielvasquez.lat/api/health
+```
+
+Y en cron-job.org, el historial del job: si la última ejecución correcta es de
+hace horas, ahí está el problema. Un recordatorio de prueba a dos minutos vista
+confirma la cadena entera.
+
+La forma más rápida de saber por qué un aviso no salió es mirar la respuesta del
+cron: `due` dice cuántos tocaban, `sent` cuántos salieron y `sinDestino` cuántos
+no tenían chat vinculado.
+
+### La copia de seguridad
+
+**El plan gratuito de Atlas no hace copias.** Ninguna. Si se borra la base, se
+borró.
+
+Contra eso está el propio diseño —cada navegador guarda su copia completa en
+`localStorage`, así que el calendario sobrevive a perder el servidor— pero eso
+deja de ser cierto para las imágenes en cuanto llegue la tanda 8, y no cubre
+tener dos dispositivos desincronizados.
+
+- [ ] Exportar el JSON desde Ajustes de vez en cuando, y guardarlo fuera del
+      portátil. Es un archivo pequeño y es la única copia de verdad que hay.
+- [ ] Para algo más completo: `mongodump` contra la URI de producción.
+
+### Los techos del plan gratuito
+
+Medido hoy, con 52 días guardados, 3 imágenes y 2 usuarios:
+
+| Límite de Atlas | Tope | Ahora |
+|---|---|---|
+| Almacenamiento | 512 MB | **0,5 MB** (0,1 %) |
+| Transferencia | 10 GB por cada 7 días | lejísimos |
+| Operaciones | 100 por segundo | el cron hace una consulta cada 5 min |
+| Conexiones | 500 | una por función caliente |
+
+Sobra sitio por varios órdenes de magnitud. Lo que crece sin freno son las
+**lápidas** —13 de 52 días ya lo son— y las imágenes en `localStorage`; las dos
+están en *Deuda conocida*. Con este ritmo tardarían años en molestar.
+
+En cron-job.org: 30 segundos de tope por ejecución y lee como mucho 64 KB de
+respuesta. El endpoint contesta en menos de un segundo y devuelve cuatro
+números, así que no hay nada que vigilar ahí.
+
+### Un repaso cada tres meses
+
+- [ ] ¿Sigue activo el job en cron-job.org, y sus últimas ejecuciones en verde?
+- [ ] Exportar el JSON y guardarlo fuera.
+- [ ] Mirar el almacenamiento en Atlas por si algo creció de forma rara.
+- [ ] Si el secreto va en la URL —hoy sí—, rotarlo: nuevo valor en Vercel,
+      **redesplegar**, y actualizar la URL del job. En ese orden, o el job
+      empieza a fallar y en dos horas se desactiva.
+
+---
+
 ## Trampas que ya nos han mordido
 
 **`import.meta.env` no es `process.env`.** En `astro dev` las variables del
