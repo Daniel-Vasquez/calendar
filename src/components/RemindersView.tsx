@@ -219,7 +219,7 @@ export default function RemindersView({ user }: { user: NavUser }) {
 
       <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
         <header className="mb-8">
-          <div className="flex flex-wrap items-end justify-between gap-6">
+          <div className="flex flex-wrap items-end justify-between gap-4 sm:gap-6">
             <div>
               <p className="text-xs font-semibold tracking-[0.18em] text-highlight uppercase">
                 Avisos programados
@@ -239,14 +239,15 @@ export default function RemindersView({ user }: { user: NavUser }) {
               </p>
             </div>
 
-            <div className="flex items-center gap-3">
+            {/* En un teléfono estos dos caen bajo el título, no a su lado. */}
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
               <SyncBadge state={sync} pending={pending} onRetry={retry} />
               <button
                 type="button"
                 onClick={(event) => openEditor(null, event)}
-                className="rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-accent-strong focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none"
+                className="rounded-xl bg-accent px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-strong focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none sm:px-4 sm:py-2.5"
               >
-                Nuevo recordatorio
+                Nuevo<span className="hidden sm:inline"> recordatorio</span>
               </button>
             </div>
           </div>

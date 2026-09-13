@@ -7,7 +7,17 @@ type Props = {
   onRetry: () => void;
 };
 
-const SHELL = 'flex items-center gap-2 rounded-xl border px-3 py-2.5 text-xs font-medium';
+const SHELL =
+  'flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-xs font-medium sm:py-2.5';
+
+/**
+ * El rótulo que acompaña al icono. En un teléfono sobra —el icono ya lo dice, y
+ * la fila necesita el ancho para los contadores—, pero **no desaparece**: se
+ * queda en `sr-only`, que lo mantiene en el árbol de accesibilidad. Sin eso,
+ * este `role="status"` no tendría nada que anunciar en la mitad de las
+ * pantallas, que es justo donde menos sitio hay para enterarse de otro modo.
+ */
+const LABEL = 'sr-only sm:not-sr-only';
 
 /**
  * Estado de la sincronía, junto a los contadores de la cabecera.
@@ -25,13 +35,13 @@ export default function SyncBadge({ state, pending, onRetry }: Props) {
         className={`${SHELL} border-highlight/30 bg-highlight-soft text-highlight`}
       >
         <WarnIcon />
-        <span>
-          {pending === 1 ? '1 cambio sin subir' : `${pending} cambios sin subir`}
-        </span>
+        {/* El número sí se ve siempre: es lo que hay en juego. */}
+        <span className="tabular-nums">{pending}</span>
+        <span className={LABEL}>{pending === 1 ? 'cambio sin subir' : 'cambios sin subir'}</span>
         <button
           type="button"
           onClick={onRetry}
-          className="rounded-lg bg-highlight/15 px-2 py-0.5 font-semibold transition-colors hover:bg-highlight/25 focus-visible:ring-2 focus-visible:ring-highlight focus-visible:outline-none"
+          className="shrink-0 rounded-lg bg-highlight/15 px-2 py-0.5 font-semibold transition-colors hover:bg-highlight/25 focus-visible:ring-2 focus-visible:ring-highlight focus-visible:outline-none"
         >
           Reintentar
         </button>
@@ -44,7 +54,9 @@ export default function SyncBadge({ state, pending, onRetry }: Props) {
   return (
     <div role="status" className={`${SHELL} border-edge bg-surface text-ink-muted`}>
       {busy ? <SpinnerIcon /> : <CheckIcon />}
-      <span>{state === 'starting' ? 'Sincronizando…' : busy ? 'Guardando…' : 'Al día'}</span>
+      <span className={LABEL}>
+        {state === 'starting' ? 'Sincronizando…' : busy ? 'Guardando…' : 'Al día'}
+      </span>
     </div>
   );
 }

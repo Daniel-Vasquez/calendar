@@ -10,6 +10,7 @@ import { useCalendarStore } from './useCalendarStore';
 import {
   DAY_PARAM,
   formatLongDate,
+  YEAR,
   isInQuarter,
   keysBetween,
   monthIndexOf,
@@ -386,55 +387,67 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
       />
 
       <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
-        <header className="mb-8">
-          <div className="flex flex-wrap items-start justify-between gap-6">
-            <div>
-              <h1 className="text-2xl font-serif tracking-tight text-ink sm:text-4xl">
-                Enero — Diciembre 2026
-              </h1>
-            </div>
+        {/* En un teléfono esta fila no cabe en una línea, y apretarla era lo
+            que amontonaba los contadores. Se parte en tres bloques que se
+            apilan —acciones, cuentas, plegado—, cada uno en dos columnas
+            iguales; a partir de `sm` los tres vuelven a la misma fila. */}
+        <header className="mb-8 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+          {/* El rótulo del año se quitó de la vista: los doce meses ya lo
+              dicen, y en un teléfono ocupaba una línea entera. Se queda para
+              quien lea la página con un lector, que sí necesita un encabezado
+              del que colgar el resto. */}
+          <h1 className="sr-only">Calendario de {YEAR}, de enero a diciembre</h1>
 
-            <div className="flex flex-wrap items-center gap-3">
-              <dl className="flex gap-3" aria-live="polite">
-                {canJumpToToday && (
-                  <button
-                    type="button"
-                    onClick={goToToday}
-                    className="print-hidden rounded-xl border border-today/30 bg-today/10 px-4 py-2.5 text-sm font-semibold text-today transition-colors hover:bg-today/20 focus-visible:ring-2 focus-visible:ring-today focus-visible:ring-offset-2 focus-visible:outline-none"
-                  >
-                    Ir a hoy
-                  </button>
-                )}
-                <SummaryTile
-                  value={summary.marked}
-                  label={summary.marked === 1 ? 'día marcado' : 'días marcados'}
-                  tone="accent"
-                />
-                <SyncBadge state={sync} pending={pending} onRetry={retry} />
-                <SummaryTile
-                  value={summary.notes}
-                  label={summary.notes === 1 ? 'nota guardada' : 'notas guardadas'}
-                  tone="highlight"
-                />
-              </dl>
+          <div
+            className={
+              'grid gap-2 sm:flex sm:items-center sm:gap-3 ' +
+              (canJumpToToday ? 'grid-cols-2' : 'grid-cols-1')
+            }
+          >
+            {canJumpToToday && (
+              <button
+                type="button"
+                onClick={goToToday}
+                className="print-hidden rounded-xl border border-today/30 bg-today/10 px-3 py-2 text-sm font-semibold text-today transition-colors hover:bg-today/20 focus-visible:ring-2 focus-visible:ring-today focus-visible:ring-offset-2 focus-visible:outline-none sm:px-4 sm:py-2.5"
+              >
+                Ir a hoy
+              </button>
+            )}
+            <SyncBadge state={sync} pending={pending} onRetry={retry} />
+          </div>
 
-              <div className="print-hidden flex gap-2">
-                <IconButton
-                  label="Colapsar todos"
-                  disabled={allCollapsed}
-                  onClick={() => setExpansion(expansionOf(false))}
-                >
-                  <ChevronsIcon direction="up" />
-                </IconButton>
-                <IconButton
-                  label="Expandir todos"
-                  disabled={allExpanded}
-                  onClick={() => setExpansion(expansionOf(true))}
-                >
-                  <ChevronsIcon direction="down" />
-                </IconButton>
-              </div>
-            </div>
+          <dl className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-3" aria-live="polite">
+            <SummaryTile
+              value={summary.marked}
+              label={summary.marked === 1 ? 'día marcado' : 'días marcados'}
+              tone="accent"
+            >
+              <MarkedIcon />
+            </SummaryTile>
+            <SummaryTile
+              value={summary.notes}
+              label={summary.notes === 1 ? 'nota guardada' : 'notas guardadas'}
+              tone="highlight"
+            >
+              <NoteIcon />
+            </SummaryTile>
+          </dl>
+
+          <div className="print-hidden flex justify-end gap-2 sm:ml-auto">
+            <IconButton
+              label="Colapsar todos"
+              disabled={allCollapsed}
+              onClick={() => setExpansion(expansionOf(false))}
+            >
+              <ChevronsIcon direction="up" />
+            </IconButton>
+            <IconButton
+              label="Expandir todos"
+              disabled={allExpanded}
+              onClick={() => setExpansion(expansionOf(true))}
+            >
+              <ChevronsIcon direction="down" />
+            </IconButton>
           </div>
         </header>
 
@@ -599,14 +612,24 @@ function ChevronsIcon({ direction }: { direction: 'up' | 'down' }) {
   );
 }
 
+/**
+ * Una cuenta de la cabecera: icono, número y —solo cuando hay ancho— el rótulo.
+ *
+ * En un teléfono el texto se va y queda el distintivo: el icono repite el mismo
+ * dibujo que la leyenda del pie, así que la asociación ya está hecha. El rótulo
+ * no se pierde, sigue en el `<dt>`, que es de donde lo saca un lector de
+ * pantalla tanto si se ve como si no.
+ */
 function SummaryTile({
   value,
   label,
   tone,
+  children,
 }: {
   value: number;
   label: string;
   tone: 'accent' | 'highlight';
+  children: React.ReactNode;
 }) {
   const toneClass =
     tone === 'accent'
@@ -614,12 +637,44 @@ function SummaryTile({
       : 'border-highlight/25 bg-highlight-soft text-highlight';
 
   return (
-    <div className={`rounded-xl border px-4 py-2.5 ${toneClass}`}>
+    <div
+      className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2 sm:justify-start sm:px-4 sm:py-2.5 ${toneClass}`}
+    >
       <dt className="sr-only">{label}</dt>
-      <dd>
-        <span className="text-2xl font-semibold tabular-nums">{value}</span>
-        <span className="ml-2 text-xs font-medium">{label}</span>
+      <dd className="flex items-center gap-1.5">
+        <span aria-hidden="true">{children}</span>
+        <span className="text-xl font-semibold tabular-nums sm:text-2xl">{value}</span>
+        <span className="hidden text-xs font-medium sm:inline">{label}</span>
       </dd>
     </div>
+  );
+}
+
+/** Recuadro lleno: un día marcado, el mismo que la leyenda del pie. */
+function MarkedIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="2" y="2" width="12" height="12" rx="3" fill="currentColor" />
+    </svg>
+  );
+}
+
+/** Hoja con dos renglones: una nota guardada. */
+function NoteIcon() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 16 16"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3.5 2.5h9v11h-9z" />
+      <path d="M6 6h4M6 9h4" />
+    </svg>
   );
 }

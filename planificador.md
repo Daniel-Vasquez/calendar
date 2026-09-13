@@ -455,6 +455,37 @@ el mismo aspecto en los dos sitios, o el ámbar de «se pasó» dejaría de
 significar lo mismo según desde qué página se mire.
 
 
+#### La barra en un teléfono
+
+Seis elementos de texto en una barra de catorce píxeles de alto no caben en 360
+px de ancho: se amontonaban y acababan solapándose. Ahora todo lo que puede ser
+un icono lo es, y los rótulos vuelven a partir de `sm`.
+
+Los dos enlaces que quedan —recordatorios y galería— van igual: icono solo en un
+teléfono, icono y rótulo a partir de `sm`. Que fueran distintos se probó y se
+descartó: leer una barra donde un enlace lleva texto y el de al lado no cuesta
+más que el ancho que ahorra.
+
+**Nada de lo que se oculta desaparece.** El nombre accesible vive en
+`aria-label`, que es lo único que sigue en pie cuando el texto se va; el rótulo
+del indicador de sincronía pasa a `sr-only`, no a `display:none`, porque un
+`role="status"` sin texto no tendría nada que anunciar justo en las pantallas
+donde menos sitio hay para enterarse de otro modo; y los rótulos de los
+contadores ya vivían en su `<dt>`.
+
+El enlace «Calendario» se fue entero: la marca ya lleva a la portada, y
+repetirlo al lado gastaba el ancho que hacía falta para el resto. Por eso la
+marca lleva ahora `aria-current="page"` en la portada — es el único elemento que
+la representa.
+
+El título «Enero — Diciembre 2026» se quitó de la vista: los doce meses ya lo
+dicen y ocupaba una línea entera de un teléfono. Queda como `<h1 class="sr-only">`,
+porque la página sigue necesitando un encabezado del que colgar el resto.
+
+La fila de contadores se parte en tres bloques apilados —acciones, cuentas,
+plegado— de dos columnas iguales, y vuelve a una sola fila en `sm`. De paso sale
+del `<dl>` el indicador de sincronía, que llevaba dentro sin ser ni `dt` ni `dd`.
+
 ## Lo que falta
 
 ### Tanda 8 · Multimedia en Cloudinary
