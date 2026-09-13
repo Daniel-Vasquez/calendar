@@ -68,6 +68,24 @@ middleware ───────────────────────
 Los meses plegados **no** suben: son preferencia de este dispositivo y se
 quedan en `localStorage`.
 
+### Más de una persona
+
+El bot de Telegram es **uno, de la aplicación**, no uno por usuario. El token
+vive en el entorno del servidor, igual que la URI de Mongo, y nunca sale de él.
+
+Así que **alguien nuevo no crea ningún bot ni consigue ningún token**: entra en
+Ajustes, abre el chat del bot, pulsa *Start* y vuelve a pulsar *Comprobar*. Lo
+único suyo es el `chatId`, que queda en `settings`, una fila por persona.
+
+El resto ya era multiusuario desde la tanda 2: `userId` sale siempre de la
+sesión y nunca del cuerpo de una petición, así que cada quien ve sus días y
+recibe sus avisos. El cron recorre los recordatorios de todo el mundo, los
+agrupa por usuario y manda a cada chat lo que le toca.
+
+Dos cosas que conviene tener presentes y que están en *Deuda conocida*: el
+registro está abierto a cualquiera que dé con la URL, y la vinculación de
+Telegram no aguanta a mucha gente vinculando el mismo día.
+
 ### Cómo se resuelven los conflictos
 
 El árbitro es `updatedAt`, en milisegundos del reloj del cliente que escribió.
@@ -583,9 +601,21 @@ Pendiente:
       borre lo que no tenga documento en Mongo.
 - [ ] *(tanda 8)* La exportación de `transfer.ts` deja de ser una copia
       completa: para que lo siga siendo hay que bajar las imágenes al exportar.
-- [ ] La vinculación lee `getUpdates` sin avanzar el `offset`, así que el bot
-      no puede tener webhook. Si algún día hace falta uno, hay que cambiar las
-      dos cosas a la vez.
+- [ ] **La vinculación de Telegram no escala más allá de unas pocas personas.**
+      Para reconocer el `/start` se leen los mensajes recientes del bot con
+      `getUpdates` y se busca el código, pero **no se confirman**: confirmarlos
+      los borra de la cola de Telegram y dos personas vinculando a la vez se
+      pisarían. El precio es que solo se miran los **100 más recientes** de las
+      últimas 24 horas, así que con mucha gente vinculando el mismo día, a
+      alguien no se le encontraría su `/start`. Con dos o cinco usuarios da
+      igual. El arreglo es un webhook, y entonces hay que cambiar las dos cosas
+      a la vez, porque con webhook puesto `getUpdates` contesta 409.
+- [ ] **El registro está abierto**: cualquiera que dé con la URL puede crearse
+      una cuenta desde la pestaña *Crear cuenta* del formulario de entrada. Hoy
+      hay dos usuarios y es deliberado, pero no hay nada que lo limite. Si algún
+      día molesta, lo más simple es una lista de correos permitidos en
+      `auth.ts`; el candado del middleware ya está puesto y no haría falta
+      tocarlo.
 
 ---
 
