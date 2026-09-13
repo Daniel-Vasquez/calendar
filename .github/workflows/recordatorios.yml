@@ -1,0 +1,80 @@
+# Le pregunta al planificador, cada pocos minutos, si hay recordatorios que
+# mandar. Hace falta porque en Vercel no corre ningún proceso de fondo: una
+# función solo se despierta cuando alguien la llama, así que sin esto el aviso
+# se queda en Mongo esperando a nadie.
+#
+# Funciona con el plan gratuito porque el repositorio es **público**: los
+# minutos de Actions solo se facturan en los privados, donde 288 ejecuciones
+# diarias agotarían la cuota mensual en una semana. Si algún día este repo pasa
+# a privado, hay que cambiar de programador (cron-job.org) o subir el intervalo
+# hasta que quepa.
+name: Recordatorios
+
+on:
+  schedule:
+    # Cinco minutos es el intervalo más corto que admite GitHub. En la práctica
+    # se retrasa entre 5 y 20 minutos en horas punta, y alguna ejecución se
+    # salta directamente: la ventana de gracia de dos horas del endpoint es lo
+    # que hace que eso no pierda avisos, solo los retrase.
+    - cron: '*/5 * * * *'
+  # Para dispararlo a mano desde la pestaña Actions sin esperar al reloj. Es
+  # la forma cómoda de comprobar que todo está bien enchufado.
+  workflow_dispatch:
+
+# No lee ni escribe en el repositorio: solo hace una petición hacia fuera.
+permissions: {}
+
+concurrency:
+  # Una ejecución retrasada no se solapa con la siguiente. El endpoint reclama
+  # cada aviso antes de mandarlo, así que un solape no duplicaría nada, pero
+  # encolar ejecuciones atrasadas tampoco aporta.
+  group: recordatorios
+  cancel-in-progress: false
+
+jobs:
+  disparar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Pedir al planificador que mande lo que toque
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          # Se puede apuntar a otro despliegue con una variable de repositorio
+          # del mismo nombre, sin tocar este archivo.
+          BASE_URL: ${{ vars.PLANIFICADOR_URL || 'https://planificador.danielvasquez.lat' }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CRON_SECRET}" ]; then
+            echo "::error::Falta el secreto CRON_SECRET. Ponlo en Settings → Secrets and variables → Actions, con el mismo valor que tiene en Vercel."
+            exit 1
+          fi
+
+          # `content-type: application/json` **no es opcional**: Astro trae
+          # protección contra CSRF encendida y rechaza cualquier POST sin tipo
+          # de contenido con un 403 que habla de formularios entre sitios y no
+          # menciona ni el cron ni la cabecera.
+          #
+          # `--fail-with-body` da código de salida distinto de cero en 4xx y
+          # 5xx pero imprime igual el cuerpo, que es donde viene el motivo.
+          # Los reintentos son seguros: el endpoint reclama cada aviso antes de
+          # enviarlo, así que repetir la llamada no duplica mensajes.
+          #
+          # El código de salida se recoge en vez de dejar que `set -e` corte:
+          # si no, un fallo abortaría antes de imprimir el cuerpo, que es justo
+          # donde viene el motivo. Sin esto, el registro solo dice «curl: (22)».
+          codigo=0
+          respuesta=$(curl --silent --show-error --fail-with-body \
+            --max-time 30 \
+            --retry 2 --retry-delay 5 --retry-connrefused \
+            --request POST "${BASE_URL}/api/cron/reminders" \
+            --header "x-cron-secret: ${CRON_SECRET}" \
+            --header 'content-type: application/json') || codigo=$?
+
+          echo "${respuesta}"
+          echo "\`${respuesta}\`" >> "${GITHUB_STEP_SUMMARY}"
+
+          if [ "${codigo}" -ne 0 ]; then
+            echo "::error::El planificador no aceptó la llamada (curl ${codigo}). Revisa que CRON_SECRET coincida con el de Vercel."
+            exit "${codigo}"
+          fi

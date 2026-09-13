@@ -315,10 +315,20 @@ El código está entero; falta encender el interruptor de fuera.
       guarda la ruta del cron, que no tiene sesión.
 - [ ] **Las tres variables de Telegram en el panel de Vercel.** En local ya
       están.
-- [ ] **El programador externo.** Cada 5–15 min contra
-      `POST https://planificador.danielvasquez.lat/api/cron/reminders`, con
-      `x-cron-secret` y **`content-type: application/json`** (ver Trampas).
-      Comprueba que sin la cabecera contesta `401` antes de dejarlo corriendo.
+- [ ] **El programador externo.** Ya está escrito en
+      `.github/workflows/recordatorios.yml`: llama cada 5 minutos y se puede
+      disparar a mano desde la pestaña *Actions*. Falta poner `CRON_SECRET` en
+      *Settings → Secrets and variables → Actions*, con el mismo valor que en
+      Vercel.
+
+      Sale gratis porque **el repositorio es público**; en uno privado, 288
+      ejecuciones diarias agotarían los 2000 minutos mensuales en una semana, y
+      habría que pasarse a cron-job.org o espaciar el intervalo.
+
+      Dos cosas que dan la lata con los `schedule` de GitHub: se retrasan entre
+      5 y 20 minutos en horas punta —la ventana de gracia lo absorbe— y **se
+      desactivan solos tras 60 días sin commits** en el repositorio. Si un día
+      dejan de llegar avisos sin haber tocado nada, mirar ahí primero.
 
 ### Tanda 8 · Multimedia en Cloudinary
 
