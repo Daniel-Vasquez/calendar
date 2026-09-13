@@ -112,7 +112,7 @@ export default function MonthCard({
     // hoja de arranque de index.astro hace lo mismo antes de hidratar.
     <section
       aria-label={`${name} de ${year}`}
-      data-month={monthKey(monthIndex)}
+      data-month={monthKey(year, monthIndex)}
       data-open={expanded || undefined}
       className="scroll-mt-20 rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5"
     >

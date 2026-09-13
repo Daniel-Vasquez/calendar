@@ -25,12 +25,12 @@ import {
 import {
   DEFAULT_EXPANSION,
   everyMonth,
-  expansionOf,
   EXPANSION_KEY,
   loadExpansion,
   monthKey,
   removeBootStyle,
   saveExpansion,
+  withYear,
   type MonthExpansion,
 } from '../lib/collapse';
 import { colorVar, DAY_COLORS, DEFAULT_COLOR, labelFor, type ColorId } from '../lib/palette';
@@ -232,7 +232,7 @@ export default function CalendarDashboard({ user, initialYear }: Props) {
 
     setExpansion((current) => ({
       ...current,
-      [monthKey(monthIndexOf(key))]: true,
+      [monthKey(yearOf(key), monthIndexOf(key))]: true,
     }));
     openDay(key);
     if (!isInYear(key, year)) return;
@@ -305,8 +305,8 @@ export default function CalendarDashboard({ user, initialYear }: Props) {
   const tabsId = useId();
   const gridId = useId();
 
-  const allExpanded = everyMonth(expansion, true);
-  const allCollapsed = everyMonth(expansion, false);
+  const allExpanded = everyMonth(expansion, year, true);
+  const allCollapsed = everyMonth(expansion, year, false);
 
   // Un calendario de doce meses no cabe en pantalla: este atajo devuelve a
   // hoy y le deja el foco, listo para seguir moviéndose con las flechas.
@@ -320,7 +320,7 @@ export default function CalendarDashboard({ user, initialYear }: Props) {
     // El año y el mes se arreglan antes de saltar, y de forma síncrona: la
     // rejilla del otro año no existe en el DOM hasta que React la pinta, y la
     // casilla de un mes plegado es `inert` y no acepta el foco.
-    const key = monthKey(monthIndexOf(today));
+    const key = monthKey(yearOf(today), monthIndexOf(today));
     const switchesYear = !isInYear(today, year);
     const wasCollapsed = !expansion[key];
 
@@ -381,14 +381,14 @@ export default function CalendarDashboard({ user, initialYear }: Props) {
             <IconButton
               label="Colapsar todos"
               disabled={allCollapsed}
-              onClick={() => setExpansion(expansionOf(false))}
+              onClick={() => setExpansion((current) => withYear(current, year, false))}
             >
               <ChevronsIcon direction="up" />
             </IconButton>
             <IconButton
               label="Expandir todos"
               disabled={allExpanded}
-              onClick={() => setExpansion(expansionOf(true))}
+              onClick={() => setExpansion((current) => withYear(current, year, true))}
             >
               <ChevronsIcon direction="down" />
             </IconButton>
@@ -433,8 +433,8 @@ export default function CalendarDashboard({ user, initialYear }: Props) {
               data={data}
               today={today}
               onSelectDay={handleSelectDay}
-              expanded={expansion[monthKey(month.index)]}
-              onToggle={() => toggleMonth(monthKey(month.index))}
+              expanded={expansion[monthKey(year, month.index)]}
+              onToggle={() => toggleMonth(monthKey(year, month.index))}
             />
           ))}
         </div>

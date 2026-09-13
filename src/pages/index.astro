@@ -1,7 +1,7 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import CalendarDashboard from '../components/CalendarDashboard';
-import { BOOT_STYLE_ID, EXPANSION_KEY } from '../lib/collapse';
+import { BOOT_STYLE_ID, EXPANSION_KEY, LEGACY_MONTHS } from '../lib/collapse';
 import {
   DAY_PARAM,
   defaultYear,
@@ -41,18 +41,40 @@ const initialYear =
       script bloqueante lee localStorage antes de que exista el calendario y
       deja una hoja con su aspecto plegado —cuerpo oculto, chevron girado—
       que CalendarDashboard retira en cuanto el estado es suyo. Los ganchos
-      (`data-month`, `.month-body`, `.month-chevron`) son los de MonthCard. */}
-  <script slot="head" is:inline define:vars={{ key: EXPANSION_KEY, id: BOOT_STYLE_ID }}>
+      (`data-month`, `.month-body`, `.month-chevron`) son los de MonthCard.
+
+      Las reglas se escriben para **todos** los años guardados, sin mirar cuál
+      se está pintando: las tarjetas del otro no están en la página, así que su
+      selector no encuentra nada y sobra el trabajo de filtrarlas aquí. */}
+  <script
+    slot="head"
+    is:inline
+    define:vars={{
+      key: EXPANSION_KEY,
+      id: BOOT_STYLE_ID,
+      legacy: LEGACY_MONTHS,
+    }}
+  >
     try {
       var saved = JSON.parse(localStorage.getItem(key) || '{}');
       var rules = '';
       for (var month in saved) {
-        // Solo nombres de mes: la clave acaba dentro de un selector.
-        if (saved[month] === false && /^[a-z]+$/.test(month)) {
-          rules +=
-            '[data-month="' + month + '"]>.month-body{display:none!important}' +
-            '[data-month="' + month + '"] .month-chevron{rotate:-90deg!important}';
-        }
+        if (saved[month] !== false) continue;
+
+        // El formato anterior llevaba el mes por su nombre y ningún año, y
+        // sigue ahí hasta que React vuelva a guardar. Sin traducirlo, la
+        // primera carga tras el cambio pintaría abierto lo que estaba plegado
+        // —y lo cerraría un instante después—, que es el parpadeo que este
+        // script existe para evitar.
+        var at = legacy.months.indexOf(month);
+        var name = at < 0 ? month : legacy.year + '-' + (at < 9 ? '0' : '') + (at + 1);
+
+        // `2026-01` y nada más: la clave acaba dentro de un selector.
+        if (!/^\d{4}-\d{2}$/.test(name)) continue;
+
+        rules +=
+          '[data-month="' + name + '"]>.month-body{display:none!important}' +
+          '[data-month="' + name + '"] .month-chevron{rotate:-90deg!important}';
       }
       if (rules) {
         var style = document.createElement('style');
