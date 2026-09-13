@@ -33,10 +33,17 @@ import {
 import { withTags } from '../lib/storage';
 import type { Tag } from '../lib/tags';
 
+/**
+ * El orden de los filtros, y con él la puerta de entrada: primero la lista
+ * entera y después los dos recortes. Empezar por «Pendientes» escondía de
+ * salida lo que ya estaba hecho, y con ello la mitad del sentido de la página
+ * —repasar *y* tachar—: había que darse cuenta de que la lista venía filtrada
+ * para verlo. Con «Todos» delante no hay nada que descubrir.
+ */
 const TABS: { id: ReminderFilter; label: string }[] = [
+  { id: 'all', label: 'Todos' },
   { id: 'pending', label: 'Pendientes' },
   { id: 'done', label: 'Completados' },
-  { id: 'all', label: 'Todos' },
 ];
 
 const CHIP =
@@ -68,7 +75,8 @@ export default function RemindersView({ user }: { user: NavUser }) {
   // este y no otro: ver `useSettings`.
   const { catalogue, settings } = useSettings({ data, setData, announce });
 
-  const [filter, setFilter] = useState<ReminderFilter>('pending');
+  /** Se entra viéndolo todo; los dos recortes están a un clic. Ver `TABS`. */
+  const [filter, setFilter] = useState<ReminderFilter>('all');
   /**
    * Qué hace el modal ahora mismo. Tres estados en uno:
    * `null` cerrado, `{ key: null }` creando y `{ key: '2026-…' }` editando ese
@@ -288,10 +296,16 @@ export default function RemindersView({ user }: { user: NavUser }) {
             </div>
 
             {visible.length === 0 ? (
+              // Con «Todos» esto no se alcanza —si no hubiera ninguno, arriba
+              // habría ganado el estado vacío—, pero el texto se elige por el
+              // filtro que hay y no por descarte: así ninguno de los tres puede
+              // acabar leyendo el mensaje de otro.
               <p className="rounded-2xl border border-dashed border-edge bg-surface py-12 text-center text-sm text-ink-muted">
                 {filter === 'done'
                   ? 'Todavía no has dado ninguno por hecho.'
-                  : 'No queda ninguno pendiente. Están todos hechos.'}
+                  : filter === 'pending'
+                    ? 'No queda ninguno pendiente. Están todos hechos.'
+                    : 'No hay ninguno que enseñar.'}
               </p>
             ) : (
               <div className="space-y-8">
