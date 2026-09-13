@@ -1,23 +1,90 @@
 @import "tailwindcss";
 
-/* ── Paleta personalizada del Planificador 2026 ───────────────── */
+/* El modo oscuro lo manda una clase en <html>, no el sistema: hay un
+   interruptor y su elección tiene que poder contradecir al sistema operativo.
+   Sin esta línea, `dark:` seguiría mirando `prefers-color-scheme` y el botón no
+   tendría efecto sobre las pocas utilidades que la usan. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ── Paleta personalizada del Planificador 2026 ─────────────────
+   Todo el color de la aplicación sale de estas variables, y por eso el modo
+   oscuro es un puñado de líneas más abajo en vez de un `dark:` en cada clase:
+   se cambia el valor del token y la interfaz entera va detrás.
+
+   Cada color lleva el papel que cumple, no solo su tono. Es lo que hace
+   posible el tema oscuro: un teal que sirve de *fondo* con texto blanco encima
+   y un teal que sirve de *texto* sobre un fondo tenue tiran hacia lados
+   opuestos al oscurecer, así que son dos tokens aunque en claro coincidan. */
 @theme {
-  /* Fondos / neutros suaves */
+  /* Fondos / neutros suaves, del más al fondo al más levantado */
   --color-canvas: #fafafa;
   --color-surface: #f5f5f4;
+  --color-raised: #ffffff; /* Campos, botones y tarjetas sobre `surface` */
   --color-edge: #eaedf2;
 
-  /* Acentuación */
+  /* Acentuación como fondo: lleva texto blanco encima */
   --color-accent: #0d9488; /* Teal - días marcados / estados activos */
   --color-accent-strong: #0f766e;
+  /* Acentuación como texto: va sobre `canvas` o sobre un tinte del propio acento */
+  --color-accent-ink: #0d9488;
+  --color-accent-ink-strong: #0f766e;
+
   --color-highlight: #d97706; /* Amber - badges, notas, acciones */
   --color-highlight-soft: #fef3c7;
+
   --color-today: #7e22ce; /* Violeta - reservado al día actual (ver palette.ts) */
+  --color-today-ink: #7e22ce;
 
   /* Texto */
   --color-ink: #1e293b;
   --color-ink-soft: #334155;
   --color-ink-muted: #94a3b8;
+
+  /* Velo de los modales y chapas sobre fotos. **No cambia con el tema**: lo que
+     va encima es blanco en los dos, y un velo claro no oscurecería nada. */
+  --color-scrim: #0f172a;
+}
+
+/* ── Modo oscuro ─────────────────────────────────────────────────
+   Va dentro de `@media screen` a propósito: en papel manda siempre la paleta
+   clara, porque la tinta oscura sobre papel blanco es lo que se imprime bien y
+   lo que ya contemplan las reglas de impresión del final del archivo.
+
+   El selector es `:root.dark` —y no `.dark`— para ganar por especificidad a las
+   declaraciones que Tailwind emite en `:root`, sin depender del orden. */
+@media screen {
+  :root.dark {
+    --color-canvas: #0d1424;
+    --color-surface: #151e30;
+    --color-raised: #1d283c;
+    --color-edge: #2c3a55;
+
+    /* El acento de fondo apenas se mueve: lo que lleva encima sigue siendo
+       texto blanco, y aclararlo lo empeoraría. El de texto sí se aclara, que
+       es justo lo contrario. */
+    --color-accent: #0d9488;
+    --color-accent-strong: #14b8a6;
+    --color-accent-ink: #5eead4;
+    --color-accent-ink-strong: #99f6e4;
+
+    /* El ámbar pasa de tinta sobre crema a tinta clara sobre tierra. */
+    --color-highlight: #fbbf24;
+    --color-highlight-soft: #3a2a08;
+
+    /* El violeta de fondo se queda: lleva texto blanco y funciona igual de
+       noche. El de texto se aclara para leerse sobre su propio tinte. */
+    --color-today: #7e22ce;
+    --color-today-ink: #d8b4fe;
+
+    --color-ink: #e8edf5;
+    --color-ink-soft: #c2cddf;
+    --color-ink-muted: #8493ab;
+
+    /* Los controles del navegador —el selector de fecha y el de hora del
+       recordatorio, la barra de scroll— se pintan solos con esto, y sin ello
+       serían dos rectángulos blancos en medio de un modal oscuro. */
+    color-scheme: dark;
+  }
 }
 
 html {
@@ -26,10 +93,27 @@ html {
   -webkit-font-smoothing: antialiased;
 }
 
-/* La app fija su propia paleta clara: evita que el modo oscuro
-   del sistema reinterprete los colores del calendario. */
 :root {
   color-scheme: light;
+}
+
+/* ── El cambio de tema ───────────────────────────────────────────
+   La transición solo existe durante el cambio, y de ahí la clase temporal que
+   pone y quita el interruptor. Dejarla siempre puesta pondría un retardo de
+   doscientos milisegundos en cada `hover` de la aplicación, y además pelearía
+   con las transiciones propias que ya llevan los botones. */
+@media (prefers-reduced-motion: no-preference) {
+  :root.theme-switching,
+  :root.theme-switching *,
+  :root.theme-switching *::before,
+  :root.theme-switching *::after {
+    transition:
+      background-color 220ms ease,
+      border-color 220ms ease,
+      color 220ms ease,
+      fill 220ms ease,
+      stroke 220ms ease !important;
+  }
 }
 
 @keyframes overlay-in {

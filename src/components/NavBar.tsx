@@ -1,5 +1,6 @@
 import { signOut } from '../auth-client';
 import { BellIcon } from './ReminderChip';
+import ThemeToggle from './ThemeToggle';
 
 export type NavUser = { name: string; email: string };
 
@@ -125,6 +126,8 @@ export default function NavBar({ current, user, settings }: Props) {
           <span className="hidden max-w-32 truncate sm:inline">{user.name}</span>
           <span className="sr-only sm:hidden">{user.name}</span>
         </span>
+
+        <ThemeToggle />
 
         {settings && (
           <button

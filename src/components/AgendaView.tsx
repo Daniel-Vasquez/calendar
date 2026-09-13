@@ -79,7 +79,7 @@ export default function AgendaView({ user }: { user: NavUser }) {
     <>
       <NavBar current="agenda" user={user} />
 
-      <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
+      <main className="mx-auto w-full max-w-5xl px-4 pt-8 pb-10 sm:px-6">
         <header className="mb-8">
           <div className="flex flex-wrap items-end justify-between gap-4 sm:gap-6">
             <div>
@@ -154,7 +154,7 @@ function SummaryTile({
 }) {
   const toneClass =
     tone === 'accent'
-      ? 'border-accent/25 bg-accent/10 text-accent-strong'
+      ? 'border-accent/25 bg-accent/10 text-accent-ink-strong'
       : 'border-highlight/25 bg-highlight-soft text-highlight';
 
   return (

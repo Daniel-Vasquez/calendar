@@ -72,8 +72,8 @@ export default function AgendaList({ data, labels, today }: Props) {
                 className={
                   CHIP +
                   (colorFilter === 'all'
-                    ? ' border-ink bg-ink text-white'
-                    : ' border-edge bg-white text-ink-soft hover:bg-edge')
+                    ? ' border-ink bg-ink text-canvas'
+                    : ' border-edge bg-raised text-ink-soft hover:bg-edge')
                 }
               >
                 Todos
@@ -91,8 +91,8 @@ export default function AgendaList({ data, labels, today }: Props) {
                       CHIP +
                       ' flex items-center gap-1.5 ' +
                       (active
-                        ? ' border-ink bg-ink text-white'
-                        : ' border-edge bg-white text-ink-soft hover:bg-edge')
+                        ? ' border-ink bg-ink text-canvas'
+                        : ' border-edge bg-raised text-ink-soft hover:bg-edge')
                     }
                   >
                     <span
@@ -116,8 +116,8 @@ export default function AgendaList({ data, labels, today }: Props) {
                 CHIP +
                 ' ml-auto ' +
                 (hidePast
-                  ? ' border-ink bg-ink text-white'
-                  : ' border-edge bg-white text-ink-soft hover:bg-edge')
+                  ? ' border-ink bg-ink text-canvas'
+                  : ' border-edge bg-raised text-ink-soft hover:bg-edge')
               }
             >
               {hidePast ? `Mostrar ${pastCount} pasados` : 'Ocultar días pasados'}
@@ -158,7 +158,7 @@ export default function AgendaList({ data, labels, today }: Props) {
                   aria-label={`Ver ${formatWeekday(key)} ${formatLongDate(key)} en el calendario`}
                   className={
                     'flex w-full items-start gap-3 rounded-lg px-2 py-3 text-left transition ' +
-                    'hover:bg-white focus-visible:ring-2 focus-visible:ring-accent ' +
+                    'hover:bg-raised focus-visible:ring-2 focus-visible:ring-accent ' +
                     'focus-visible:outline-none ' +
                     // Mismo desvanecido que en la rejilla: lo pasado pesa menos.
                     (timeState === 'past' ? 'opacity-60 hover:opacity-100' : '')
@@ -182,7 +182,7 @@ export default function AgendaList({ data, labels, today }: Props) {
                         {formatWeekday(key)} {formatLongDate(key)}
                       </span>
                       {timeState === 'today' && (
-                        <span className="rounded-full bg-today/10 px-2 py-0.5 text-[11px] font-semibold text-today">
+                        <span className="rounded-full bg-today/10 px-2 py-0.5 text-[11px] font-semibold text-today-ink">
                           Hoy
                         </span>
                       )}
@@ -225,7 +225,7 @@ export default function AgendaList({ data, labels, today }: Props) {
                         className="h-12 w-12 rounded-lg object-cover ring-1 ring-edge"
                       />
                       {images > 1 && (
-                        <span className="absolute -right-1 -bottom-1 rounded-md bg-ink px-1 text-[10px] font-semibold text-white">
+                        <span className="absolute -right-1 -bottom-1 rounded-md bg-ink px-1 text-[10px] font-semibold text-canvas">
                           +{images - 1}
                         </span>
                       )}

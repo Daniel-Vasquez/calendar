@@ -376,7 +376,7 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
         }}
       />
 
-      <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
+      <main className="mx-auto w-full max-w-5xl px-4 pt-8 pb-10 sm:px-6">
         {/* Lo que queda arriba: ir a hoy, el estado de la sincronía y el
             plegado de los meses. Las cuentas del año se fueron a `/agenda`,
             junto a la lista de la que salen. En un teléfono los dos bloques se
@@ -398,7 +398,7 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
               <button
                 type="button"
                 onClick={goToToday}
-                className="print-hidden rounded-xl border border-today/30 bg-today/10 px-3 py-2 text-sm font-semibold text-today transition-colors hover:bg-today/20 focus-visible:ring-2 focus-visible:ring-today focus-visible:ring-offset-2 focus-visible:outline-none sm:px-4 sm:py-2.5"
+                className="print-hidden rounded-xl border border-today/30 bg-today/10 px-3 py-2 text-sm font-semibold text-today-ink transition-colors hover:bg-today/20 focus-visible:ring-2 focus-visible:ring-today focus-visible:ring-offset-2 focus-visible:outline-none sm:px-4 sm:py-2.5"
               >
                 Ir a hoy
               </button>
@@ -479,13 +479,13 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
           role="status"
           className="animate-panel-in print-hidden pointer-events-none fixed inset-x-0 bottom-6 z-40 flex justify-center px-4"
         >
-          <div className="pointer-events-auto flex flex-wrap items-center gap-3 rounded-xl bg-ink px-4 py-3 text-sm text-white shadow-2xl">
+          <div className="pointer-events-auto flex flex-wrap items-center gap-3 rounded-xl bg-ink px-4 py-3 text-sm text-canvas shadow-2xl">
             <span>{notice.message}</span>
             {notice.snapshot && (
               <button
                 type="button"
                 onClick={handleUndo}
-                className="rounded-lg bg-white/15 px-3 py-1 text-sm font-semibold transition-colors hover:bg-white/25 focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
+                className="rounded-lg bg-canvas/15 px-3 py-1 text-sm font-semibold transition-colors hover:bg-canvas/25 focus-visible:ring-2 focus-visible:ring-canvas focus-visible:outline-none"
               >
                 Deshacer
               </button>
@@ -494,7 +494,7 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
               type="button"
               onClick={() => setNotice(null)}
               aria-label="Descartar aviso"
-              className="rounded-lg p-1 text-white/70 transition-colors hover:text-white focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
+              className="rounded-lg p-1 text-canvas/70 transition-colors hover:text-canvas focus-visible:ring-2 focus-visible:ring-canvas focus-visible:outline-none"
             >
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                 <path
@@ -556,7 +556,7 @@ function IconButton({
       disabled={disabled}
       aria-label={label}
       title={label}
-      className="rounded-xl border border-edge bg-white p-2.5 text-ink-soft transition-colors enabled:hover:bg-edge enabled:hover:text-ink focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-40"
+      className="rounded-xl border border-edge bg-raised p-2.5 text-ink-soft transition-colors enabled:hover:bg-edge enabled:hover:text-ink focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none disabled:opacity-40"
     >
       {children}
     </button>

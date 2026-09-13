@@ -49,7 +49,7 @@ const CHIP =
   'focus-visible:outline-none';
 
 const ROW_ACTION =
-  'rounded-lg border border-edge bg-white px-2.5 py-1 text-xs font-medium text-ink-soft ' +
+  'rounded-lg border border-edge bg-raised px-2.5 py-1 text-xs font-medium text-ink-soft ' +
   'transition-colors hover:bg-edge hover:text-ink ' +
   'focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none';
 
@@ -217,7 +217,7 @@ export default function RemindersView({ user }: { user: NavUser }) {
     <>
       <NavBar current="reminders" user={user} />
 
-      <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
+      <main className="mx-auto w-full max-w-5xl px-4 pt-8 pb-10 sm:px-6">
         <header className="mb-8">
           <div className="flex flex-wrap items-end justify-between gap-4 sm:gap-6">
             <div>
@@ -277,14 +277,14 @@ export default function RemindersView({ user }: { user: NavUser }) {
                     className={
                       CHIP +
                       (active
-                        ? ' border-ink bg-ink text-white'
-                        : ' border-edge bg-white text-ink-soft hover:bg-edge')
+                        ? ' border-ink bg-ink text-canvas'
+                        : ' border-edge bg-raised text-ink-soft hover:bg-edge')
                     }
                   >
                     {tab.label}
                     <span
                       className={
-                        'ml-2 tabular-nums ' + (active ? 'text-white/70' : 'text-ink-muted')
+                        'ml-2 tabular-nums ' + (active ? 'text-canvas/70' : 'text-ink-muted')
                       }
                     >
                       {counts[tab.id]}
@@ -332,13 +332,13 @@ export default function RemindersView({ user }: { user: NavUser }) {
           role="status"
           className="animate-panel-in pointer-events-none fixed inset-x-0 bottom-6 z-40 flex justify-center px-4"
         >
-          <div className="pointer-events-auto flex flex-wrap items-center gap-3 rounded-xl bg-ink px-4 py-3 text-sm text-white shadow-2xl">
+          <div className="pointer-events-auto flex flex-wrap items-center gap-3 rounded-xl bg-ink px-4 py-3 text-sm text-canvas shadow-2xl">
             <span>{notice.message}</span>
             {notice.snapshot && (
               <button
                 type="button"
                 onClick={handleUndo}
-                className="rounded-lg bg-white/15 px-3 py-1 text-sm font-semibold transition-colors hover:bg-white/25 focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
+                className="rounded-lg bg-canvas/15 px-3 py-1 text-sm font-semibold transition-colors hover:bg-canvas/25 focus-visible:ring-2 focus-visible:ring-canvas focus-visible:outline-none"
               >
                 Deshacer
               </button>
@@ -347,7 +347,7 @@ export default function RemindersView({ user }: { user: NavUser }) {
               type="button"
               onClick={() => setNotice(null)}
               aria-label="Descartar aviso"
-              className="rounded-lg p-1 text-white/70 transition-colors hover:text-white focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
+              className="rounded-lg p-1 text-canvas/70 transition-colors hover:text-canvas focus-visible:ring-2 focus-visible:ring-canvas focus-visible:outline-none"
             >
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                 <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
@@ -433,7 +433,11 @@ function ReminderCard({
             aria-label={`Dar por hecho: ${text}`}
             className="peer sr-only"
           />
-          <span className="flex h-5 w-5 items-center justify-center rounded-md border border-edge bg-white text-white transition-colors peer-checked:border-accent peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-accent peer-focus-visible:ring-offset-2">
+          {/* El visto se oculta con `text-transparent` y no pintándolo del
+              color del fondo: en claro coincidían y parecía lo mismo, pero en
+              oscuro un visto blanco sobre la casilla apagada se vería siempre,
+              y todo saldría marcado. */}
+          <span className="flex h-5 w-5 items-center justify-center rounded-md border border-edge bg-raised text-transparent transition-colors peer-checked:border-accent peer-checked:bg-accent peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-accent peer-focus-visible:ring-offset-2">
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
               <path
                 d="M2.5 6.3l2.4 2.4L9.6 4"
@@ -453,7 +457,7 @@ function ReminderCard({
               {formatWeekday(key)} {formatLongDate(key)}
             </span>
             {timeState === 'today' && (
-              <span className="rounded-full bg-today/10 px-2 py-0.5 text-[11px] font-semibold text-today">
+              <span className="rounded-full bg-today/10 px-2 py-0.5 text-[11px] font-semibold text-today-ink">
                 Hoy
               </span>
             )}
@@ -532,7 +536,7 @@ function EmptyState({
         </button>
         <a
           href="/"
-          className="rounded-xl border border-edge bg-white px-4 py-2.5 text-sm font-semibold text-ink-soft transition-colors hover:bg-edge hover:text-ink focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none"
+          className="rounded-xl border border-edge bg-raised px-4 py-2.5 text-sm font-semibold text-ink-soft transition-colors hover:bg-edge hover:text-ink focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none"
         >
           Ir al calendario
         </a>

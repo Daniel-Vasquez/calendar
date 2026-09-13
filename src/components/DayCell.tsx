@@ -73,8 +73,8 @@ function getDayStyles(
     : showColor
       ? 'text-white shadow-sm hover:brightness-90'
       : isWeekend
-        ? 'bg-white/40 font-medium text-ink-muted hover:bg-edge'
-        : 'bg-white font-medium text-ink-soft hover:bg-edge';
+        ? 'bg-raised/40 font-medium text-ink-muted hover:bg-edge'
+        : 'bg-raised font-medium text-ink-soft hover:bg-edge';
 
   // Los días pasados conservan su color de fondo; es la opacidad de la celda
   // entera la que lo atenúa para dar la sensación de tiempo transcurrido.
@@ -196,12 +196,12 @@ export default function DayCell({
             aria-hidden="true"
             className={`${REVEAL} absolute bottom-full z-30 mb-2 w-52 ${popoverAlign(weekday)}`}
           >
-            <div className="rounded-xl border border-edge bg-white p-3 text-left shadow-lg">
+            <div className="rounded-xl border border-edge bg-raised p-3 text-left shadow-lg">
               <p className="text-[11px] font-semibold tracking-wide text-ink-muted uppercase">
                 {dateLabel}
               </p>
               {reminder && (
-                <p className="mt-1 text-[11px] font-semibold text-accent-strong">
+                <p className="mt-1 text-[11px] font-semibold text-accent-ink-strong">
                   Aviso a las {reminder.time}
                 </p>
               )}
@@ -210,7 +210,7 @@ export default function DayCell({
                 <span className="relative mt-2 block">
                   <img src={preview} alt="" className="h-24 w-full rounded-lg object-cover" />
                   {total > 1 && (
-                    <span className="absolute right-1.5 bottom-1.5 rounded-md bg-ink/70 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                    <span className="absolute right-1.5 bottom-1.5 rounded-md bg-scrim/70 px-1.5 py-0.5 text-[10px] font-semibold text-white">
                       +{total - 1}
                     </span>
                   )}
@@ -229,7 +229,7 @@ export default function DayCell({
               limpia; el giro conserva el origen central para no descolocarse. */}
           <span
             aria-hidden="true"
-            className={`${REVEAL} absolute bottom-full left-1/2 z-40 mb-1 h-2.5 w-2.5 -translate-x-1/2 rotate-45 border-r border-b border-edge bg-white`}
+            className={`${REVEAL} absolute bottom-full left-1/2 z-40 mb-1 h-2.5 w-2.5 -translate-x-1/2 rotate-45 border-r border-b border-edge bg-raised`}
           />
         </>
       )}

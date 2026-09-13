@@ -11,10 +11,10 @@ import { olvidarEstadoTelegram } from './ReminderField';
  */
 
 const ACTION =
-  'rounded-xl border border-edge bg-white px-3.5 py-2 text-sm font-medium text-ink-soft ' +
+  'rounded-xl border border-edge bg-raised px-3.5 py-2 text-sm font-medium text-ink-soft ' +
   'transition-colors hover:bg-edge focus-visible:ring-2 focus-visible:ring-accent ' +
   'focus-visible:ring-offset-2 focus-visible:outline-none ' +
-  'disabled:cursor-not-allowed disabled:text-ink-muted disabled:hover:bg-white';
+  'disabled:cursor-not-allowed disabled:text-ink-muted disabled:hover:bg-raised';
 
 const PRIMARY =
   'rounded-xl bg-accent px-3.5 py-2 text-sm font-semibold text-white transition-colors ' +
@@ -221,7 +221,7 @@ export default function TelegramSettings() {
         <p
           role="status"
           className={
-            'mt-3 text-xs font-medium ' + (note.kind === 'ok' ? 'text-accent-strong' : 'text-highlight')
+            'mt-3 text-xs font-medium ' + (note.kind === 'ok' ? 'text-accent-ink-strong' : 'text-highlight')
           }
         >
           {note.text}

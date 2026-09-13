@@ -8,8 +8,8 @@ import { REMINDER_LABEL } from '../lib/reminders';
  * todavía: ahí ya no queda nada por mirar.
  */
 const REMINDER_TONE: Record<ReminderState, string> = {
-  pending: 'bg-accent/10 text-accent-strong',
-  due: 'bg-accent/10 text-accent-strong',
+  pending: 'bg-accent/10 text-accent-ink-strong',
+  due: 'bg-accent/10 text-accent-ink-strong',
   missed: 'bg-highlight-soft text-highlight',
   sent: 'bg-edge text-ink-muted',
   done: 'bg-edge text-ink-muted',

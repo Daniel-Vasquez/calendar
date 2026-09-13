@@ -33,7 +33,7 @@ export default function Lightbox({ image, triggerRef, onClose }: Props) {
 
   return (
     <div
-      className="animate-overlay-in fixed inset-0 z-50 flex items-center justify-center bg-ink/80 p-4 backdrop-blur-sm"
+      className="animate-overlay-in fixed inset-0 z-50 flex items-center justify-center bg-scrim/80 p-4 backdrop-blur-sm"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -124,7 +124,7 @@ export default function Lightbox({ image, triggerRef, onClose }: Props) {
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl border border-edge bg-white px-4 py-2.5 text-sm font-medium text-ink-soft transition-colors hover:bg-surface focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none"
+            className="rounded-xl border border-edge bg-raised px-4 py-2.5 text-sm font-medium text-ink-soft transition-colors hover:bg-surface focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none"
           >
             Cerrar
           </button>

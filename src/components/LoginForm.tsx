@@ -9,7 +9,7 @@ type Props = {
 };
 
 const FIELD =
-  'w-full rounded-xl border border-edge bg-white px-4 py-2.5 text-sm text-ink ' +
+  'w-full rounded-xl border border-edge bg-raised px-4 py-2.5 text-sm text-ink ' +
   'placeholder:text-ink-muted focus:border-accent focus:ring-2 focus:ring-accent/30 ' +
   'focus:outline-none disabled:opacity-60';
 
@@ -136,7 +136,7 @@ export default function LoginForm({ next }: Props) {
         <button
           type="button"
           onClick={switchMode}
-          className="rounded font-semibold text-accent-strong underline underline-offset-2 hover:text-accent focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+          className="rounded font-semibold text-accent-ink-strong underline underline-offset-2 hover:text-accent-ink focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
         >
           {creating ? 'Entrar' : 'Crear una cuenta'}
         </button>

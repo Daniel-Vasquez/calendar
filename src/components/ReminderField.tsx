@@ -48,7 +48,7 @@ async function hayTelegram(): Promise<boolean> {
 }
 
 const FIELD =
-  'w-full rounded-xl border border-edge bg-white px-4 py-2.5 text-sm text-ink ' +
+  'w-full rounded-xl border border-edge bg-raised px-4 py-2.5 text-sm text-ink ' +
   'placeholder:text-ink-muted focus:border-accent focus:ring-2 focus:ring-accent/30 focus:outline-none';
 
 /**
@@ -194,7 +194,7 @@ export default function ReminderField({
             className="peer sr-only"
           />
           <span className="block h-6 w-11 rounded-full bg-edge transition-colors peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-accent peer-focus-visible:ring-offset-2" />
-          <span className="pointer-events-none absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5" />
+          <span className="pointer-events-none absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-raised shadow-sm transition-transform peer-checked:translate-x-5" />
         </span>
       </label>
 

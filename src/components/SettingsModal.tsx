@@ -45,7 +45,7 @@ export default function SettingsModal({ triggerRef, onClose, ...panelProps }: Pr
 
   return (
     <div
-      className="animate-overlay-in fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 p-4 backdrop-blur-sm sm:items-center"
+      className="animate-overlay-in fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-scrim/40 p-4 backdrop-blur-sm sm:items-center"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}

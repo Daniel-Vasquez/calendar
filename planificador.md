@@ -49,6 +49,8 @@ middleware ───────────────────────
 | `src/components/useCalendarStore.ts` | El calendario y su sincronía, para toda página que escriba |
 | `src/pages/recordatorios.astro` | La lista de recordatorios |
 | `src/pages/agenda.astro` | La agenda del año y las cuentas del calendario |
+| `src/lib/theme.ts` | Claro u oscuro: dónde se guarda y quién manda |
+| `src/components/ThemeToggle.tsx` | El sol y la luna de la barra |
 | `src/lib/telegram.ts` | El bot: enviar, leer `getUpdates`, clasificar fallos |
 | `src/pages/api/telegram.ts` | Vincular, comprobar, probar y desvincular |
 | `src/pages/api/cron/reminders.ts` | Lo dispara el programador externo |
@@ -518,6 +520,65 @@ allí: ir a hoy, el estado de la sincronía y el plegado de los meses.
 `AgendaPanel` pasó a llamarse `AgendaList`: dejó de ser un panel dentro de otra
 página el día que tuvo la suya.
 
+#### Modo oscuro
+
+**El tema se cambia en un sitio: los tokens.** Todo el color de la aplicación
+salía ya de las variables de `@theme`, así que el modo oscuro son quince líneas
+que las redefinen bajo `:root.dark` en vez de un `dark:` repartido por doscientas
+clases. Lo que costó no fue eso, fue lo que estaba escrito a mano: veintinueve
+`bg-white` y un puñado de `text-white`.
+
+De ahí salen tres tokens nuevos, y cada uno por una razón concreta:
+
+- `raised` es lo que era `bg-white`: campos, botones y tarjetas **sobre** una
+  superficie. Blanco en claro, un escalón por encima de `surface` en oscuro.
+- `scrim` es el velo de los modales y las chapas sobre fotos. **No cambia con el
+  tema**, y es el único que no lo hace: lo que va encima es blanco en los dos, y
+  un velo claro no oscurecería nada. Antes era `bg-ink/40`, que al invertirse
+  habría puesto una niebla blanca sobre la página.
+- `accent-ink` y `today-ink` separan el papel de *texto* del de *fondo*. Un teal
+  que lleva texto blanco encima y un teal que se lee sobre un tinte tiran hacia
+  lados opuestos al oscurecer: el primero tiene que quedarse oscuro y el segundo
+  aclararse. Con un solo token no hay forma de contentar a los dos. En claro
+  valen lo mismo, así que el tema claro no se movió ni un punto.
+
+`bg-ink` se quedó como lo que era sin que nadie lo dijera: la superficie
+invertida del aviso del pie y de los chips activos. Su texto pasó de `text-white`
+a `text-canvas`, y así se invierte solo en los dos temas.
+
+Un fallo que solo se ve de noche: la casilla de «hecho» de los recordatorios
+escondía el visto pintándolo de blanco sobre fondo blanco. En oscuro el fondo
+deja de ser blanco y el visto aparecía en todas las filas, con todo marcado.
+Ahora se esconde con `text-transparent`, que es lo que se quería decir.
+
+**El destello se evita en el `<head>`, no en React.** Un script bloqueante de seis
+líneas decide la clase de `<html>` antes de que exista el `<body>`, así que el
+primer píxel ya sale con el tema puesto. Es el mismo truco que ya usaba
+`index.astro` para los meses plegados, subido a `Layout.astro` para que valga
+también en la pantalla de acceso.
+
+Por eso **la fuente de verdad es la clase del DOM**, no un `useState`. El
+interruptor no tiene estado: qué icono se ve lo decide la variante `dark:`, es
+decir CSS, y al pulsar se lee la clase para saber qué toca. Con estado habría un
+primer render que el servidor no puede acertar —no sabe qué guardó este
+navegador— y se vería un instante el icono equivocado.
+
+Sin nada guardado manda `prefers-color-scheme`, y se le sigue en caliente: el
+portátil que se oscurece al anochecer arrastra la página sin recargarla. Pero
+seguir al sistema **no** escribe en `localStorage`: guardarlo ahí congelaría la
+preferencia la primera vez que el sistema cambiara de humor, y ya no volvería a
+seguirlo.
+
+La transición de doscientos milisegundos vive en una clase temporal que el
+interruptor pone y quita. Dejarla siempre puesta metería ese retardo en cada
+`hover` de la aplicación y pelearía con las transiciones propias de los botones.
+Se quita con un temporizador y no con `transitionend`: ese evento llega una vez
+por propiedad y por elemento —miles aquí—, y con `prefers-reduced-motion` no
+llega ninguno, que es justo cuando dejaría la clase puesta para siempre.
+
+El bloque oscuro va dentro de `@media screen`: en papel manda siempre la paleta
+clara, que es la que ya contemplan las reglas de impresión.
+
 ## Lo que falta
 
 ### Tanda 8 · Multimedia en Cloudinary
@@ -733,6 +794,13 @@ Pendiente:
       cuota sigue siendo un techo. `MAX_DATA_URL_LENGTH` (700 KB) se dimensionó
       para esa cuota y ahora podría subir. **La tanda 8 lo retira**, a cambio de
       que las imágenes dejen de verse sin conexión.
+- [ ] **El tema claro no llega a AA en varios pares, y es anterior al oscuro.**
+      Medido: `ink-muted` sobre `canvas` da 2,46:1, `text-highlight` sobre
+      `canvas` 3,05:1 y sobre `highlight-soft` 2,86:1, con 4,5:1 de mínimo para
+      texto normal. El oscuro sí pasa entero —de 5,3:1 para arriba— porque se
+      eligió con la medida delante. Arreglar el claro es oscurecer esos tres
+      tonos, pero cambia el aspecto de la aplicación y por eso no se hizo de
+      paso: es una decisión de diseño, no una corrección.
 - [ ] No hay recuperación de contraseña: haría falta un servidor de correo.
 - [ ] `IMAGE_ACTION` en `DayModal.tsx` no se usa. Anterior a esta sesión.
 - [ ] Dar por hecho un aviso que el servidor acaba de marcar como enviado —sin

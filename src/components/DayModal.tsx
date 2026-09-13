@@ -25,7 +25,7 @@ type Props = {
 };
 
 const IMAGE_ACTION =
-  'rounded-lg border border-edge bg-white px-3 py-1.5 text-xs font-medium text-ink-soft ' +
+  'rounded-lg border border-edge bg-raised px-3 py-1.5 text-xs font-medium text-ink-soft ' +
   'transition-colors hover:bg-edge disabled:cursor-wait disabled:opacity-60 ' +
   'focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none';
 
@@ -199,7 +199,7 @@ export default function DayModal({
 
   return (
     <div
-      className="animate-overlay-in fixed inset-0 z-50 flex items-end justify-center bg-ink/40 p-4 backdrop-blur-sm sm:items-center"
+      className="animate-overlay-in fixed inset-0 z-50 flex items-end justify-center bg-scrim/40 p-4 backdrop-blur-sm sm:items-center"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -248,7 +248,7 @@ export default function DayModal({
               className="peer sr-only"
             />
             <span className="block h-6 w-11 rounded-full bg-edge transition-colors peer-checked:bg-accent peer-focus-visible:ring-2 peer-focus-visible:ring-accent peer-focus-visible:ring-offset-2" />
-            <span className="pointer-events-none absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform peer-checked:translate-x-5" />
+            <span className="pointer-events-none absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-raised shadow-sm transition-transform peer-checked:translate-x-5" />
           </span>
         </label>
 
@@ -312,7 +312,7 @@ export default function DayModal({
             onChange={(event) => setNote(event.target.value)}
             rows={4}
             placeholder="Escribe un recordatorio, reunión o pendiente…"
-            className="w-full resize-none rounded-xl border border-edge bg-white px-4 py-3 text-sm text-ink placeholder:text-ink-muted focus:border-accent focus:ring-2 focus:ring-accent/30 focus:outline-none"
+            className="w-full resize-none rounded-xl border border-edge bg-raised px-4 py-3 text-sm text-ink placeholder:text-ink-muted focus:border-accent focus:ring-2 focus:ring-accent/30 focus:outline-none"
           />
         </div>
 
@@ -340,7 +340,7 @@ export default function DayModal({
                     onClick={() => removeImage(index)}
                     aria-label={`Quitar imagen ${index + 1}`}
                     title="Quitar imagen"
-                    className="absolute top-1 right-1 rounded-full bg-ink/60 p-1 text-white shadow transition-colors hover:bg-ink focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
+                    className="absolute top-1 right-1 rounded-full bg-scrim/60 p-1 text-white shadow transition-colors hover:bg-scrim focus-visible:ring-2 focus-visible:ring-white focus-visible:outline-none"
                   >
                     <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                       <path
@@ -377,7 +377,7 @@ export default function DayModal({
             onClick={() => fileRef.current?.click()}
             disabled={processing || remaining === 0 || !ready}
             aria-describedby={imageHelpId}
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-edge bg-surface px-4 py-3 text-sm font-medium text-ink-soft transition-colors hover:border-accent hover:text-accent-strong disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-edge disabled:hover:text-ink-soft focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-edge bg-surface px-4 py-3 text-sm font-medium text-ink-soft transition-colors hover:border-accent hover:text-accent-ink-strong disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-edge disabled:hover:text-ink-soft focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <rect
@@ -460,7 +460,7 @@ export default function DayModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl border border-edge bg-white px-4 py-2.5 text-sm font-medium text-ink-soft transition-colors hover:bg-surface focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none sm:flex-none"
+            className="rounded-xl border border-edge bg-raised px-4 py-2.5 text-sm font-medium text-ink-soft transition-colors hover:bg-surface focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none sm:flex-none"
           >
             Cerrar
           </button>

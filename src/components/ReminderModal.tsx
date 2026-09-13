@@ -37,7 +37,7 @@ type Props = {
 };
 
 const FIELD =
-  'w-full rounded-xl border border-edge bg-white px-4 py-2.5 text-sm text-ink ' +
+  'w-full rounded-xl border border-edge bg-raised px-4 py-2.5 text-sm text-ink ' +
   'placeholder:text-ink-muted focus:border-accent focus:ring-2 focus:ring-accent/30 focus:outline-none';
 
 const ACTION =
@@ -117,7 +117,7 @@ export default function ReminderModal({
 
   return (
     <div
-      className="animate-overlay-in fixed inset-0 z-50 flex items-end justify-center bg-ink/40 p-4 backdrop-blur-sm sm:items-center"
+      className="animate-overlay-in fixed inset-0 z-50 flex items-end justify-center bg-scrim/40 p-4 backdrop-blur-sm sm:items-center"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -239,7 +239,7 @@ export default function ReminderModal({
               onClick={() => onDelete(dateKey)}
               className={
                 ACTION +
-                ' border border-edge bg-white text-highlight hover:bg-highlight-soft focus-visible:ring-highlight'
+                ' border border-edge bg-raised text-highlight hover:bg-highlight-soft focus-visible:ring-highlight'
               }
             >
               Eliminar
@@ -251,7 +251,7 @@ export default function ReminderModal({
               type="button"
               onClick={onClose}
               className={
-                ACTION + ' border border-edge bg-white text-ink-soft hover:bg-edge focus-visible:ring-accent'
+                ACTION + ' border border-edge bg-raised text-ink-soft hover:bg-edge focus-visible:ring-accent'
               }
             >
               Cancelar

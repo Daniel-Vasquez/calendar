@@ -1,5 +1,6 @@
 ---
 import '../styles/global.css';
+import { DARK_CLASS, THEME_KEY } from '../lib/theme';
 
 interface Props {
   title: string;
@@ -19,6 +20,30 @@ const { title, description = 'Dashboard de planificación para el año 2026.' } 
     <meta name="generator" content={Astro.generator} />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>{title}</title>
+
+    {/* El tema, antes que nada.
+
+        Este script es bloqueante y va en el `<head>` a propósito: decide la
+        clase de `<html>` antes de que exista el `<body>`, así que el navegador
+        pinta el primer píxel con el tema ya puesto. Montarlo en React —o
+        incluso al final del `<body>`— dejaría ver un destello blanco en cada
+        recarga, que es exactamente lo que se está evitando.
+
+        Sin nada guardado manda el sistema operativo. Se mira `!== 'light'` y no
+        `=== null` para que un valor estropeado caiga también del lado del
+        sistema en vez de forzar el modo claro. */}
+    <script is:inline define:vars={{ key: THEME_KEY, cls: DARK_CLASS }}>
+      try {
+        var saved = localStorage.getItem(key);
+        var dark =
+          saved === 'dark' ||
+          (saved !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        if (dark) document.documentElement.classList.add(cls);
+      } catch (error) {
+        /* Sin almacenamiento no hay preferencia guardada: se queda el claro. */
+      }
+    </script>
+
     <slot name="head" />
   </head>
   <body class="min-h-screen bg-canvas text-ink antialiased">

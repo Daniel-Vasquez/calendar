@@ -88,7 +88,7 @@ export default function GalleryView({ user }: { user: NavUser }) {
     <>
       <NavBar current="gallery" user={user} />
 
-      <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
+      <main className="mx-auto w-full max-w-5xl px-4 pt-8 pb-10 sm:px-6">
         <header className="mb-8">
           <div className="flex flex-wrap items-end justify-between gap-6">
             <div>

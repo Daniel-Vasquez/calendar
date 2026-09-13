@@ -14,10 +14,10 @@ type Props = {
 };
 
 const ACTION =
-  'rounded-xl border border-edge bg-white px-3.5 py-2 text-sm font-medium text-ink-soft ' +
+  'rounded-xl border border-edge bg-raised px-3.5 py-2 text-sm font-medium text-ink-soft ' +
   'transition-colors hover:bg-edge focus-visible:ring-2 focus-visible:ring-accent ' +
   'focus-visible:ring-offset-2 focus-visible:outline-none ' +
-  'disabled:cursor-not-allowed disabled:text-ink-muted disabled:hover:bg-white';
+  'disabled:cursor-not-allowed disabled:text-ink-muted disabled:hover:bg-raised';
 
 /**
  * Ajustes secundarios: nombrar los colores y sacar o meter los datos.
@@ -66,7 +66,7 @@ export default function SettingsPanel({
                 maxLength={MAX_LABEL_LENGTH}
                 aria-label={`Nombre para el color ${color.name}`}
                 onChange={(event) => onRenameColor(color.id, event.target.value)}
-                className="w-full min-w-0 rounded-lg border border-edge bg-white px-2.5 py-1.5 text-sm text-ink placeholder:text-ink-muted focus:border-accent focus:ring-2 focus:ring-accent/30 focus:outline-none"
+                className="w-full min-w-0 rounded-lg border border-edge bg-raised px-2.5 py-1.5 text-sm text-ink placeholder:text-ink-muted focus:border-accent focus:ring-2 focus:ring-accent/30 focus:outline-none"
               />
             </li>
           ))}
