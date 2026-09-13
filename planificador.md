@@ -631,6 +631,67 @@ Pendiente:
 
 ---
 
+## Invitar a alguien
+
+El registro está cerrado con lista de invitados (ver *Más de una persona*). Dar
+acceso son dos cosas: meter su correo en la lista, y que esa persona se cree la
+cuenta ella misma.
+
+### 1 · Añadir el correo
+
+Desde la carpeta del proyecto, en tu máquina:
+
+```bash
+node --env-file=.env scripts/allowlist.mjs add ana@ejemplo.com "Ana, del trabajo"
+node --env-file=.env scripts/allowlist.mjs            # comprobar que quedó
+```
+
+La nota es opcional y solo sirve para que dentro de un año se sepa quién es.
+
+Apunta a la **misma base que usa el sitio desplegado**, así que surte efecto de
+inmediato: invitar a alguien no necesita volver a desplegar.
+
+### 2 · Que se registre
+
+Se le manda <https://planificador.danielvasquez.lat> y tres indicaciones:
+pulsar **Crear cuenta**, poner **ese mismo correo**, y una contraseña de **ocho
+caracteres o más**. Las mayúsculas dan igual: el correo se normaliza en los dos
+lados antes de compararlo.
+
+Si se equivoca de correo verá «Este correo no tiene invitación para crear una
+cuenta» y no ocurrirá nada más.
+
+**La contraseña la elige quien se registra.** Nadie más la pone ni la ve.
+
+### 3 · Sus recordatorios, si los quiere
+
+Ajustes → *Recordatorios por Telegram* → abrir el chat del bot → **Start** →
+volver y *Comprobar conexión*.
+
+No tiene que crear ningún bot ni conseguir ningún token: el bot es de la
+aplicación. Lo único suyo es el chat.
+
+### Lo que verá
+
+Un calendario vacío y **completamente aparte**. No ve los días, las notas ni las
+imágenes de nadie más, y sus avisos van solo a su Telegram. `userId` sale
+siempre de la sesión, así que el aislamiento no depende de acordarse de filtrar
+en cada consulta.
+
+### Dos cosas que hay que decirle, y una que no hace lo que parece
+
+- **No hay recuperación de contraseña.** No hay servidor de correo a donde
+  mandarla. Si la olvida, arreglarlo es trabajo a mano contra Mongo. Conviene
+  avisar al invitar, no después.
+- **Quitar a alguien de la lista no le cierra la cuenta** ni sus sesiones: solo
+  impide que ese correo vuelva a registrarse. Echar a alguien de verdad es
+  borrar su usuario y sus sesiones a mano. Está en *Deuda conocida*.
+- Quien **ya tiene cuenta** entra aunque no esté en la lista. El script lo
+  enseña aparte justamente por eso: una lista que parece completa sin serlo
+  engaña más que no tenerla.
+
+---
+
 ## Que siga funcionando
 
 Nada de esto necesita vigilancia diaria, pero **tres cosas se apagan solas** y
