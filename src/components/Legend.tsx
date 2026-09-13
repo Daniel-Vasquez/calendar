@@ -39,10 +39,6 @@ export default function Legend({ palette }: Props) {
           <span className="h-3 w-3 rounded bg-today" aria-hidden="true" />
           Día actual (violeta reservado)
         </li>
-        <li className="flex items-center gap-2">
-          <span className="h-3 w-3 rounded bg-accent opacity-60" aria-hidden="true" />
-          Día pasado
-        </li>
       </ul>
 
       <p className="mt-3 text-xs text-ink-muted">
