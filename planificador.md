@@ -9,7 +9,9 @@ van camino de Cloudinary (tanda 8).
 
 Este archivo es el mapa del proyecto y la lista de lo que falta. El *por qué* de
 cada decisión está en los comentarios del código; aquí va lo que no cabe en un
-comentario.
+comentario. Lo que hace falta para **arrancarlo** —qué es, qué hace y cómo se
+levanta— está en el `README.md`, que es la puerta para quien llega de fuera;
+este archivo da por sabido todo eso.
 
 ---
 
@@ -50,6 +52,8 @@ middleware ───────────────────────
 | `src/pages/recordatorios.astro` | La lista de recordatorios |
 | `src/pages/agenda.astro` | La agenda del año y las cuentas del calendario |
 | `src/lib/theme.ts` | Claro u oscuro: dónde se guarda y quién manda |
+| `src/lib/palette.ts` | Los ocho colores, la paleta propia de cada persona y su variable CSS |
+| `src/components/usePalette.ts` | Lee, guarda, aplica y vigila la paleta; lo usa toda página que pinte |
 | `src/components/ThemeToggle.tsx` | El sol y la luna de la barra |
 | `src/lib/telegram.ts` | El bot: enviar, leer `getUpdates`, clasificar fallos |
 | `src/pages/api/telegram.ts` | Vincular, comprobar, probar y desvincular |
@@ -73,7 +77,8 @@ middleware ───────────────────────
 `userId` se guarda como **ObjectId**, no como cadena.
 
 Los meses plegados **no** suben: son preferencia de este dispositivo y se
-quedan en `localStorage`.
+quedan en `localStorage`. La paleta —el nombre y el tono de cada categoría—
+tampoco, y esa sí duele: ver *Deuda conocida*.
 
 ### Más de una persona
 
@@ -506,10 +511,15 @@ alto máximo. Con ella se fue la regla de impresión de `.max-h-96`, que describ
 un scroll que ya no existe.
 
 Las filas pasaron de botón a **enlace** a `/?day=…`. En el calendario abrían el
-modal del día porque el modal estaba ahí al lado; desde otra página el camino es
+modal del día porque el modal estaba ahí al lado; desde otra página el camino era
 el que ya usaban «Ver nota» en la galería y «Ver en el calendario» en los
-recordatorios. Editar un día entero sigue siendo cosa de su modal, y ese vive
+recordatorios, y editar un día entero seguía siendo cosa de su modal, que vive
 donde está la rejilla.
+
+**Duró lo que tardó la agenda en tener buscador.** Con filtros y un texto
+tecleado que perder por el camino, el salto a la portada dejó de salir a cuenta y
+las filas volvieron a ser botones. Ver *El día se edita donde se está mirando*,
+más abajo.
 
 Las dos cuentas —días marcados y notas guardadas— se fueron con ella. Estaban en
 la cabecera de la portada, que es donde menos falta hacían: encima de una rejilla
@@ -578,6 +588,139 @@ llega ninguno, que es justo cuando dejaría la clase puesta para siempre.
 
 El bloque oscuro va dentro de `@media screen`: en papel manda siempre la paleta
 clara, que es la que ya contemplan las reglas de impresión.
+
+### Editar sin salir, y colores propios — septiembre de 2026
+
+#### El día se edita donde se está mirando
+
+La agenda estrenó buscador y filtros, y con ellos el enlace a `/?day=…` se volvió
+caro: buscar «médico», pulsar un resultado y aparecer en la portada dejaba atrás
+lo tecleado, las pestañas, el color elegido y el sitio en la lista. Todo eso
+había que rehacerlo a mano para seguir repasando.
+
+Ahora la fila abre **el mismo `DayModal`** sobre la propia agenda. El mismo y no
+uno más pequeño a propósito: un segundo editor sería un segundo sitio del que
+acordarse la próxima vez que un día gane un campo, y los dos acabarían
+separándose. `AgendaList` no se desmonta mientras el modal está abierto, así que
+la lente sobre la lista se conserva por construcción y no por guardarla y
+reponerla.
+
+Escribe por `useCalendarStore`, la misma puerta que la rejilla y la lista de
+recordatorios. Con ella se trajo la banda de aviso con **Deshacer**, porque dos
+de las cosas que ahora se pueden hacer desde aquí —vaciar un día y mudarlo— no
+tienen vuelta sin ella. De paso le da sitio a lo que cuenta la sincronía: la
+agenda lo estaba tirando al suelo.
+
+#### Un día se puede mudar de fecha
+
+El modal recibe cuatro props opcionales, y sin ellas la rejilla dibuja
+exactamente lo que dibujaba antes. `onMove` convierte la fecha en un campo: **en
+una lista la fecha es un dato del día; en la rejilla la casilla *es* la fecha**, y
+un selector allí solo pediría decir dos veces dónde ya se ha pulsado.
+
+`moveDay` rehace el aviso con la fecha nueva. Un recordatorio guarda el instante
+absoluto de su día, así que arrastrarlo tal cual dejaría la alarma sonando en la
+fecha de la que se acaba de salir; `makeReminder` recalcula ese instante y de
+paso suelta `sent` y `done`, que es lo correcto: en el día nuevo está por sonar y
+por hacer.
+
+**El campo se apaga mientras los adjuntos no hayan bajado a este navegador**, y
+ese es el detalle que no se ve venir: el día de origen se borra, su lápida borra
+sus imágenes en la cuenta, y el destino heredaría solo la cuenta de imágenes,
+apuntando a nada. Es la misma razón por la que el botón de adjuntar ya estaba
+apagado en ese estado.
+
+`hasDay` avisa antes de pisar un destino que ya tenga contenido, y
+`showCalendarLink` deja la salida a la rejilla para quien quiera el día con su
+mes alrededor.
+
+#### «Dado por hecho» baja al día
+
+Tachar un aviso vivía solo en `/recordatorios`, lo que obligaba a salir del día
+que se estaba leyendo para tachar justo lo que se acababa de leer. La casilla
+está ahora en `ReminderField`, que es campo compartido: la rejilla la gana
+también. Un mismo formulario comportándose de dos maneras según quién lo abra
+habría sido peor que el cambio.
+
+#### Las muestras de color, a un tamaño que sirva
+
+Las ocho se repartían el ancho del modal en partes iguales, y eso salía mal por
+los dos extremos: unos setenta píxeles en un portátil —un mural de color encima
+de la nota— y veintiocho en un teléfono, por debajo de lo que un dedo acierta.
+Ahora son columnas fijas de 2.75rem: cuatro por fila en un teléfono y las ocho
+seguidas a partir de `sm`. El tamaño se declara una sola vez, en la rejilla.
+
+#### Los colores dejan de ser de fábrica
+
+En Ajustes, cada categoría tiene su `<input type="color">` junto al nombre, y hay
+un botón que devuelve los ocho a como vinieron.
+
+**No hubo que migrar ni un dato**, y eso no fue suerte: un día guarda `color:
+'rose'`, nunca `#be123c`. Lo que estaba mal era el otro extremo, `colorHex`, que
+resolvía siempre contra la tabla de fábrica. Si en el día viajara el
+hexadecimal, retocar un tono habría sido recorrer trescientos sesenta y seis
+días, subirlos todos y confiar en que ningún dispositivo se quedara a medias.
+
+Se guarda en **la clave de siempre** —la de los nombres— y el saneado entiende el
+formato anterior, un texto suelto por color, y lo convierte al de ahora. Nadie
+pierde sus categorías bautizadas.
+
+Y se guarda **solo lo retocado**, no el esquema completo. Copiar los ocho colores
+enteros dentro de cada navegador congelaría la paleta de fábrica: afinar un tono
+en el código no le llegaría nunca a quien ya tuviera algo guardado, aunque jamás
+hubiera tocado ese color. `resolvePalette` devuelve el esquema completo para
+quien lo necesite. Por lo mismo, un color retocado al mismo tono de fábrica no
+cuenta como retoque: si contara, «Restablecer» parecería tener trabajo pendiente
+cuando no lo tiene.
+
+El hexadecimal se comprueba en los tres sitios por los que puede entrar, y **no
+es cosmético**: ese valor acaba en una propiedad personalizada del documento y se
+sustituye tal cual allí donde se use la variable, así que un texto cualquiera
+podría colar más CSS del que aparenta.
+
+Restablecer pregunta antes. No toca ningún día, pero se lleva los ocho nombres de
+una vez y la paleta no tiene el Deshacer del pie del calendario, porque no viaja
+con los datos.
+
+#### El color no viaja por las props
+
+El color de un día se dibuja en una docena de sitios —la casilla, su punto, la
+fila de la agenda, la tarjeta del recordatorio, la leyenda, las muestras del
+modal— y la mitad no recibe la paleta ni tendría por qué: `DayCell` solo sabe de
+un día, y hacérsela llegar obligaba a atravesar `MonthCard` con una prop que no
+usa.
+
+Así que viaja por una **propiedad personalizada del documento**. Cada id tiene la
+suya y pintar es pedirla con el color de fábrica como respaldo:
+`var(--day-rose, #be123c)`. De ahí salen tres cosas gratis:
+
+1. Retocar un color repinta **todo** lo que lo usa en el mismo cuadro, sin un
+   solo repintado de React y sin que nadie se suscriba a nada.
+2. El HTML del servidor ya trae el color correcto dentro del respaldo: ni
+   destello ni desajuste de hidratación.
+3. Una página que no sabe nada de la paleta pinta bien igualmente.
+
+Las variables se ponen en el `<head>` con un guion en línea, **por el mismo
+motivo y en el mismo momento que el tema**: montado en React, el calendario se
+pintaría un cuadro con los colores de fábrica y otro con los suyos.
+
+`labels.ts` se disolvió dentro de `palette.ts`: los colores de fábrica y los de
+cada persona se buscan en el mismo sitio. Y `usePalette` recogió la copia doble
+de «leer `localStorage` tras montar y vigilar el evento `storage`» que había en
+el calendario y en la agenda; la tercera copia habría sido la que se desviara.
+Escribe por una función y no por un `useEffect` que vigile el estado, porque ese
+efecto corre también en el primer render —cuando la paleta aún está vacía porque
+no se ha leído— y guardaría ese vacío encima de lo que hubiera.
+
+#### Un `README.md`
+
+Este archivo abre por la arquitectura y da por sabido qué es el proyecto. Es lo
+que quiere quien trabaja aquí y lo contrario de lo que necesita quien acaba de
+clonar, así que el README cubre el terreno que este se salta: qué problema
+resuelve, qué sabe hacer, sobre qué está construido y los pasos de `git clone` a
+un servidor de desarrollo que contesta. Los límites que cita —seis imágenes por
+día, doce megas por archivo, la ventana de gracia— están leídos del código, no
+recordados.
 
 ## Lo que falta
 
@@ -801,6 +944,14 @@ Pendiente:
       eligió con la medida delante. Arreglar el claro es oscurecer esos tres
       tonos, pero cambia el aspecto de la aplicación y por eso no se hizo de
       paso: es una decisión de diseño, no una corrección.
+- [ ] **La paleta no llega a la cuenta.** Los nombres y los tonos viven en
+      `localStorage`, así que el mismo calendario se ve con categorías distintas
+      en el móvil y en el portátil. Era así desde que se pudieron renombrar los
+      colores; con los tonos se nota mucho más, porque ya no es un rótulo sino
+      el aspecto del año entero. Subirla es meterla en `settings`, que existe
+      justo para lo que no es de este dispositivo.
+- [ ] La exportación lleva la paleta (`palette`, v5) pero el importador solo lee
+      `days`: reimportar un archivo no devuelve ni los nombres ni los tonos.
 - [ ] No hay recuperación de contraseña: haría falta un servidor de correo.
 - [ ] `IMAGE_ACTION` en `DayModal.tsx` no se usa. Anterior a esta sesión.
 - [ ] Dar por hecho un aviso que el servidor acaba de marcar como enviado —sin
