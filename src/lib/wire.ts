@@ -46,6 +46,17 @@ export type WireDay = {
   deleted?: boolean;
 };
 
+/**
+ * Las claves de `WireDay` que pueden no venir en un día concreto.
+ *
+ * Se deriva del propio tipo en vez de escribirse a mano: quien guarda un día
+ * necesita saber exactamente cuáles son para poder **borrar** las que falten,
+ * y esa lista no puede quedarse atrás cuando el tipo crezca. Ver `days.ts`.
+ */
+export type OptionalWireKey = {
+  [K in keyof WireDay]-?: undefined extends WireDay[K] ? K : never;
+}[keyof WireDay];
+
 /** Tope por petición. Un año son 366 días; el margen es para la subida inicial. */
 export const MAX_DAYS_PER_REQUEST = 500;
 

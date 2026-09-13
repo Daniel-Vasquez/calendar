@@ -1,7 +1,12 @@
 import type { APIRoute } from 'astro';
 import { ObjectId } from 'mongodb';
 import { getDays } from '../../lib/mongo';
-import { MAX_DAYS_PER_REQUEST, sanitizeWireDay, type WireDay } from '../../lib/wire';
+import {
+  MAX_DAYS_PER_REQUEST,
+  sanitizeWireDay,
+  type OptionalWireKey,
+  type WireDay,
+} from '../../lib/wire';
 
 export const prerender = false;
 
@@ -13,6 +18,23 @@ function ownerOf(locals: App.Locals): ObjectId | null {
   const id = locals.user?.id;
   return id && ObjectId.isValid(id) ? new ObjectId(id) : null;
 }
+
+/**
+ * Todos los campos que `WireDay` puede no traer.
+ *
+ * Va como `Record` y no como lista para que el compilador obligue: si el tipo
+ * gana otro opcional y no se añade aquí, el build falla nombrando el que falta.
+ * Este descuido ya ha costado dos veces —`deleted` fue la segunda, y dejaba un
+ * día resucitado marcado como borrado para siempre en el servidor—, así que
+ * deja de depender de que alguien se acuerde.
+ */
+const OPTIONAL_FIELDS: Record<OptionalWireKey, true> = {
+  thumb: true,
+  reminder: true,
+  deleted: true,
+};
+
+const OPTIONAL_KEYS = Object.keys(OPTIONAL_FIELDS) as OptionalWireKey[];
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -79,9 +101,10 @@ export const POST: APIRoute = async ({ locals, request }) => {
     // *desaparecido* seguiría en el documento: apagar el recordatorio en el
     // portátil dejaría el suyo intacto en la base, y el móvil se lo bajaría de
     // vuelta en la siguiente lectura. Un campo ausente se borra a propósito.
-    const gone: Record<string, ''> = {};
-    if (!day.reminder) gone.reminder = '';
-    if (!day.thumb) gone.thumb = '';
+    const gone: Partial<Record<OptionalWireKey, ''>> = {};
+    for (const field of OPTIONAL_KEYS) {
+      if (day[field] === undefined) gone[field] = '';
+    }
 
     return {
       updateOne: {

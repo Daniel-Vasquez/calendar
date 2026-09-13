@@ -1,6 +1,20 @@
 import { defineMiddleware } from 'astro:middleware';
 
 /**
+ * Rutas que ni siquiera necesitan que se mire la sesión.
+ *
+ * Se resuelven antes de cargar el módulo de autenticación, y eso las hace
+ * inmunes a que su configuración esté mal: `/api/health` es adonde se acude
+ * cuando el despliegue no responde, y el cron tiene que seguir mandando avisos
+ * aunque el login esté roto.
+ *
+ * De paso se ahorra una consulta a la colección `session` en cada llamada. Con
+ * el cron sonando cada cinco minutos eso son casi trescientos viajes diarios a
+ * Atlas para leer una sesión que no existe ni hace falta.
+ */
+const NO_SESSION_PATHS = ['/api/health', '/api/cron/reminders'];
+
+/**
  * Rutas que se sirven sin sesión. Todo lo demás la exige, de forma que una
  * página nueva nace protegida en lugar de nacer abierta y esperar a que
  * alguien se acuerde de ponerle el candado.
@@ -8,8 +22,11 @@ import { defineMiddleware } from 'astro:middleware';
  * `/api/cron/reminders` está aquí porque quien la llama es un programador
  * externo y no una persona con cookie. No queda abierta: lleva su propio
  * candado, una cabecera secreta que comprueba antes de mirar nada más.
+ *
+ * `/login` sí pasa por la sesión, aunque no la exija: con una abierta hay que
+ * mandar a la persona a la portada en vez de enseñarle la puerta otra vez.
  */
-const PUBLIC_PATHS = ['/login', '/api/health', '/api/cron/reminders'];
+const PUBLIC_PATHS = [...NO_SESSION_PATHS, '/login'];
 
 function isPublic(pathname: string): boolean {
   // Las rutas de Better Auth no pueden pedir sesión: son las que la crean.
@@ -23,11 +40,10 @@ export const onRequest = defineMiddleware(async (context, next) => {
   // consultarla abriría una conexión a Atlas desde el build.
   if (context.isPrerendered) return next();
 
-  // El diagnóstico se resuelve antes de tocar la sesión, y de ahí que el
-  // import de abajo sea dinámico: `/api/health` es la ruta a la que se acude
-  // cuando el despliegue no responde, y si dependiera de que la configuración
-  // de la sesión sea válida caería con ella, justo cuando hace falta.
-  if (context.url.pathname === '/api/health') return next();
+  // Estas se resuelven antes de tocar la sesión, y de ahí que el import de
+  // abajo sea dinámico: si dependieran de que la configuración del login es
+  // válida, caerían con ella justo cuando más falta hacen.
+  if (NO_SESSION_PATHS.includes(context.url.pathname)) return next();
 
   const { auth } = await import('./auth');
   const result = await auth.api.getSession({ headers: context.request.headers });
