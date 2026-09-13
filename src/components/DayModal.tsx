@@ -391,16 +391,17 @@ export default function DayModal({
             <span className="text-xs font-normal text-ink-muted">{labelFor(palette, color)}</span>
           </legend>
           {/* Columnas de ancho fijo, no ocho partes iguales del modal: repartido,
-              cada muestra se iba a los setenta píxeles en un portátil —un mural
-              de color encima de la nota— y se quedaba en veintiocho en un
-              teléfono, por debajo de lo que un dedo acierta. Las 2.75rem son el
-              punto en el que ni una cosa ni la otra: cuatro por fila en un
-              teléfono y las ocho seguidas a partir de `sm`, que es donde caben
-              sin apretar. El tamaño se declara una sola vez, aquí. */}
+              cada muestra se iba a los setenta píxeles en un portátil, un mural
+              de color encima de la nota. Las ocho van siempre en **una sola
+              fila** y lo que cambia es su ancho: 1.6rem en un teléfono, 3.2rem
+              a partir de `sm`. Partirlas en dos filas de cuatro dejaba las
+              muestras más cómodas de acertar, pero también dejaba la mitad de
+              la paleta en un segundo renglón que se lee como otra cosa; verlas
+              de un tirón vale ese apretón. El tamaño se declara una vez, aquí. */}
           <div
             role="radiogroup"
             aria-label="Color del recuadro"
-            className="grid grid-cols-[repeat(4,2.75rem)] gap-2 sm:grid-cols-[repeat(8,2.75rem)]"
+            className="grid grid-cols-[repeat(8,1.6rem)] gap-2 sm:grid-cols-[repeat(8,3.2rem)]"
           >
             {DAY_COLORS.map((option) => {
               const selected = option.id === color;
@@ -416,7 +417,7 @@ export default function DayModal({
                   onClick={() => pickColor(option.id)}
                   style={{ backgroundColor: colorVar(option.id) }}
                   className={
-                    // El radio baja con la muestra: a 2.75rem, `rounded-lg`
+                    // El radio baja con la muestra: a estos tamaños `rounded-lg`
                     // pesaba de más y redondeaba el recuadro casi a pastilla.
                     'flex aspect-square w-full items-center justify-center rounded-md transition ' +
                     'focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 focus-visible:outline-none ' +
