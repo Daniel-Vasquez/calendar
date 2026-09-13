@@ -324,22 +324,40 @@ Se queda igualmente, porque el botón *Run workflow* es la forma cómoda de
 disparar a mano al probar algo.
 
 El programador de verdad va en **cron-job.org**: `POST` cada 5 minutos a
-`https://planificador.danielvasquez.lat/api/cron/reminders`, con el secreto en
-una de estas tres formas —las tres valen—:
+`https://planificador.danielvasquez.lat/api/cron/reminders`, con el cuerpo en
+`{}` y tipo `application/json` —eso satisface la protección CSRF de Astro sin
+añadir la cabecera a mano; ver *Trampas*—.
 
-| Cabecera | Valor |
+El secreto se acepta de **cinco formas**, y son tantas por una razón concreta:
+cuando un programador no manda lo que le configuras, la petición llega desnuda y
+el `401` no distingue «secreto equivocado» de «cabecera perdida por el camino».
+Sin poder ver qué envía, se depura a ciegas.
+
+| Dónde | Valor |
 |---|---|
-| `x-cron-secret` | el secreto |
-| `Authorization` | `Bearer <secreto>` |
-| `Authorization` | el secreto pelado |
+| Cabecera `x-cron-secret` | el secreto |
+| Cabecera `Authorization` | `Bearer <secreto>` |
+| Cabecera `Authorization` | el secreto pelado |
+| Cabecera `Authorization` | `Basic` — las casillas de usuario y contraseña del programador; vale en cualquiera de las dos mitades |
+| **URL** | `?secret=<secreto>` |
 
-Y el cuerpo en `{}` con tipo `application/json`, que es lo que satisface la
-protección CSRF de Astro sin tener que añadir la cabecera a mano. Ver *Trampas*.
+La de la URL es el último recurso y la única que deja rastro: lo que va en una
+URL acaba en los registros de acceso, en el historial del programador y en
+cualquier intermediario. Si se usa, ese secreto conviene rotarlo más a menudo.
+El riesgo está acotado —quien lo consiga solo puede pedir que salgan los avisos
+que ya tocaban, a los chats de siempre; no lee ni borra nada—, pero es real.
 
-Los campos de cabecera son **dos casillas de texto plano**, no JSON: el nombre
-en una y el valor en la otra. Escribirlo como `{x-cron-secret: …}` crea una
-cabecera llamada `{x-cron-secret`, que se descarta, y el endpoint contesta 401
-sin que nada diga por qué.
+Dos cosas que costaron una tarde con el formulario de cron-job.org:
+
+- Los campos de cabecera son **dos casillas de texto plano**, no JSON. Escribir
+  `{x-cron-secret: …}` crea una cabecera llamada `{x-cron-secret`, que se
+  descarta.
+- **La URL tiene que empezar por `https://`.** El campo suele traer `http://`
+  de fábrica, y el sitio responde con un 308 hacia `https`. Los clientes HTTP
+  descartan las credenciales al seguir una redirección a otro origen, así que la
+  cabecera no sobrevive al salto y la petición llega sin nada. El síntoma —un
+  401 idéntico se ponga la cabecera que se ponga— manda a revisar el secreto,
+  que es justo lo que no falla.
 
 ### Tanda 8 · Multimedia en Cloudinary
 

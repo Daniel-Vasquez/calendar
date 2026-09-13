@@ -39,6 +39,24 @@ export const prerender = false;
 const SECRET_HEADER = 'x-cron-secret';
 
 /**
+ * Último recurso: el secreto en la propia URL, `?secret=…`.
+ *
+ * Se admite porque hay programadores que sencillamente no mandan las cabeceras
+ * que les configuras, y descubrirlo cuesta una tarde: la petición llega sin
+ * nada y el 401 no distingue «secreto equivocado» de «cabecera perdida».
+ *
+ * **Es la forma menos buena y la única que deja rastro.** Lo que va en una URL
+ * acaba en los registros de acceso del servidor, en el historial del
+ * programador y en cualquier intermediario del camino, mientras que una
+ * cabecera no. Úsese solo cuando las otras no sean posibles, y con la idea de
+ * que ese secreto es más rotable que los demás.
+ *
+ * El riesgo real es acotado: quien lo consiga solo puede pedir que se manden
+ * los avisos que ya tocaban, a los chats de siempre. No lee ni borra nada.
+ */
+const SECRET_PARAM = 'secret';
+
+/**
  * Cuánto se permite tardar antes de dejar el resto para la pasada siguiente.
  *
  * Lo que quede sigue dentro de su ventana de gracia, así que no se pierde: se
@@ -65,7 +83,7 @@ function secretMatches(given: string, expected: string): boolean {
  * El candado de esta ruta, que no tiene sesión de la que tirar. Devuelve la
  * respuesta con la que cortar, o `null` si la llamada puede seguir.
  */
-function reject(request: Request): Response | null {
+function reject(request: Request, url: URL): Response | null {
   // Sin secreto configurado no entra nadie, y se contesta lo mismo que a quien
   // trae uno malo: decir «falta CRON_SECRET» a un desconocido es avisarle de
   // que la puerta está sin cerradura. El operador lo ve en el registro.
@@ -73,31 +91,56 @@ function reject(request: Request): Response | null {
     console.error('[cron] llamada rechazada: falta CRON_SECRET en el entorno');
     return json(401, { error: 'No autorizado' });
   }
-  for (const given of offeredSecrets(request)) {
+  for (const given of offeredSecrets(request, url)) {
     if (secretMatches(given, CRON_SECRET)) return null;
   }
   return json(401, { error: 'No autorizado' });
 }
 
-/** Los secretos que trae la petición, en cualquiera de las dos formas. */
-function offeredSecrets(request: Request): string[] {
+/**
+ * Todos los sitios de los que se acepta el secreto.
+ *
+ * Son varios porque cada programador manda lo suyo a su manera, y pelearse con
+ * un formulario ajeno a ciegas —sin poder ver qué envía— es lo que más tiempo
+ * ha costado de toda la tanda.
+ */
+function offeredSecrets(request: Request, url: URL): string[] {
   const found: string[] = [];
 
   const propia = request.headers.get(SECRET_HEADER);
   if (propia) found.push(propia.trim());
 
-  // `Bearer` no distingue mayúsculas por especificación, y hay formularios que
-  // lo escriben `bearer`. Se admite también el valor pelado: alguien que pega
-  // solo el secreto en una casilla llamada «Authorization» tiene razón en
-  // esperar que funcione.
   const auth = request.headers.get('authorization');
-  if (auth) found.push(auth.replace(/^\s*bearer\s+/i, '').trim());
+  if (auth) {
+    // `Basic dXN1YXJpbzpjbGF2ZQ==`: lo mandan las casillas de usuario y
+    // contraseña que traen casi todos los programadores. Valen las dos
+    // mitades, porque no hay forma de saber en cuál lo habrá puesto.
+    const basic = /^\s*basic\s+(\S+)/i.exec(auth);
+    if (basic) {
+      try {
+        const par = atob(basic[1]);
+        const corte = par.indexOf(':');
+        found.push(corte === -1 ? par.trim() : par.slice(0, corte).trim(), par.slice(corte + 1).trim());
+      } catch {
+        /* No era base64: se ignora y se prueba con lo de abajo. */
+      }
+    }
 
-  return found;
+    // `Bearer` no distingue mayúsculas por especificación, y hay formularios
+    // que lo escriben `bearer`. Se admite también el valor pelado: alguien que
+    // pega solo el secreto en una casilla llamada «Authorization» tiene razón
+    // en esperar que funcione.
+    found.push(auth.replace(/^\s*bearer\s+/i, '').trim());
+  }
+
+  const enLaUrl = url.searchParams.get(SECRET_PARAM);
+  if (enLaUrl) found.push(enLaUrl.trim());
+
+  return found.filter(Boolean);
 }
 
-export const POST: APIRoute = async ({ request }) => {
-  const denied = reject(request);
+export const POST: APIRoute = async ({ request, url }) => {
+  const denied = reject(request, url);
   if (denied) return denied;
 
   const config = telegramConfig();
@@ -215,8 +258,8 @@ export const POST: APIRoute = async ({ request }) => {
  * Pide el mismo secreto que el POST — sin él, contestar «CRON_SECRET no está
  * configurado» le diría a cualquiera que la puerta está abierta.
  */
-export const GET: APIRoute = async ({ request }) => {
-  const denied = reject(request);
+export const GET: APIRoute = async ({ request, url }) => {
+  const denied = reject(request, url);
   if (denied) return denied;
 
   const config = telegramConfig();
