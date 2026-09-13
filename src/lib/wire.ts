@@ -9,8 +9,9 @@ import { imageCount, type DayEntry } from './storage';
  *
  * No lleva las imágenes: una nota con seis adjuntos son más de cuatro megas de
  * data URL, y bajarlos con el calendario haría inservible la carga. Viajan en
- * su propia colección (tanda 4); aquí solo va la cuenta, que es lo que la
- * rejilla y la agenda necesitan saber para pintar el indicador.
+ * su propia colección (tanda 4) y sus bytes están en Cloudinary (tanda 8);
+ * aquí solo va la cuenta, que es lo que la rejilla y la agenda necesitan saber
+ * para pintar el indicador.
  *
  * Este archivo lo importan los dos lados, así que no puede tocar ni `window`
  * ni nada del servidor.
@@ -23,9 +24,19 @@ export type WireDay = {
   /** Cuántas imágenes tiene la nota. Las imágenes van en su propia colección. */
   imageCount: number;
   /**
-   * Miniatura de la primera imagen. Es lo único de las imágenes que viaja con
-   * el día, y es deliberado: la agenda enseña una por fila y pedirlas de una
-   * en una convertiría abrir el calendario en una ráfaga de peticiones.
+   * La versión de la primera imagen, en dígitos. **Ya no es una miniatura en
+   * base64**: desde la tanda 8 la miniatura es una derivada que sirve el proxy,
+   * y aquí solo viaja lo justo para pedirla — que existe, y cuál es.
+   *
+   * Sigue viajando con el día por lo mismo que viajaba antes: la agenda enseña
+   * una por fila, y averiguar si la hay de una en una convertiría abrir el
+   * calendario en una ráfaga de peticiones. Lo que ha cambiado es el peso, de
+   * cinco kilobytes por día a seis cifras.
+   *
+   * Que esté puesta significa además que **esa imagen ya está arriba**: la
+   * pone `flushImages` al confirmarse la subida. Sin ella, un día recién
+   * guardado en el móvil haría que el portátil pidiera una miniatura que
+   * todavía no existe.
    */
   thumb?: string;
   /**
@@ -115,7 +126,7 @@ export function sanitizeWireDay(raw: unknown): WireDay | null {
   };
 }
 
-/** El día tal y como se manda al servidor: la cuenta y la miniatura, no las imágenes. */
+/** El día tal y como se manda al servidor: la cuenta y la versión de la miniatura, no las imágenes. */
 export function toWire(key: string, entry: DayEntry, updatedAt: number): WireDay {
   return {
     key,
@@ -139,9 +150,9 @@ export function toWire(key: string, entry: DayEntry, updatedAt: number): WireDay
  * tuviera más reciente.
  */
 export function fromWire(day: WireDay, local?: DayEntry): DayEntry {
-  // Las que ya estuvieran descargadas aquí se quedan, pero solo si siguen
-  // cuadrando con la cuenta: si el servidor dice cuatro y aquí hay seis, las
-  // de aquí son de una versión anterior y se piden de nuevo.
+  // Las que ya estuvieran aquí —referencias o data URL sin subir— se quedan,
+  // pero solo si siguen cuadrando con la cuenta: si el servidor dice cuatro y
+  // aquí hay seis, las de aquí son de una versión anterior y se piden de nuevo.
   const images = local?.images?.length === day.imageCount ? local.images : undefined;
 
   return {

@@ -53,6 +53,23 @@ export default defineConfig({
       // Autoriza al programador externo a disparar el envío. Ver
       // `pages/api/cron/reminders.ts`.
       CRON_SECRET: envField.string({ context: 'server', access: 'secret', optional: true }),
+
+      /*
+       * Cloudinary, donde viven los bytes de los adjuntos. Obligatorias, al
+       * revés que las de Telegram: sin ellas no se puede ni guardar una
+       * imagen ni enseñar una ya guardada, así que fallar pronto y nombrando
+       * la que falta es mejor que descubrirlo al adjuntar.
+       *
+       * La *API Environment Variable* (`CLOUDINARY_URL`) **no se declara**: el
+       * SDK la buscaría en `process.env`, donde el `.env` no llega en
+       * `astro dev`, y funcionaría en producción y no en local. Las tres
+       * piezas van por separado y se configuran a mano en `lib/cloudinary.ts`.
+       */
+      CLOUDINARY_CLOUD_NAME: envField.string({ context: 'server', access: 'secret' }),
+      CLOUDINARY_API_KEY: envField.string({ context: 'server', access: 'secret' }),
+      // Firma las subidas y las URLs. Nunca `access: 'public'`: con ella se
+      // puede subir, borrar y firmar cualquier cosa de la nube.
+      CLOUDINARY_API_SECRET: envField.string({ context: 'server', access: 'secret' }),
     },
   },
 

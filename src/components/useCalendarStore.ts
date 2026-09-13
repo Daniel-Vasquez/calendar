@@ -35,7 +35,8 @@ export type CalendarStore = {
   /**
    * Mete en el estado algo que **acaba de llegar del servidor**, sin encolarlo
    * de vuelta. Es lo que distingue una descarga de una edición: sin esto, traer
-   * los adjuntos de un día los reenviaría enteros en la siguiente tanda.
+   * los adjuntos de un día los reenviaría enteros en la siguiente tanda, y
+   * confirmarlos los reenviaría para siempre.
    */
   adopt: (next: CalendarData) => void;
 };
@@ -77,6 +78,16 @@ export function useCalendarStore(onMessage?: (message: string) => void): Calenda
   }, []);
 
   /**
+   * Mete en el estado algo que acaba de llegar del servidor sin encolarlo de
+   * vuelta. Va antes que `runFlush` porque esta lo usa: lo que confirma la
+   * subida de imágenes entra por aquí.
+   */
+  const adopt = useCallback((next: CalendarData) => {
+    persistedRef.current = next;
+    setData(next);
+  }, []);
+
+  /**
    * Vacía la cola de subida. Un solo envío a la vez: dos a la vez mandarían el
    * mismo día dos veces, y el segundo llegaría con una marca de tiempo que el
    * servidor ya tiene y descartaría.
@@ -106,18 +117,18 @@ export function useCalendarStore(onMessage?: (message: string) => void): Calenda
           return;
         }
 
-        // Las miniaturas nacen al subir los adjuntos. Entran por la vía
-        // normal —como una edición cualquiera— para que suban con su día en
-        // la tanda que el propio guardado programe.
-        const thumbs = Object.keys(images.thumbs);
-        if (thumbs.length > 0) {
-          setData((current) => withThumbs(current, images.thumbs));
-          setSync('saving');
-          return;
-        }
+        /*
+         * Al confirmarse la subida, los adjuntos de ese día dejan de ser data
+         * URL y pasan a ser referencias, y el día estrena miniatura. Eso ya
+         * está guardado y encolado por `flushImages`, así que **se adopta**:
+         * tratarlo como una edición local volvería a encolar las imágenes que
+         * se acaban de subir, en bucle.
+         */
+        if (images.data) adopt(images.data);
 
-        setPending(pendingCount());
-        if (result.remaining === 0 && images.remaining === 0) {
+        const left = pendingCount();
+        setPending(left);
+        if (left === 0) {
           setSync('synced');
           return;
         }
@@ -128,7 +139,7 @@ export function useCalendarStore(onMessage?: (message: string) => void): Calenda
     } finally {
       flushingRef.current = false;
     }
-  }, []);
+  }, [adopt]);
 
   const scheduleFlush = useCallback(() => {
     window.clearTimeout(flushTimerRef.current);
@@ -209,7 +220,7 @@ export function useCalendarStore(onMessage?: (message: string) => void): Calenda
     if (!hydrated) return;
     if (!saveData(data)) {
       messageRef.current?.(
-        'No hay espacio para guardar en este navegador. Quita alguna imagen adjunta.',
+        'Este navegador no deja guardar nada más. Tus cambios siguen en pantalla, pero al recargar se perderían.',
       );
       return;
     }
@@ -234,23 +245,9 @@ export function useCalendarStore(onMessage?: (message: string) => void): Calenda
     return () => window.removeEventListener('storage', onStorage);
   }, []);
 
-  const adopt = useCallback((next: CalendarData) => {
-    persistedRef.current = next;
-    setData(next);
-  }, []);
-
   const retry = useCallback(() => {
     void runFlush();
   }, [runFlush]);
 
   return { data, setData, hydrated, sync, pending, retry, adopt };
-}
-
-/** Devuelve el calendario con las miniaturas recién generadas puestas. */
-function withThumbs(data: CalendarData, thumbs: Record<string, string>): CalendarData {
-  const next = { ...data };
-  for (const [key, thumb] of Object.entries(thumbs)) {
-    if (next[key]) next[key] = { ...next[key], thumb };
-  }
-  return next;
 }

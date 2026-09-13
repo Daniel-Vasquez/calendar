@@ -16,7 +16,7 @@ import {
   type ColorId,
   type ColorPalette,
 } from '../lib/palette';
-import { dataUrlBytes, IMAGE_ACCEPT, MAX_IMAGES_PER_DAY, prepareImage } from '../lib/image';
+import { dataUrlBytes, IMAGE_ACCEPT, MAX_IMAGES_PER_DAY, prepareImage, srcOf } from '../lib/image';
 import { hasContent, imageCount, imagesReady, type DayEntry } from '../lib/storage';
 import { isDateKey } from '../lib/wire';
 import { sanitizeTags, type Tag } from '../lib/tags';
@@ -186,6 +186,12 @@ export default function DayModal({
 
   const remaining = MAX_IMAGES_PER_DAY - images.length;
   const missing = Math.max(0, total - images.length);
+  /**
+   * Lo que pesa lo que todavía no ha subido. De una imagen ya guardada no se
+   * sabe aquí lo que ocupa —este navegador solo tiene su referencia—, y
+   * tampoco hace falta: el tamaño se enseñaba por la cuota de localStorage, y
+   * de eso ya no depende nada.
+   */
   const totalBytes = images.reduce((sum, image) => sum + dataUrlBytes(image), 0);
   const unsaved = !sameImages(images, entry?.images ?? []);
 
@@ -491,7 +497,7 @@ export default function DayModal({
               {images.map((image, index) => (
                 <li key={image} className="relative">
                   <img
-                    src={image}
+                    src={srcOf(image, dateKey, index, 'thumb')}
                     alt={`Imagen adjunta ${index + 1} de ${images.length}`}
                     className="aspect-square w-full rounded-lg object-cover ring-1 ring-edge"
                   />
@@ -571,7 +577,8 @@ export default function DayModal({
 
           {images.length > 0 && (
             <p className="mt-2 text-xs text-ink-muted">
-              {images.length} de {MAX_IMAGES_PER_DAY} · {formatBytes(totalBytes)}
+              {images.length} de {MAX_IMAGES_PER_DAY}
+              {totalBytes > 0 && ` · ${formatBytes(totalBytes)} por subir`}
               {unsaved && ' · sin guardar'}
             </p>
           )}

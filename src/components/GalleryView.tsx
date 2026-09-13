@@ -6,6 +6,7 @@ import { useCalendarStore } from './useCalendarStore';
 import { useSettings } from './useSettings';
 import { formatLongDate } from '../lib/calendar';
 import { collectImages } from '../lib/gallery';
+import { srcOf } from '../lib/image';
 import { fetchImages, storeImages } from '../lib/sync';
 import { imagesReady } from '../lib/storage';
 
@@ -174,7 +175,7 @@ export default function GalleryView({ user }: { user: NavUser }) {
                       original se ve entera en el visor, aquí manda la rejilla. */}
                     <span className="block aspect-square overflow-hidden">
                       <img
-                        src={image.dataUrl}
+                        src={srcOf(image.ref, image.key, image.index, 'thumb')}
                         alt=""
                         loading="lazy"
                         className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-105 motion-reduce:transition-none motion-reduce:group-hover:scale-100"

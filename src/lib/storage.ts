@@ -1,5 +1,5 @@
 import { DEFAULT_COLOR, isColorId, type ColorId } from './palette';
-import { isImageDataUrl, isThumb, MAX_IMAGES_PER_DAY } from './image';
+import { isImageDataUrl, isImageRef, isThumb, MAX_IMAGES_PER_DAY } from './image';
 import { makeReminder, sanitizeReminder, type Reminder } from './reminder';
 import { sanitizeTags } from './tags';
 
@@ -10,9 +10,14 @@ export type DayEntry = {
   note: string;
   color?: ColorId;
   /**
-   * Imágenes adjuntas como data URL (JPEG, PNG o WebP), en el orden en que se
-   * añadieron. Es la copia *de este navegador*: puede faltar entera en un
-   * dispositivo que aún no las ha pedido, y por eso no sirve para contar.
+   * Los adjuntos de la nota, en el orden en que se añadieron. Es lo que sabe
+   * *este navegador*: puede faltar entero en un dispositivo que aún no los ha
+   * pedido, y por eso no sirve para contar.
+   *
+   * Dos formas conviven en el mismo array, y es a propósito: una **data URL**
+   * mientras el adjunto está recién elegido y sin subir, y una **referencia**
+   * `cld:…` en cuanto el servidor confirma que ya está en el almacén. Ver
+   * `image.ts`, que explica las dos y da el `src` de cualquiera.
    */
   images?: string[];
   /**
@@ -21,7 +26,11 @@ export type DayEntry = {
    * se piden aparte y bajo demanda.
    */
   imageCount?: number;
-  /** Miniatura de la primera imagen. Baja con el día; la pinta la agenda. */
+  /**
+   * La versión de la primera imagen, no la imagen. Baja con el día y con ella
+   * la agenda pide su miniatura al proxy sin esperar a ninguna descarga. Ver
+   * `wire.ts`.
+   */
   thumb?: string;
   /** Aviso a una hora del día. Ver `reminder.ts`. */
   reminder?: Reminder;
@@ -111,14 +120,18 @@ export function imagesReady(entry: DayEntry | undefined): boolean {
  * Lista saneada de imágenes de una entrada cruda. Acepta el formato actual
  * (`images: string[]`) y el anterior (`image: string`), que se convierte en
  * una lista de uno: los datos guardados antes del cambio siguen valiendo.
- * Las repetidas y las que no parezcan generadas por el navegador se
- * descartan, y el resto se recorta al máximo por día.
+ * Las repetidas y las que no tengan una forma reconocible se descartan, y el
+ * resto se recorta al máximo por día.
+ *
+ * Valen las dos formas. Solo con `isImageDataUrl` —que es lo que había— este
+ * saneado tiraría todas las referencias al releer localStorage, y el
+ * calendario se quedaría sin adjuntos a la primera recarga.
  */
 function sanitizeImages(entry: Record<string, unknown>): string[] {
   const raw = Array.isArray(entry.images) ? entry.images : [entry.image];
   const clean: string[] = [];
   for (const value of raw) {
-    if (isImageDataUrl(value) && !clean.includes(value)) clean.push(value);
+    if ((isImageDataUrl(value) || isImageRef(value)) && !clean.includes(value)) clean.push(value);
     if (clean.length === MAX_IMAGES_PER_DAY) break;
   }
   return clean;

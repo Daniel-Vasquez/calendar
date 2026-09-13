@@ -36,15 +36,23 @@ export function parseImport(text: string): ImportResult {
   return { ok: true, data, days };
 }
 
-/** Envoltorio con metadatos: el importador también acepta el mapa a secas. */
+/**
+ * Envoltorio con metadatos: el importador también acepta el mapa a secas.
+ *
+ * **Desde la v7 esto ya no es una copia completa.** Los adjuntos viajan como
+ * referencias a Cloudinary, no como base64: el archivo pasa de megas a unos
+ * kilobytes y se puede volver a importar en la misma cuenta sin perder ni una
+ * imagen, pero fuera de ella esas referencias no apuntan a nada. Quien quiera
+ * llevarse los bytes tiene que bajarlos de la galería.
+ */
 export function toJson(data: CalendarData, palette: ColorPalette, tags: Tag[]): string {
   return JSON.stringify(
-    // v6: el día puede llevar `tags`, y el catálogo que las nombra viaja al
-    // lado. Antes, v5 dio tono a las categorías, v4 añadió `reminder` al día y
+    // v7: los adjuntos son referencias. Antes, v6 metió `tags` en el día con su
+    // catálogo al lado, v5 dio tono a las categorías, v4 añadió `reminder` y
     // v3, `imageCount` y `thumb`. El importador acepta todas las anteriores
     // igual: solo lee `days`, y lo que falte de un día se deduce de lo que sí
     // venga.
-    { app: FILE_STEM, version: 6, exportedAt: new Date().toISOString(), palette, tags, days: data },
+    { app: FILE_STEM, version: 7, exportedAt: new Date().toISOString(), palette, tags, days: data },
     null,
     2,
   );

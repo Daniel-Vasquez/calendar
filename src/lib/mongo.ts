@@ -149,16 +149,32 @@ export async function getDays(): Promise<Collection<DayDoc>> {
 }
 
 /**
- * Una imagen adjunta. Vive fuera del día a propósito: seis adjuntos son más de
- * cuatro megas de data URL, y con ellos dentro el documento del día dejaría de
- * poder bajarse con el resto del año.
+ * Una imagen adjunta. Desde la tanda 8 **aquí no hay bytes**: los guarda
+ * Cloudinary y esto es solo el metadato que dice cuál es y dónde está.
+ *
+ * Vivía ya fuera del día porque seis adjuntos eran más de cuatro megas de data
+ * URL; ahora seguiría cabiendo, pero se queda fuera igual: el día lo bajan
+ * enteros los 366 documentos del año y esto solo se lee al abrir una nota.
  */
 export type ImageDoc = {
   userId: ObjectId;
   key: string;
-  /** Posición dentro de la nota, desde cero. */
+  /** Posición dentro de la nota, desde cero. Es también parte del `publicId`. */
   index: number;
-  dataUrl: string;
+  /** `uploads/users/{userId}/{key}/{index}`. Ver `publicIdFor` en `cloudinary.ts`. */
+  publicId: string;
+  /** La versión que devolvió Cloudinary. Hace falta para firmar la URL. */
+  version: number;
+  /**
+   * Hash del contenido. Es lo que va al navegador dentro de la referencia y de
+   * lo que vive la caché del proxy: otros bytes, otra URL. Ver `makeRef`.
+   */
+  etag: string;
+  /** `jpg`, `png` o `webp`. Hace falta para construir la URL firmada. */
+  format: string;
+  bytes: number;
+  width: number;
+  height: number;
   updatedAt: number;
 };
 

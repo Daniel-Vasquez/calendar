@@ -1,6 +1,7 @@
 import { colorVar } from '../lib/palette';
 import type { DayTimeState } from '../lib/calendar';
 import { imageCount, type DayEntry } from '../lib/storage';
+import { previewSrc } from '../lib/gallery';
 
 type Props = {
   day: number;
@@ -114,9 +115,9 @@ export default function DayCell({
   // Una imagen sin texto también es una nota, y una hora sola también:
   // cualquiera de las tres enciende el punto y el popover.
   const hasNote = Boolean(note || total || reminder);
-  // Para la vista previa vale lo primero que haya: la imagen completa si está
-  // aquí, y si no la miniatura que sí viaja con el día.
-  const preview = entry?.images?.[0] ?? entry?.thumb;
+  // La vista previa sale siempre del mismo sitio: el adjunto de aquí si lo
+  // hay, y si no la miniatura que viaja con el día. Ver `previewSrc`.
+  const preview = previewSrc(entry, dateKey);
   const isToday = timeState === 'today';
 
   const { className, style, solid } = getDayStyles(timeState, marked, isWeekend, entry?.color);

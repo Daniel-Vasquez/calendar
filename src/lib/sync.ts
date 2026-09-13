@@ -1,4 +1,4 @@
-import { isImageDataUrl, makeThumb } from './image';
+import { isImageRef, tokenOf } from './image';
 import { DEFAULT_COLOR } from './palette';
 import { sameReminder } from './reminder';
 import { sameTags } from './tags';
@@ -108,11 +108,14 @@ function sameDay(a: DayEntry | undefined, b: DayEntry | undefined): boolean {
   );
 }
 
+/** ¿Las mismas imágenes en el mismo orden? */
+function sameList(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((image, i) => image === b[i]);
+}
+
 /** ¿Los mismos adjuntos en el mismo orden? */
 function sameImages(a: DayEntry | undefined, b: DayEntry | undefined): boolean {
-  const left = a?.images ?? [];
-  const right = b?.images ?? [];
-  return left.length === right.length && left.every((image, i) => image === right[i]);
+  return sameList(a?.images ?? [], b?.images ?? []);
 }
 
 function enqueue(meta: SyncMeta, key: string): void {
@@ -254,12 +257,22 @@ export async function pull(): Promise<PullResult> {
     queued++;
   }
 
-  // Días cuyos adjuntos están aquí pero nunca han llegado al servidor. Incluye
-  // los que se subieron antes de existir la colección de imágenes: entonces
-  // solo viajó la cuenta, y el contenido se quedó en este navegador.
+  /*
+   * Días cuyos adjuntos están aquí pero no están arriba. Dos casos, y los dos
+   * son migraciones de lo que ya había:
+   *
+   * - los que nunca llegaron al servidor, de antes de existir la colección de
+   *   imágenes: entonces solo viajó la cuenta y el contenido se quedó aquí;
+   * - los que este navegador todavía guarda como data URL. Esos sí están
+   *   arriba, pero en el almacén viejo. Subirlos otra vez es lo que los
+   *   convierte en referencias y lo que saca de `localStorage` la copia
+   *   completa de las imágenes, que es media tanda 8.
+   */
   let queuedImages = 0;
   for (const [key, entry] of Object.entries(merged)) {
-    if (!entry.images?.length || meta.imagesAt[key]) continue;
+    if (!entry.images?.length) continue;
+    const pendiente = entry.images.some((image) => !isImageRef(image));
+    if (meta.imagesAt[key] && !pendiente) continue;
     if (!meta.pendingImages.includes(key)) meta.pendingImages.push(key);
     queuedImages++;
   }
@@ -344,7 +357,18 @@ export async function flush(): Promise<FlushResult> {
 }
 
 export type ImageFlushResult =
-  | { ok: true; sent: number; remaining: number; thumbs: Record<string, string> }
+  | {
+      ok: true;
+      sent: number;
+      remaining: number;
+      /**
+       * El calendario con lo que el servidor acaba de confirmar, o `null` si no
+       * ha cambiado nada. Quien llama tiene que **adoptarlo**, no guardarlo como
+       * una edición: lo de dentro ya está arriba, y tratarlo como un cambio
+       * local volvería a encolar las mismas imágenes en bucle.
+       */
+      data: CalendarData | null;
+    }
   | { ok: false; reason: string };
 
 /**
@@ -354,65 +378,157 @@ export type ImageFlushResult =
  *
  * Se manda el conjunto entero del día aunque solo haya cambiado una imagen.
  * Con seis como tope y ediciones contadas, comparar cuáles cambiaron costaría
- * más código del que ahorra.
+ * más código del que ahorra — y desde la tanda 8 casi no cuesta nada: lo que
+ * ya estaba arriba viaja como referencia, sin bytes.
+ *
+ * De vuelta llega **dónde ha quedado cada una**, y eso es lo que se guarda
+ * aquí en lugar de la data URL. Ese cambio de piel es el que quita la copia
+ * completa de `localStorage`: a partir de ahora este navegador tiene el
+ * nombre de la imagen, no la imagen.
  */
 export async function flushImages(): Promise<ImageFlushResult> {
   const meta = loadMeta();
   const key = meta.pendingImages[0];
-  if (!key) return { ok: true, sent: 0, remaining: 0, thumbs: {} };
+  if (!key) return { ok: true, sent: 0, remaining: 0, data: null };
 
   const before = loadData();
   // Un día borrado no tiene adjuntos: la lista vacía hace que el recorte de
   // más abajo los borre en el servidor, que es justo lo que toca.
   const images = before[key]?.images ?? [];
 
+  /** Lo que el servidor confirma, en el mismo orden. */
+  const refs: string[] = [];
+  /** Posición que el servidor dice no tener ya. Ver más abajo. */
+  let lost = -1;
+
   try {
     for (let index = 0; index < images.length; index++) {
+      const image = images[index];
       const response = await fetch('/api/images', {
         method: 'PUT',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ key, index, dataUrl: images[index], updatedAt: Date.now() }),
+        body: JSON.stringify({
+          key,
+          index,
+          // Una referencia no lleva bytes: se manda para que la coloque donde
+          // toca, no para volver a subirla. Pasa al quitar un adjunto que no
+          // era el último, que corre una posición a todos los de detrás.
+          ...(isImageRef(image) ? { ref: image } : { dataUrl: image }),
+          updatedAt: Date.now(),
+        }),
       });
+
+      /*
+       * El almacén ya no la tiene. No se puede reenviar —hace rato que este
+       * navegador soltó los bytes—, así que se cae del día y el resto se
+       * reintenta entero en la vuelta siguiente, ya con los índices corridos.
+       * Es la única forma de que un adjunto perdido no deje la cola girando
+       * para siempre, y cada vuelta quita uno: termina seguro.
+       */
+      if (response.status === 410) {
+        lost = index;
+        break;
+      }
+
       if (!response.ok) {
         return {
           ok: false,
           reason: response.status === 401 ? 'Sesión caducada.' : 'El servidor rechazó una imagen.',
         };
       }
+
+      const body = (await response.json()) as { ref?: unknown };
+      // Sin referencia no se puede inventar una: se conserva lo que había y el
+      // día vuelve a salir en la siguiente tanda.
+      refs.push(isImageRef(body.ref) ? body.ref : image);
     }
 
-    // Quitar un adjunto aquí tiene que quitarlo allí: se recorta la cola.
-    const trimmed = await fetch(`/api/images?key=${encodeURIComponent(key)}&from=${images.length}`, {
-      method: 'DELETE',
-    });
-    if (!trimmed.ok) return { ok: false, reason: 'No se pudieron retirar las imágenes sobrantes.' };
+    // Quitar un adjunto aquí tiene que quitarlo allí: se recorta la cola. No
+    // cuando se ha perdido una, que entonces los índices aún no son los
+    // definitivos y el recorte se llevaría por delante una imagen buena.
+    if (lost < 0) {
+      const trimmed = await fetch(`/api/images?key=${encodeURIComponent(key)}&from=${refs.length}`, {
+        method: 'DELETE',
+      });
+      if (!trimmed.ok) return { ok: false, reason: 'No se pudieron retirar las imágenes sobrantes.' };
+    }
   } catch {
     return { ok: false, reason: 'Sin conexión con el servidor.' };
   }
 
-  // La miniatura se hace aquí y no al adjuntar: es lo único de las imágenes
-  // que verán los demás dispositivos, y este es el momento en que se sabe que
-  // el conjunto ya está arriba y no va a cambiar.
-  const thumbs: Record<string, string> = {};
-  if (images[0]) {
-    const thumb = await makeThumb(images[0]);
-    if (thumb && thumb !== before[key]?.thumb) thumbs[key] = thumb;
+  const after = loadMeta();
+  const current = loadData();
+  /**
+   * ¿Se editaron los adjuntos mientras subían? Entonces lo que la persona
+   * acaba de guardar no es lo que se ha subido: el día se queda en la cola y
+   * aquí no se toca nada.
+   */
+  const raced = !sameImages(current[key], before[key]);
+
+  if (lost >= 0) {
+    if (raced) return { ok: true, sent: refs.length, remaining: after.pendingImages.length, data: null };
+    const data = withImages(current, key, images.filter((_, i) => i !== lost), current[key]?.thumb);
+    saveData(data);
+    return { ok: true, sent: refs.length, remaining: after.pendingImages.length, data };
   }
 
-  const after = loadMeta();
-  // Solo sale de la cola si los adjuntos siguen siendo los que se enviaron.
-  if (sameImages(loadData()[key], before[key])) {
+  if (!raced) {
     after.pendingImages = after.pendingImages.filter((pending) => pending !== key);
     after.imagesAt[key] = Date.now();
   }
-  saveMeta(after);
 
-  return { ok: true, sent: images.length, remaining: after.pendingImages.length, thumbs };
+  /*
+   * La miniatura del día es el testigo de su primera imagen. Se pone aquí y no
+   * al adjuntar por lo mismo de siempre: es lo único de las imágenes que verán
+   * los demás dispositivos, y este es el momento en que se sabe que el
+   * conjunto ya está arriba y no va a cambiar.
+   */
+  const thumb = refs[0] ? tokenOf(refs[0]) : undefined;
+  const entry = current[key];
+  let data: CalendarData | null = null;
+
+  if (!raced && entry && (!sameList(entry.images ?? [], refs) || (entry.thumb ?? '') !== (thumb ?? ''))) {
+    data = withImages(current, key, refs, thumb);
+    saveData(data);
+    // El día ha cambiado —otra miniatura, otras referencias— y tiene que
+    // subir. Se encola como una edición cualquiera, que es lo que es.
+    after.stamps[key] = Date.now();
+    enqueue(after, key);
+  }
+
+  saveMeta(after);
+  return { ok: true, sent: refs.length, remaining: after.pendingImages.length, data };
+}
+
+/** El calendario con otros adjuntos —y otra miniatura— en un día. */
+function withImages(
+  data: CalendarData,
+  key: string,
+  images: string[],
+  thumb: string | undefined,
+): CalendarData {
+  const entry = data[key];
+  if (!entry) return data;
+
+  const next: DayEntry = { ...entry, images, imageCount: images.length, thumb };
+  // Un día sin adjuntos no lleva ninguno de los tres campos, y dejarlos a cero
+  // o vacíos los haría viajar en cada subida.
+  if (images.length === 0) {
+    delete next.images;
+    delete next.imageCount;
+  }
+  if (!thumb) delete next.thumb;
+
+  return { ...data, [key]: next };
 }
 
 /**
  * Trae los adjuntos de un día. Los pide el modal al abrirse en un dispositivo
  * que aún no los tiene, y la galería al cargar.
+ *
+ * Lo que baja son referencias, no bytes: unos cientos de bytes por día en vez
+ * de megas. Los bytes los pide después cada `<img>` al proxy, y solo los de
+ * las imágenes que se lleguen a ver.
  */
 export async function fetchImages(key: string): Promise<string[] | null> {
   try {
@@ -422,7 +538,7 @@ export async function fetchImages(key: string): Promise<string[] | null> {
     if (!response.ok) return null;
     const body = (await response.json()) as { images?: unknown };
     if (!Array.isArray(body.images)) return null;
-    return body.images.filter((image): image is string => isImageDataUrl(image));
+    return body.images.filter((image): image is string => isImageRef(image));
   } catch {
     return null;
   }

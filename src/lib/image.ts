@@ -1,7 +1,19 @@
 /**
- * Imágenes adjuntas a una nota. Viven como data URL dentro del mismo JSON que
- * el resto del día: así caben en localStorage y viajan con la exportación
- * sin necesidad de un almacén aparte.
+ * Imágenes adjuntas a una nota.
+ *
+ * Los bytes viven en Cloudinary desde la tanda 8. Aquí se preparan —validar,
+ * redimensionar, comprimir— y aquí se resuelve la otra mitad: **qué `src`
+ * pintar**, que es distinto según el adjunto haya llegado ya al almacén o no.
+ *
+ * Por eso un adjunto tiene dos formas y las dos son válidas en el mismo array:
+ *
+ * - una **data URL**, mientras está recién elegido y sin subir. Es lo único
+ *   que este navegador tiene de él, así que se pinta tal cual;
+ * - una **referencia** `cld:{publicId}@{version}` en cuanto el servidor
+ *   confirma la subida. Ya no lleva bytes: se piden al proxy.
+ *
+ * Quien pinta no necesita saber cuál es cuál —para eso está `srcOf`—, pero
+ * quien sanea sí: ver `isImageDataUrl` e `isImageRef`.
  */
 
 /** Formatos admitidos, por tipo MIME y por extensión: Windows a veces manda `type` vacío. */
@@ -12,8 +24,10 @@ export const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'] as const;
 export const IMAGE_ACCEPT = [...IMAGE_TYPES, ...IMAGE_EXTENSIONS].join(',');
 
 /**
- * Imágenes que admite una nota. Con la cuota de localStorage repartida entre
- * todo el año, más adjuntos por día agotarían el espacio en pocas notas.
+ * Imágenes que admite una nota. Ya no lo impone la cuota del navegador —los
+ * bytes están en Cloudinary—, pero el tope se queda: seis adjuntos son seis
+ * peticiones al subir y seis al abrir la galería, y el plan gratuito se mide
+ * en créditos.
  */
 export const MAX_IMAGES_PER_DAY = 6;
 
@@ -24,20 +38,13 @@ export const MAX_FILE_BYTES = 12 * 1024 * 1024;
 const MAX_SIDE = 1280;
 
 /**
- * Lado mayor de la miniatura que acompaña al día.
+ * Tope de la data URL que se manda a subir.
  *
- * La imagen completa vive en su propia colección y solo se pide al abrir la
- * nota o la galería. Pero la agenda enseña una miniatura en cada fila, así que
- * necesita algo ligero que baje junto al día, sin un viaje por fila.
- */
-const THUMB_SIDE = 192;
-
-/** Tope de la miniatura. Viaja dentro del documento del día, que baja entero. */
-export const MAX_THUMB_LENGTH = 20_000;
-
-/**
- * Tope de la data URL guardada. localStorage ronda los 5 MB por sitio y el
- * calendario entero comparte esa cuota, así que cada imagen debe quedar lejos.
+ * Lo mandaba la cuota de localStorage, cuando la copia completa se guardaba
+ * aquí; ahora manda el cuerpo de una función de Vercel, que son 4,5 MB. Se
+ * queda en los mismos 700 KB de siempre: una imagen por petición cabe con
+ * muchísimo margen, y bajarlo de ahí solo serviría para que una foto normal se
+ * rechazara.
  */
 const MAX_DATA_URL_LENGTH = 700_000;
 
@@ -58,16 +65,6 @@ export function isImageDataUrl(value: unknown): value is string {
     value.length <= MAX_DATA_URL_LENGTH &&
     /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/.test(value)
   );
-}
-
-/** Decodifica una data URL ya guardada. Sin objeto temporal que revocar. */
-function loadDataUrl(dataUrl: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error('decode'));
-    img.src = dataUrl;
-  });
 }
 
 function loadBitmap(file: File): Promise<HTMLImageElement> {
@@ -119,8 +116,13 @@ function draw(img: HTMLImageElement, maxSide: number): HTMLCanvasElement {
 
 /**
  * Valida, redimensiona y comprime una imagen elegida por el usuario hasta
- * dejarla en una data URL que quepa en localStorage. Si aun reduciéndola
- * sigue pesando demasiado, se rechaza con un motivo legible.
+ * dejarla en una data URL que quepa en una petición. Si aun reduciéndola sigue
+ * pesando demasiado, se rechaza con un motivo legible.
+ *
+ * Sigue haciéndose aquí y no en el servidor aunque los bytes ya no se guarden
+ * en este navegador: es lo que mantiene cada archivo pequeño, y subir los doce
+ * megas de una foto de móvil para reducirlos allí sería pagar el viaje entero
+ * para tirarlo.
  */
 export async function prepareImage(file: File): Promise<ImageResult> {
   if (!isImageFile(file)) {
@@ -156,35 +158,106 @@ export async function prepareImage(file: File): Promise<ImageResult> {
   return { ok: false, reason: 'La imagen sigue siendo demasiado grande tras reducirla.' };
 }
 
-/** Bytes aproximados que ocupa una data URL en el almacenamiento. */
+/**
+ * Bytes aproximados de una data URL. Solo tienen tamaño las que aún no han
+ * subido: de una referencia no se sabe aquí lo que pesa, y devolver cero deja
+ * que la cuenta del modal siga sumando sin casos especiales.
+ */
 export function dataUrlBytes(dataUrl: string): number {
+  if (!dataUrl.startsWith('data:')) return 0;
   const payload = dataUrl.slice(dataUrl.indexOf(',') + 1);
   return Math.floor((payload.length * 3) / 4);
 }
 
+/* --- Lo que baja: referencias, no bytes ---------------------------------- */
+
+/** Las dos medidas que sirve el proxy. Ha de decir lo mismo que `cloudinary.ts`. */
+export type ImageSize = 'thumb' | 'view';
+
 /**
- * Miniatura de una imagen ya procesada, para la fila de la agenda.
+ * Un adjunto ya subido: `cld:{publicId}@{etag}`.
  *
- * Devuelve `null` en vez de lanzar: no tener miniatura degrada la agenda a un
- * hueco, que es molesto pero inofensivo, y no vale la pena tumbar un guardado
- * por ello. Si aun reducida no baja del tope, tampoco se guarda: engordaría el
- * documento del día, que es justo lo que la miniatura viene a evitar.
+ * El testigo va pegado para que **una imagen distinta sea otra URL**. De eso
+ * vive la caché eterna del proxy: sin él, reemplazar el adjunto 2 de un día
+ * dejaría a los navegadores enseñando el anterior durante un año.
+ *
+ * Y es el `etag` —el hash del contenido— y no la `version` de Cloudinary, que
+ * era lo natural, porque la `version` **no cambia al renombrar**: quitar la
+ * primera de dos imágenes corre la segunda al sitio de la primera con su
+ * versión intacta, y si las dos se subieron en el mismo segundo la dirección
+ * saldría idéntica con otro contenido detrás. Con el hash eso no puede pasar,
+ * y dos veces la misma imagen comparten caché, que es lo correcto.
  */
-export async function makeThumb(dataUrl: string): Promise<string | null> {
-  try {
-    const img = await loadDataUrl(dataUrl);
-    const thumb = encode(draw(img, THUMB_SIDE), 'image/jpeg', 0.6);
-    return thumb.length <= MAX_THUMB_LENGTH ? thumb : null;
-  } catch {
-    return null;
-  }
+export function makeRef(publicId: string, etag: string): string {
+  return `cld:${publicId}@${etag}`;
 }
 
-/** ¿Tiene la forma de una miniatura generada aquí? */
+/**
+ * ¿Es la referencia de un adjunto subido?
+ *
+ * Hace falta aparte de `isImageDataUrl` y no en su lugar: aquella guarda la
+ * puerta de **subida** —solo se acepta lo que el navegador podría haber
+ * generado— y esta la de **bajada**. Sin las dos, el saneado del cliente
+ * tiraría todo lo que viene del servidor por no ser una data URL.
+ */
+export function isImageRef(value: unknown): value is string {
+  return typeof value === 'string' && /^cld:[A-Za-z0-9_\-./]{1,200}@[A-Za-z0-9]{1,40}$/.test(value);
+}
+
+/** El `public_id` de una referencia. Lo usa el servidor; el navegador no lo mira. */
+export function publicIdOf(ref: string): string {
+  return ref.slice(4, ref.lastIndexOf('@'));
+}
+
+/** El testigo de caché de una referencia. Ver `makeRef`. */
+export function tokenOf(ref: string): string {
+  return ref.slice(ref.lastIndexOf('@') + 1);
+}
+
+/**
+ * De dónde saca el navegador los bytes de una imagen ya subida.
+ *
+ * Es el proxy y no una URL de Cloudinary: la firma no sale nunca de la
+ * función. Ver `signedUrl` en `cloudinary.ts`, que explica por qué.
+ *
+ * `v` no lo lee el servidor —lo que hace falta para firmar está en la base—,
+ * está para que la dirección cambie cuando cambia la imagen y la respuesta
+ * pueda cachearse para siempre.
+ */
+export function rawSrc(key: string, index: number, size: ImageSize, token: string): string {
+  const query = new URLSearchParams({ key, i: String(index), size, v: token });
+  return `/api/images/raw?${query}`;
+}
+
+/**
+ * El `src` de un adjunto, esté subido o no. **Todo lo que pinta una imagen
+ * sale de aquí**, y no de una cadena repartida por los componentes: si algún
+ * día el plan permite URLs firmadas con caducidad, el proxy desaparece
+ * cambiando esta función y nada más.
+ */
+export function srcOf(image: string, key: string, index: number, size: ImageSize): string {
+  // Recién elegida y aún sin subir: los únicos bytes que hay son estos.
+  if (!isImageRef(image)) return image;
+  return rawSrc(key, index, size, tokenOf(image));
+}
+
+/**
+ * El `src` de la miniatura que acompaña al día.
+ *
+ * `thumb` ya no es una miniatura en base64 sino el testigo de la primera
+ * imagen (ver `wire.ts`), así que esto es la otra mitad de aquel campo: con él
+ * y con la clave del día ya se sabe qué pedirle al proxy.
+ */
+export function thumbSrc(key: string, token: string): string {
+  return rawSrc(key, 0, 'thumb', token);
+}
+
+/**
+ * ¿Es una `thumb` de las de ahora? Es el testigo de una referencia, no una
+ * imagen. Una miniatura en base64 de las de antes se descarta aquí: el día se
+ * queda sin vista previa hasta que llegue la suya, que es lo que hacen la
+ * migración y la primera resubida de ese día.
+ */
 export function isThumb(value: unknown): value is string {
-  return (
-    typeof value === 'string' &&
-    value.length <= MAX_THUMB_LENGTH &&
-    /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/.test(value)
-  );
+  return typeof value === 'string' && /^[A-Za-z0-9]{1,40}$/.test(value);
 }

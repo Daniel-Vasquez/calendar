@@ -23,6 +23,7 @@ import {
   type AgendaType,
 } from '../lib/search';
 import { hasImages, imageCount, type CalendarData } from '../lib/storage';
+import { previewSrc } from '../lib/gallery';
 
 type Props = {
   data: CalendarData;
@@ -327,9 +328,9 @@ export default function AgendaList({ data, palette, catalogue, today, onSelect }
             const timeState = dayTimeState(key, today);
             const category = labelFor(palette, entry.color);
             const images = imageCount(entry);
-            // La completa si este navegador la tiene; si no, la miniatura que
+            // La de aquí si este navegador la tiene; si no, la miniatura que
             // baja con el día. Por eso la agenda no espera a ninguna descarga.
-            const preview = entry.images?.[0] ?? entry.thumb;
+            const preview = previewSrc(entry, key);
 
             return (
               <li key={key}>

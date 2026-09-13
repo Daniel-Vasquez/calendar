@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef } from 'react';
 import { dayHref, formatLongDate, formatWeekday } from '../lib/calendar';
 import { type GalleryImage } from '../lib/gallery';
+import { srcOf } from '../lib/image';
 import { useDialog } from './useDialog';
 
 type Props = {
@@ -77,7 +78,7 @@ export default function Lightbox({ image, triggerRef, onClose }: Props) {
             en lugar de empujar los botones fuera del panel. */}
         <div className="flex min-h-0 flex-1 items-center justify-center bg-surface">
           <img
-            src={image.dataUrl}
+            src={srcOf(image.ref, image.key, image.index, 'view')}
             alt={
               image.count > 1
                 ? `Imagen ${image.index + 1} de ${image.count} adjunta al ${date}`
