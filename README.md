@@ -1,8 +1,8 @@
 # 📅 Planificador 2026
 
-Calendario anual con notas, colores, imágenes adjuntas y recordatorios por
-Telegram. Construido con **Astro + React**, datos en **MongoDB Atlas** y
-desplegado en **Vercel**.
+Calendario anual —**2026 y 2027**, un año a la vista— con notas, colores,
+imágenes adjuntas y recordatorios por Telegram. Construido con **Astro + React**,
+datos en **MongoDB Atlas** y desplegado en **Vercel**.
 
 🌐 **En producción:** <https://planificador.danielvasquez.lat>
 ❤️ **Estado del servicio:** <https://planificador.danielvasquez.lat/api/health>
@@ -20,10 +20,10 @@ servicio de terceros, una suscripción, o que tus notas y fotos vivan en un siti
 que no eliges.
 
 Planificador 2026 es un **planificador anual personal y autoalojable**: los doce
-meses de un año a la vista, con la posibilidad de marcar días por categorías de
-color, escribirles notas, adjuntarles imágenes y programar avisos que llegan al
-teléfono por Telegram. Todo vive en tu propio clúster de MongoDB y en tu propio
-despliegue.
+meses de un año a la vista —2026 o 2027, a un clic de distancia—, con la
+posibilidad de marcar días por categorías de color, escribirles notas, adjuntarles
+imágenes y programar avisos que llegan al teléfono por Telegram. Todo vive en tu
+propio clúster de MongoDB y en tu propio despliegue.
 
 ### Cómo está montado: *local-first*
 
@@ -62,7 +62,11 @@ MongoDB es la fuente de verdad, pero **no** el camino crítico.
 
 ### 🗓️ Calendario anual
 
-- Los **doce meses de 2026** en una rejilla, con la semana empezando en lunes.
+- Los **doce meses del año** en una rejilla, con la semana empezando en lunes.
+- **Conmutador de año**: `2026` y `2027` en pestañas, sin recargar la página. Cada
+  año lleva sus días y su propio plegado de meses, así que lo que hagas en uno no
+  toca al otro. El año viaja en la URL (`?year=2027`), de modo que recargar —o
+  compartir el enlace— vuelve donde estabas.
 - **Ocho colores** para marcar días (el violeta queda reservado a «hoy», para que
   siga identificándose de un vistazo).
 - **Categorías propias**: cada color se renombra —la leyenda deja de decir «Rosa»
@@ -336,11 +340,14 @@ src/
 │   ├── AgendaList.tsx          # Lista, buscador y filtros
 │   ├── RemindersView.tsx       # La lista de recordatorios
 │   ├── GalleryView.tsx         # La galería y su visor
+│   ├── YearTabs.tsx            # El conmutador de año de la cabecera
 │   ├── useCalendarStore.ts     # El calendario y su sincronía, para toda página que escriba
 │   ├── useSettings.ts          # Los ajustes enteros, para la barra de cualquier página
 │   ├── NoticeBar.tsx           # El aviso del pie, con su deshacer
 │   └── …
 ├── lib/                 # Lógica sin React: se prueba y se comparte
+│   ├── calendar.ts             # Los años cubiertos, la rejilla del mes y las claves de día
+│   ├── collapse.ts             # Qué meses están plegados, por año y mes
 │   ├── storage.ts              # localStorage, saneado, forma de `DayEntry`
 │   ├── sync.ts                 # Cola, fusión, subida y descarga bajo demanda
 │   ├── wire.ts                 # Formato en que un día viaja; lo importan los dos lados
@@ -368,7 +375,7 @@ src/
 
 | Ruta | Contenido |
 |---|---|
-| `/` | El calendario del año. Acepta `?day=2026-03-15` para abrir ese día |
+| `/` | El calendario del año. Acepta `?year=2027` para elegir el año y `?day=2026-03-15` para abrir ese día (que además elige su año) |
 | `/agenda` | Lista cronológica con buscador, filtros y edición in situ |
 | `/recordatorios` | Todos los avisos, pendientes y completados |
 | `/galeria` | Las imágenes de todas las notas |
@@ -419,6 +426,9 @@ curl https://tu-dominio/api/health
   `CLOUDINARY_API_SECRET`— y retirará dos límites actuales: las miniaturas
   dejarán de viajar dentro de `GET /api/days` y `localStorage` dejará de guardar
   la copia completa de las imágenes.
+- 🏷️ **El nombre se quedó corto**: la marca sigue diciendo «Planificador 2026» en
+  la barra, en los títulos y en los archivos exportados, pero el calendario ya
+  cubre dos años.
 - ♿ **Contraste del tema claro**: varios pares no llegan a AA (el oscuro sí).
 - 🧹 **Purga de lápidas**: hoy no se borran nunca y crecen sin fin.
 - ⚙️ **Campo `engines` en `package.json`**, para fijar la versión de Node.

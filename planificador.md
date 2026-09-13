@@ -1,8 +1,8 @@
 # Planificador 2026
 
-Calendario anual con notas, colores, imágenes adjuntas y recordatorios diarios
-por Telegram. Astro + React, MongoDB Atlas, desplegado en Vercel; las imágenes
-van camino de Cloudinary (tanda 8).
+Calendario anual —2026 y 2027, un año a la vista— con notas, colores, imágenes
+adjuntas y recordatorios diarios por Telegram. Astro + React, MongoDB Atlas,
+desplegado en Vercel; las imágenes van camino de Cloudinary (tanda 8).
 
 **En producción:** <https://planificador.danielvasquez.lat>
 · estado: <https://planificador.danielvasquez.lat/api/health>
@@ -46,6 +46,9 @@ middleware ───────────────────────
 | `src/lib/wire.ts` | Formato en que un día viaja; lo importan los dos lados |
 | `src/lib/sync.ts` | Cola, fusión, subida y descarga bajo demanda |
 | `src/lib/storage.ts` | `localStorage`, saneado, forma de `DayEntry` |
+| `src/lib/calendar.ts` | Los años cubiertos, la rejilla de cada mes y las claves `YYYY-MM-DD` |
+| `src/lib/collapse.ts` | Qué meses están plegados, por año y mes |
+| `src/components/YearTabs.tsx` | El conmutador de año de la cabecera del calendario |
 | `src/lib/reminder.ts` | Hora, texto y estado del aviso; lo importan los dos lados |
 | `src/lib/reminders.ts` | La lista: recoger, ordenar, filtrar y escribir avisos |
 | `src/components/useCalendarStore.ts` | El calendario y su sincronía, para toda página que escriba |
@@ -849,6 +852,66 @@ lista de pendientes, y cortar por eso abandonaría la descarga en vuelo dejando
 días sin pedir. Mientras hay un barrido en marcha, los disparos siguientes se van
 de vacío.
 
+### Dos años en el mismo calendario — septiembre de 2026
+
+`YEAR = 2026` era una constante, y todo lo que colgaba de ella la leía como el
+único año que hay: `MonthCard` construía su rejilla con ella, los campos de fecha
+se acotaban a ella, e `isInQuarter` —que para entonces ya no tenía nada que ver
+con un trimestre— contestaba a «¿está este día en el calendario?» mirando por qué
+**mes** empezaba la clave.
+
+Ahora es `YEARS`, una lista. `isCovered` pregunta por el año de la clave y no por
+su mes, así que añadir 2028 es una línea. La rejilla sigue dibujando doce meses en
+las mismas dos columnas, pero del año que diga el conmutador; los días, la
+alineación de la semana y la cuenta de los bisiestos salen de ese año. 2026 y 2027
+rinden 365 días cada uno y **76 y 62 huecos** de rejilla respectivamente: eso
+último es lo que habría salido mal si los meses se hubieran reetiquetado en vez de
+recalcularse.
+
+**El conmutador es un `tablist` de verdad y la rejilla es su `tabpanel`.** No es
+ceremonia: es lo que la cosa *es*, y paga las flechas del teclado, la parada de
+tabulación itinerante y que un lector diga «pestaña 2 de 2» sin escribir nada de
+eso a mano.
+
+**El año se resuelve en el servidor, no al hidratar.** Manda `?year=` —lo que deja
+el conmutador con `replaceState`—, luego el año de `?day=`, porque
+`/?day=2027-05-10` lleva el suyo dentro y así llegan los enlaces de la galería y
+de los recordatorios, y a falta de los dos, el año corriente si el calendario lo
+cubre. Leerlo en el navegador habría mandado el HTML de 2026 para cambiarlo por el
+de 2027 un fotograma después, que es el mismo destello que el script del tema se
+toma tantas molestias en evitar.
+
+No hizo falta tocar el almacenamiento, el cable ni Mongo: un día siempre se ha
+identificado por su fecha completa, así que 2027 se guarda y se sincroniza aparte
+de 2026 sin pagar nada. Lo que sí cambió es el alcance de la interfaz: los campos
+de fecha van de `2026-01-01` a `2027-12-31`, y los dos modales dejan de decir que
+el calendario solo cubre un año.
+
+Dos detalles del recorrido, por si alguien los da por descuido: las flechas del
+teclado **paran en el borde del año** —el 31 de diciembre no entra en el 1 de
+enero del siguiente, porque esa rejilla no está en la página—, mientras que «Ir a
+hoy» **sí cruza**, cambiando de pestaña por el camino en vez de desaparecer cuando
+hoy cae en el otro año.
+
+**Y el plegado de los meses se aisló por año**, que en la primera versión no lo
+estaba. El estado se guardaba con el nombre del mes a secas —`{ enero: false }`—,
+lo que bastaba mientras 2026 era el único año y dejó de bastar en cuanto llegó
+2027: plegar enero en 2026 plegaba el enero de 2027, porque era la misma casilla
+del registro, y cambiar de pestaña arrastraba la forma de un año a la del otro. La
+clave lleva ahora el año (`2026-01`, que son también los siete primeros caracteres
+de una clave de día, de modo que un mes se identifica igual aquí que en el resto
+del proyecto), y `data-month` lo lleva con ella.
+
+Eso arrastró a los botones de plegar y desplegar todo. `expansionOf` pasó a ser
+`withYear`, que escribe los doce meses de un año y deja el resto como estaban, y
+`everyMonth` pregunta por un año, de forma que «Colapsar todos» se ve agotado con
+2026 entero plegado aunque 2027 siga abierto. Dejar cualquiera de los dos global
+habría devuelto la misma fuga por la puerta de atrás.
+
+El estado anterior **se migra en vez de tirarse**: un nombre de mes sin año se lee
+como 2026, que era el único que existía cuando se escribió. La hoja de arranque
+hace esa misma traducción por su cuenta, y el porqué está abajo, en las trampas.
+
 ## Lo que falta
 
 ### Tanda 8 · Multimedia en Cloudinary
@@ -1085,6 +1148,15 @@ Pendiente:
       que la paleta: `settings`. Duele menos —lo que un día lleva puesto sí
       viaja, y `labelOf` sabe escribirlo sin catálogo— pero en un dispositivo
       nuevo salen las siete de fábrica y hay que volver a crear las propias.
+- [ ] **La marca sigue diciendo «Planificador 2026»**: en la barra, en el título
+      de las cinco páginas, en la descripción del `<head>` y en el nombre de los
+      archivos que exporta `transfer.ts`. El calendario ya cubre dos años, así
+      que el rótulo se quedó corto. Es un renombrado y no una corrección, y por
+      eso no se hizo de paso.
+- [ ] El plegado de los meses vive en `localStorage` y no llega a la cuenta, con
+      el mismo arreglo que la paleta y el catálogo. Duele poco —es la forma de
+      una vista, no contenido—, pero desde que hay dos años son veinticuatro
+      casillas en vez de doce.
 - [ ] No hay recuperación de contraseña: haría falta un servidor de correo.
 - [ ] `IMAGE_ACTION` en `DayModal.tsx` no se usa. Anterior a esta sesión.
 - [ ] Dar por hecho un aviso que el servidor acaba de marcar como enviado —sin
@@ -1344,6 +1416,21 @@ node --env-file=.env -e 'const t=process.env.TELEGRAM_BOT_TOKEN;
 ```
 
 Un token del bot son 46 caracteres. Si salen 145, hay una comilla suelta.
+
+**La hoja de arranque de los meses tiene que entender el formato viejo.** Ese
+script existe para que un mes plegado no se vea abrirse y cerrarse mientras React
+hidrata, y corre **antes que cualquier módulo**: no puede importar nada, así que
+lo que necesite saber hay que pasárselo por `define:vars`. Al meter el año en la
+clave del plegado, lo guardado seguía en el formato anterior hasta que React
+volviera a escribirlo, y un script que solo entendiera el nuevo habría pintado
+abierto —durante un fotograma— justo lo que estaba plegado: habría provocado el
+destello que es su único motivo de existir. Cualquier cambio en el formato de
+`EXPANSION_KEY` hay que reflejarlo **en los dos sitios**, y la comprobación de la
+clave no es cosmética: acaba dentro de un selector CSS.
+
+**Astro no enruta los archivos que empiezan por `_`.** `src/pages/_algo.astro` es
+privado por convención y devuelve 404 sin decir por qué. Muerde al dejar una
+página de sondeo con un nombre que parezca interno.
 
 **Tocar `astro.config.mjs` obliga a reiniciar el servidor.** El esquema de
 `astro:env` se lee al arrancar; sin reinicio las variables llegan vacías.
