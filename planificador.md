@@ -283,8 +283,12 @@ La alarma del `.ics` se ancla a un instante absoluto (`TRIGGER;VALUE=DATE-TIME`)
 y no a un desfase desde `DTSTART`: el evento es de día completo y cada
 calendario decide por su cuenta a qué hora empieza uno.
 
-La interfaz avisa de que el envío todavía no existe. Prometer un mensaje que no
-va a llegar es peor que no ofrecerlo.
+La interfaz avisaba de que el envío todavía no existía. Prometer un mensaje que
+no va a llegar es peor que no ofrecerlo — pero ese texto **sobrevivió a la tanda
+siguiente**, que es la que lo hizo mentira, y se quedó diciendo «el envío llega
+en la próxima tanda» con el envío ya funcionando. Lo quitó `2d60a98`, que puso
+en su lugar algo que sí aporta: un aviso cuando no hay Telegram conectado, que
+es el caso en que el recordatorio se guarda y no llega a ninguna parte.
 
 #### 7 · El envío por Telegram — `8ebb04e`
 
