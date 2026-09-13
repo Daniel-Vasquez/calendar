@@ -1,5 +1,12 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { formatLongDate, formatWeekday, isInQuarter, YEAR } from '../lib/calendar';
+import {
+  formatLongDate,
+  formatWeekday,
+  isCovered,
+  MAX_DATE,
+  MIN_DATE,
+  YEARS_LABEL,
+} from '../lib/calendar';
 import {
   DEFAULT_REMINDER_TIME,
   defaultReminderText,
@@ -119,7 +126,7 @@ export default function ReminderModal({
     setTags(tagsOf(day));
   }
 
-  const validDay = isDateKey(day) && isInQuarter(day);
+  const validDay = isDateKey(day) && isCovered(day);
   const validTime = isTime(time);
   const moves = validDay && !creating && day !== dateKey;
   /** El día elegido ya tenía aviso y solo cabe uno: se avisa antes de pisarlo. */
@@ -164,7 +171,7 @@ export default function ReminderModal({
               {creating ? 'Nuevo recordatorio' : 'Editar recordatorio'}
             </h2>
             <p className="mt-1 text-sm text-ink-soft">
-              {heading ? formatLongDate(heading) : `Elige un día de ${YEAR}`}
+              {heading ? formatLongDate(heading) : `Elige un día de ${YEARS_LABEL}`}
             </p>
           </div>
           <button
@@ -189,8 +196,8 @@ export default function ReminderModal({
               id={dayId}
               type="date"
               value={day}
-              min={`${YEAR}-01-01`}
-              max={`${YEAR}-12-31`}
+              min={MIN_DATE}
+              max={MAX_DATE}
               onChange={(event) => setDay(event.target.value)}
               className={FIELD}
             />
@@ -243,7 +250,7 @@ export default function ReminderModal({
         {/* Los avisos que puede dar esta pantalla, de más grave a menos. */}
         {!validDay && (
           <p role="alert" className="mt-3 text-xs font-medium text-highlight">
-            El calendario solo cubre {YEAR}: elige un día de ese año.
+            El calendario solo cubre {YEARS_LABEL}: elige un día de esos años.
           </p>
         )}
         {!validTime && (

@@ -12,9 +12,9 @@ import {
   dayTimeState,
   formatLongDate,
   formatWeekday,
-  isInQuarter,
+  isCovered,
+  MIN_DATE,
   todayKey,
-  YEAR,
 } from '../lib/calendar';
 import { colorVar } from '../lib/palette';
 import { reminderText, type Reminder } from '../lib/reminder';
@@ -185,8 +185,8 @@ export default function RemindersView({ user }: { user: NavUser }) {
   const noteOf = useCallback((key: string) => data[key]?.note ?? '', [data]);
   const tagsOf = useCallback((key: string) => data[key]?.tags ?? [], [data]);
 
-  /** Día que se propone al crear: hoy, o el principio del año si queda fuera. */
-  const defaultKey = clock.today && isInQuarter(clock.today) ? clock.today : `${YEAR}-01-01`;
+  /** Día que se propone al crear: hoy, o el primero que cubre el calendario. */
+  const defaultKey = clock.today && isCovered(clock.today) ? clock.today : MIN_DATE;
 
   function openEditor(key: string | null, event: React.MouseEvent<HTMLElement>) {
     triggerRef.current = event.currentTarget;

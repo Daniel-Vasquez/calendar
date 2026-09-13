@@ -1,7 +1,29 @@
-export const YEAR = 2026;
+/**
+ * Los años que cubre el calendario, en orden y sin huecos.
+ *
+ * La rejilla dibuja **uno cada vez** —el que diga el conmutador de la
+ * cabecera—, pero el resto de la aplicación los mezcla sin distinguirlos: un
+ * día se identifica por su fecha completa (`YYYY-MM-DD`), así que la agenda, la
+ * galería y los recordatorios ya los ordenan juntos sin saber que hay más de
+ * un año. Añadir 2028 aquí basta para que el conmutador crezca.
+ */
+export const YEARS = [2026, 2027] as const;
+
+export type CalendarYear = (typeof YEARS)[number];
+
+/** Primer y último día admitidos: los `min`/`max` de todo campo de fecha. */
+export const MIN_DATE = `${YEARS[0]}-01-01`;
+export const MAX_DATE = `${YEARS[YEARS.length - 1]}-12-31`;
+
+/** «2026 y 2027»: cómo se nombran los años cubiertos dentro de una frase. */
+export const YEARS_LABEL = (YEARS as readonly number[])
+  .map(String)
+  .reduce((text, year, at, all) =>
+    at === all.length - 1 ? `${text} y ${year}` : `${text}, ${year}`,
+  );
 
 /** Meses del año que se renderizan simultáneamente. `index` es 0-based (0 = Enero). */
-export const QUARTER_MONTHS = [
+export const YEAR_MONTHS = [
   { index: 0, name: 'Enero' },
   { index: 1, name: 'Febrero' },
   { index: 2, name: 'Marzo' },
@@ -147,11 +169,45 @@ export function monthIndexOf(key: string): number {
   return Number(key.slice(5, 7)) - 1;
 }
 
-/** ¿La clave cae dentro de alguno de los meses que el calendario dibuja? */
-export function isInQuarter(key: string): boolean {
-  return QUARTER_MONTHS.some((month) =>
-    key.startsWith(`${YEAR}-${String(month.index + 1).padStart(2, '0')}-`),
-  );
+/** Año de una clave `YYYY-MM-DD`, como número. */
+export function yearOf(key: string): number {
+  return Number(key.slice(0, 4));
+}
+
+/** ¿Es uno de los años que el calendario cubre? */
+export function isCalendarYear(value: number): value is CalendarYear {
+  return (YEARS as readonly number[]).includes(value);
+}
+
+/**
+ * ¿Cae la clave dentro del calendario? Es la única pregunta que decide si un
+ * día se puede abrir, mover o poner en un recordatorio, y desde que hay más de
+ * un año responde por el año de la clave y no por el mes.
+ */
+export function isCovered(key: string): boolean {
+  return isCalendarYear(yearOf(key));
+}
+
+/** ¿Cae la clave en el año que la rejilla está dibujando ahora mismo? */
+export function isInYear(key: string, year: number): boolean {
+  return yearOf(key) === year;
+}
+
+/**
+ * Año con el que se abre el calendario: el corriente si está cubierto, y si no
+ * el extremo más cercano. Se resuelve en el servidor para que la rejilla nazca
+ * ya en el año correcto y no haya que cambiarla al hidratar.
+ */
+export function defaultYear(now: Date = new Date()): CalendarYear {
+  const current = now.getFullYear();
+  if (isCalendarYear(current)) return current;
+  return current < YEARS[0] ? YEARS[0] : YEARS[YEARS.length - 1];
+}
+
+/** Lee un año de la URL. Devuelve `null` si no es uno de los cubiertos. */
+export function parseYear(raw: string | null): CalendarYear | null {
+  const value = Number(raw);
+  return raw && Number.isInteger(value) && isCalendarYear(value) ? value : null;
 }
 
 /** Clave `YYYY-MM-DD` del día de hoy, en hora local y sin horas/minutos. */
@@ -181,6 +237,16 @@ export function msUntilNextMidnight(now: Date = new Date()): number {
 
 /** Parámetro con el que el calendario abre un día al cargar: `/?day=2026-03-15`. */
 export const DAY_PARAM = 'day';
+
+/**
+ * Parámetro que fija el año de la rejilla: `/?year=2027`.
+ *
+ * Es la memoria del conmutador, y vive en la URL y no en `localStorage` a
+ * propósito: el servidor la lee antes de pintar, así que recargar en 2027
+ * devuelve 2027 sin que se vea 2026 un instante. De paso, el enlace se puede
+ * compartir y el año viaja con él.
+ */
+export const YEAR_PARAM = 'year';
 
 /**
  * Ruta del calendario con el día ya abierto. Es el destino de todo enlace que

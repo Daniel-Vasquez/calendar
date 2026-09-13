@@ -1,5 +1,13 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { dayHref, formatLongDate, formatWeekday, isInQuarter, YEAR } from '../lib/calendar';
+import {
+  dayHref,
+  formatLongDate,
+  formatWeekday,
+  isCovered,
+  MAX_DATE,
+  MIN_DATE,
+  YEARS_LABEL,
+} from '../lib/calendar';
 import {
   colorVar,
   DAY_COLORS,
@@ -183,7 +191,7 @@ export default function DayModal({
 
   /** ¿Se puede mudar el día de fecha? Solo si quien abrió el modal sabe moverlo. */
   const movable = Boolean(onMove);
-  const validDay = isDateKey(day) && isInQuarter(day);
+  const validDay = isDateKey(day) && isCovered(day);
   const moves = movable && validDay && day !== dateKey;
   /** El destino ya tiene día y solo cabe uno: se avisa antes de pisarlo. */
   const overwrites = moves && Boolean(hasDay?.(day));
@@ -333,8 +341,8 @@ export default function DayModal({
               id={dayId}
               type="date"
               value={day}
-              min={`${YEAR}-01-01`}
-              max={`${YEAR}-12-31`}
+              min={MIN_DATE}
+              max={MAX_DATE}
               // Mudar un día cuyos adjuntos aún no han bajado los perdería: el
               // día de origen se borra —y con él sus imágenes en la cuenta—
               // mientras que el nuevo solo heredaría la cuenta, sin contenido.
@@ -349,7 +357,7 @@ export default function DayModal({
               </p>
             ) : !validDay ? (
               <p role="alert" className="mt-1.5 text-xs font-medium text-highlight">
-                El calendario solo cubre {YEAR}: elige un día de ese año.
+                El calendario solo cubre {YEARS_LABEL}: elige un día de esos años.
               </p>
             ) : overwrites ? (
               <p className="mt-1.5 text-xs font-medium text-highlight">

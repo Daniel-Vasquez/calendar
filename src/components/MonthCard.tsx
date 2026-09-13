@@ -7,17 +7,18 @@ import {
   daysInMonth,
   formatLongDate,
   formatWeekday,
-  isInQuarter,
+  isInYear,
   shiftKey,
   WEEKDAYS,
   WEEKDAY_LABELS,
-  YEAR,
   type DayTimeState,
 } from '../lib/calendar';
 import { monthKey } from '../lib/collapse';
 import type { CalendarData } from '../lib/storage';
 
 type Props = {
+  /** Año al que pertenece el mes. Lo decide el conmutador de la cabecera. */
+  year: number;
   monthIndex: number;
   name: string;
   data: CalendarData;
@@ -46,6 +47,7 @@ const STATE_SUFFIX: Record<DayTimeState, string> = {
 };
 
 export default function MonthCard({
+  year,
   monthIndex,
   name,
   data,
@@ -54,9 +56,9 @@ export default function MonthCard({
   expanded,
   onToggle,
 }: Props) {
-  const weeks = buildMonthWeeks(YEAR, monthIndex);
-  const total = daysInMonth(YEAR, monthIndex);
-  const monthPrefix = `${YEAR}-${String(monthIndex + 1).padStart(2, '0')}-`;
+  const weeks = buildMonthWeeks(year, monthIndex);
+  const total = daysInMonth(year, monthIndex);
+  const monthPrefix = `${year}-${String(monthIndex + 1).padStart(2, '0')}-`;
   const bodyId = useId();
 
   const markedCount = weeks
@@ -65,7 +67,7 @@ export default function MonthCard({
 
   // Tabulación itinerante: un mes entero son ~30 paradas de tab, así que solo
   // una casilla es tabulable y las flechas mueven el foco por la rejilla.
-  const [focusedKey, setFocusedKey] = useState(() => dateKey(YEAR, monthIndex, 1));
+  const [focusedKey, setFocusedKey] = useState(() => dateKey(year, monthIndex, 1));
 
   // Hoy es la entrada natural a su propio mes. `today` llega vacío hasta que
   // el cliente hidrata y vuelve a cambiar en cada medianoche.
@@ -79,9 +81,9 @@ export default function MonthCard({
       step !== undefined
         ? shiftKey(focusedKey, step)
         : event.key === 'Home'
-          ? dateKey(YEAR, monthIndex, 1)
+          ? dateKey(year, monthIndex, 1)
           : event.key === 'End'
-            ? dateKey(YEAR, monthIndex, total)
+            ? dateKey(year, monthIndex, total)
             : undefined;
 
     if (!target) return;
@@ -89,9 +91,11 @@ export default function MonthCard({
     event.preventDefault();
 
     // La búsqueda es global, así que las flechas pasan de un mes al siguiente.
-    // Fuera del año no hay casilla y el foco se queda donde está; en un mes
-    // plegado la casilla es `inert` y `focus()` tampoco se mueve.
-    if (!isInQuarter(target)) return;
+    // Fuera del año **que se está dibujando** no hay casilla y el foco se queda
+    // donde está: el 31 de diciembre no salta al 1 de enero del año siguiente
+    // aunque el calendario lo cubra, porque esa rejilla no está en la página.
+    // En un mes plegado la casilla es `inert` y `focus()` tampoco se mueve.
+    if (!isInYear(target, year)) return;
     document.querySelector<HTMLButtonElement>(`[data-date="${target}"]`)?.focus();
   }
 
@@ -107,7 +111,7 @@ export default function MonthCard({
     // global.css pliega el cuerpo y gira el chevron a partir de ellos, y la
     // hoja de arranque de index.astro hace lo mismo antes de hidratar.
     <section
-      aria-label={`${name} de ${YEAR}`}
+      aria-label={`${name} de ${year}`}
       data-month={monthKey(monthIndex)}
       data-open={expanded || undefined}
       className="scroll-mt-20 rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5"
@@ -124,7 +128,7 @@ export default function MonthCard({
             className="flex w-full items-center gap-3 rounded-xl p-2 text-left transition-colors hover:bg-edge/60 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface focus-visible:outline-none"
           >
             <span className="flex-1">
-              {name} <span className="font-normal text-ink-muted">{YEAR}</span>
+              {name} <span className="font-normal text-ink-muted">{year}</span>
             </span>
             {markedCount > 0 && (
               <span className="rounded-full bg-accent/10 px-2.5 py-1 text-xs font-medium text-accent-ink-strong">

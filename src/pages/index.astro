@@ -2,6 +2,14 @@
 import Layout from '../layouts/Layout.astro';
 import CalendarDashboard from '../components/CalendarDashboard';
 import { BOOT_STYLE_ID, EXPANSION_KEY } from '../lib/collapse';
+import {
+  DAY_PARAM,
+  defaultYear,
+  isCalendarYear,
+  parseYear,
+  YEAR_PARAM,
+  yearOf,
+} from '../lib/calendar';
 
 // Con sesión de por medio ya no se puede prerenderizar: el middleware necesita
 // una petición real para saber quién entra, y en las páginas prerenderizadas
@@ -11,6 +19,20 @@ export const prerender = false;
 // Si el middleware ha dejado pasar la petición, hay usuario: sin él habría
 // desviado a `/login` antes de llegar aquí.
 const user = Astro.locals.user!;
+
+// El año de la rejilla se decide **aquí**, antes de pintar nada, y no en el
+// cliente al hidratar: así el HTML que baja ya trae los doce meses correctos y
+// no se ve 2026 un instante antes de que React lo cambie por 2027.
+//
+// Manda `?year=`, que es lo que deja el conmutador al cambiar de pestaña. Si no
+// viene, lo dice el día que se pide abrir —`/?day=2027-03-15` lleva su año
+// dentro, y es como llegan los enlaces de la galería y de los recordatorios—, y
+// en último término el año corriente si el calendario lo cubre.
+const day = Astro.url.searchParams.get(DAY_PARAM);
+const dayYear = day ? yearOf(day) : NaN;
+const initialYear =
+  parseYear(Astro.url.searchParams.get(YEAR_PARAM)) ??
+  (isCalendarYear(dayYear) ? dayYear : defaultYear());
 ---
 
 <Layout title="Planificador 2026">
@@ -45,5 +67,9 @@ const user = Astro.locals.user!;
 
   {/* La barra de navegación y el <main> los dibuja el componente: la
       barra debe quedar fuera del contenedor para cruzar la pantalla. */}
-  <CalendarDashboard user={{ name: user.name, email: user.email }} client:load />
+  <CalendarDashboard
+    user={{ name: user.name, email: user.email }}
+    initialYear={initialYear}
+    client:load
+  />
 </Layout>

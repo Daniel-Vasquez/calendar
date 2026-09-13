@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useState } from 'react';
 import { flushSync } from 'react-dom';
 import MonthCard from './MonthCard';
+import YearTabs, { yearTabId } from './YearTabs';
 import DayModal from './DayModal';
 import NavBar, { type NavUser } from './NavBar';
 import NoticeBar, { useNotice } from './NoticeBar';
@@ -10,13 +11,16 @@ import { useSettings } from './useSettings';
 import {
   DAY_PARAM,
   formatLongDate,
-  YEAR,
-  isInQuarter,
+  isCovered,
+  isInYear,
   keysBetween,
   monthIndexOf,
   msUntilNextMidnight,
-  QUARTER_MONTHS,
   todayKey,
+  YEAR_MONTHS,
+  YEAR_PARAM,
+  yearOf,
+  type CalendarYear,
 } from '../lib/calendar';
 import {
   DEFAULT_EXPANSION,
@@ -33,7 +37,17 @@ import { colorVar, DAY_COLORS, DEFAULT_COLOR, labelFor, type ColorId } from '../
 import { fetchImages, storeImages } from '../lib/sync';
 import { hasContent, type DayEntry } from '../lib/storage';
 
-export default function CalendarDashboard({ user }: { user: NavUser }) {
+type Props = {
+  user: NavUser;
+  /**
+   * Año con el que arranca la rejilla. Lo resuelve el servidor a partir de la
+   * URL —ver `YEAR_PARAM`—, y por eso llega como prop en vez de leerse aquí:
+   * el HTML que baja ya trae el año correcto y no hay que cambiarlo al hidratar.
+   */
+  initialYear: CalendarYear;
+};
+
+export default function CalendarDashboard({ user, initialYear }: Props) {
   // Lo que cuente la sincronía se enseña en la misma banda del pie que el resto
   // de avisos, así que `announce` va también al almacén.
   const { notice, announce, dismiss } = useNotice();
@@ -41,6 +55,8 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
   const { palette, catalogue, settings } = useSettings({ data, setData, announce });
 
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  /** Año que dibuja la rejilla. Los doce meses son siempre de uno solo. */
+  const [year, setYear] = useState<CalendarYear>(initialYear);
   const [today, setToday] = useState('');
   /** Último día abierto: ancla del rango que dibuja un clic con Shift. */
   const [anchorKey, setAnchorKey] = useState<string | null>(null);
@@ -170,10 +186,38 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
     setSelectedKey(key);
   }, []);
 
-  // `/?day=2026-03-15` abre ese día nada más cargar: es el enlace "Ver nota"
+  /**
+   * Cambia el año de la rejilla. Es solo estado de React: los doce meses se
+   * vuelven a calcular y se repintan sin recargar la página.
+   *
+   * Deja el año en la URL para que recargar —o compartir el enlace— vuelva
+   * aquí. Va con `replaceState` y no con `pushState` a propósito: esto es un
+   * conmutador de vista, y llenar el historial de años haría que el botón de
+   * atrás dejara de salir de la página.
+   *
+   * El ancla del rango se suelta porque era de otro año, y con ella un
+   * Shift+clic marcaría doce meses de una vez; el modal se cierra porque el día
+   * que tenía abierto ya no está en la rejilla que se ve.
+   */
+  const changeYear = useCallback((next: CalendarYear) => {
+    setYear(next);
+    setAnchorKey(null);
+    setSelectedKey(null);
+
+    const url = new URL(window.location.href);
+    url.searchParams.set(YEAR_PARAM, String(next));
+    window.history.replaceState(window.history.state, '', url);
+  }, []);
+
+  // `/?day=2027-03-15` abre ese día nada más cargar: es el enlace "Ver nota"
   // de la galería. Espera a los datos para que el modal nazca con la nota, y
   // despliega el mes y lo trae a la vista para que, al cerrar, el día esté
   // ahí. El parámetro se retira de la URL: recargar no debe reabrirlo.
+  //
+  // El año no se toca aquí: lo resuelve el servidor a partir de la propia
+  // clave —ver `index.astro`—, así que la rejilla que baja ya es la del día que
+  // se pide. Si aun así no lo fuera, el día se abre igual y solo se pierde el
+  // desplazamiento, porque su casilla no está en la página.
   useEffect(() => {
     if (!hydrated || !expansionLoaded) return;
 
@@ -184,22 +228,26 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
     url.searchParams.delete(DAY_PARAM);
     window.history.replaceState(window.history.state, '', url);
 
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(key) || !isInQuarter(key)) return;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(key) || !isCovered(key)) return;
 
     setExpansion((current) => ({
       ...current,
       [monthKey(monthIndexOf(key))]: true,
     }));
     openDay(key);
+    if (!isInYear(key, year)) return;
     document
       .querySelector<HTMLElement>(`[data-date="${key}"]`)
       ?.scrollIntoView({ behavior: 'auto', block: 'center' });
-  }, [hydrated, expansionLoaded, openDay]);
+  }, [hydrated, expansionLoaded, openDay, year]);
 
   /** Marca de golpe todo lo que hay entre el último día abierto y este. */
   const markRange = useCallback(
     (from: string, to: string) => {
-      const keys = keysBetween(from, to).filter(isInQuarter);
+      // Solo el año que se ve: el ancla se suelta al cambiar de año, así que
+      // esto nunca debería recortar nada, pero un rango que se colara de un año
+      // a otro pintaría meses que no están en la página.
+      const keys = keysBetween(from, to).filter((key) => isInYear(key, year));
       if (keys.length === 0) return;
 
       const snapshot = data;
@@ -226,7 +274,7 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
       // El rango deja su ancla en el extremo recién tocado, para encadenar otro.
       setAnchorKey(to);
     },
-    [data, setData, palette, lastColor, announce],
+    [data, setData, palette, lastColor, announce, year],
   );
 
   const handleSelectDay = useCallback(
@@ -253,24 +301,41 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
     setExpansion((current) => ({ ...current, [key]: !current[key] }));
   }, []);
 
+  /** `id` de las pestañas del año y de la rejilla que gobiernan. */
+  const tabsId = useId();
+  const gridId = useId();
+
   const allExpanded = everyMonth(expansion, true);
   const allCollapsed = everyMonth(expansion, false);
 
   // Un calendario de doce meses no cabe en pantalla: este atajo devuelve a
   // hoy y le deja el foco, listo para seguir moviéndose con las flechas.
-  const canJumpToToday = Boolean(today) && isInQuarter(today);
+  // Basta con que el calendario cubra el día: si hoy cae en el otro año, el
+  // salto cambia de pestaña por el camino en vez de desaparecer.
+  const canJumpToToday = Boolean(today) && isCovered(today);
 
   const goToToday = useCallback(() => {
+    if (!canJumpToToday) return;
+
+    // El año y el mes se arreglan antes de saltar, y de forma síncrona: la
+    // rejilla del otro año no existe en el DOM hasta que React la pinta, y la
+    // casilla de un mes plegado es `inert` y no acepta el foco.
+    const key = monthKey(monthIndexOf(today));
+    const switchesYear = !isInYear(today, year);
+    const wasCollapsed = !expansion[key];
+
+    if (switchesYear || wasCollapsed) {
+      flushSync(() => {
+        if (switchesYear) changeYear(yearOf(today) as CalendarYear);
+        if (wasCollapsed) setExpansion((current) => ({ ...current, [key]: true }));
+      });
+    }
+
     const cell = document.querySelector<HTMLElement>(`[data-date="${today}"]`);
     if (!cell) return;
 
-    // Un mes plegado se abre antes de saltar, de forma síncrona para que la
-    // casilla deje de ser `inert` y acepte el foco. Mientras se despliega su
-    // altura cambia, así que se desplaza a la cabecera del mes y no al día.
-    const key = monthKey(monthIndexOf(today));
-    const wasCollapsed = !expansion[key];
-    if (wasCollapsed) flushSync(() => setExpansion((current) => ({ ...current, [key]: true })));
-
+    // Mientras el mes se despliega su altura cambia, así que en ese caso se
+    // desplaza a la cabecera del mes y no al día, que aún se está moviendo.
     const target = wasCollapsed ? (cell.closest('section') ?? cell) : cell;
     const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     target.scrollIntoView({
@@ -278,43 +343,41 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
       block: wasCollapsed ? 'start' : 'center',
     });
     cell.focus({ preventScroll: true });
-  }, [today, expansion]);
+  }, [today, year, expansion, canJumpToToday, changeYear]);
 
   return (
     <>
       <NavBar current="calendar" user={user} settings={settings} />
 
       <main className="mx-auto w-full max-w-5xl px-4 pt-8 pb-10 sm:px-6">
-        {/* Lo que queda arriba: ir a hoy, el estado de la sincronía y el
-            plegado de los meses. Las cuentas del año se fueron a `/agenda`,
-            junto a la lista de la que salen. En un teléfono los dos bloques se
-            apilan; a partir de `sm` vuelven a la misma fila. */}
-        <header className="mb-8 flex gap-2 justify-between sm:items-center sm:gap-3">
-          {/* El rótulo del año se quitó de la vista: los doce meses ya lo
-              dicen, y en un teléfono ocupaba una línea entera. Se queda para
-              quien lea la página con un lector, que sí necesita un encabezado
-              del que colgar el resto. */}
-          <h1 className="sr-only">Calendario de {YEAR}, de enero a diciembre</h1>
+        {/* Lo que queda arriba: el año, ir a hoy, el estado de la sincronía y
+            el plegado de los meses. Las cuentas del año se fueron a `/agenda`,
+            junto a la lista de la que salen.
 
-          <div
-            className={
-              'grid gap-2 sm:flex sm:items-center sm:gap-3 ' +
-              (canJumpToToday ? 'grid-cols-2' : 'grid-cols-1')
-            }
-          >
-            {canJumpToToday && (
-              <button
-                type="button"
-                onClick={goToToday}
-                className="print-hidden rounded-xl border border-today/30 bg-today/10 px-3 py-2 text-sm font-semibold text-today-ink transition-colors hover:bg-today/20 focus-visible:ring-2 focus-visible:ring-today focus-visible:ring-offset-2 focus-visible:outline-none sm:px-4 sm:py-2.5"
-              >
-                Ir a hoy
-              </button>
-            )}
-            <SyncBadge state={sync} pending={pending} onRetry={retry} />
+            Se reparte con `flex-wrap` y `order` en vez de con dos cabeceras
+            porque cambia de forma según el ancho: en un teléfono el año y el
+            plegado comparten la primera línea y el resto baja a la segunda, y a
+            partir de `sm` los tres grupos caben en una sola fila con el plegado
+            empujado al extremo. */}
+        <header className="mb-8 flex flex-wrap items-center gap-2 sm:gap-3">
+          {/* El rótulo del año se quitó de la vista: las pestañas y los doce
+              meses ya lo dicen. Se queda para quien lea la página con un
+              lector, que sí necesita un encabezado del que colgar el resto. */}
+          <h1 className="sr-only">Calendario de {year}, de enero a diciembre</h1>
+
+          <div className="order-1">
+            <YearTabs
+              year={year}
+              onChange={changeYear}
+              idPrefix={tabsId}
+              panelId={gridId}
+            />
           </div>
 
-          <div className="print-hidden flex justify-end gap-2 sm:ml-auto">
+          {/* `ml-auto` lo manda al extremo derecho de su línea: la primera en
+              un teléfono, junto al año, y la única a partir de `sm`, donde por
+              el `order` es lo último de la fila. */}
+          <div className="print-hidden order-2 ml-auto flex gap-2 sm:order-3">
             <IconButton
               label="Colapsar todos"
               disabled={allCollapsed}
@@ -330,12 +393,41 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
               <ChevronsIcon direction="down" />
             </IconButton>
           </div>
+
+          <div
+            className={
+              'order-3 grid w-full gap-2 sm:order-2 sm:flex sm:w-auto sm:items-center sm:gap-3 ' +
+              (canJumpToToday ? 'grid-cols-2' : 'grid-cols-1')
+            }
+          >
+            {canJumpToToday && (
+              <button
+                type="button"
+                onClick={goToToday}
+                className="print-hidden rounded-xl border border-today/30 bg-today/10 px-3 py-2 text-sm font-semibold text-today-ink transition-colors hover:bg-today/20 focus-visible:ring-2 focus-visible:ring-today focus-visible:ring-offset-2 focus-visible:outline-none sm:px-4 sm:py-2.5"
+              >
+                Ir a hoy
+              </button>
+            )}
+            <SyncBadge state={sync} pending={pending} onRetry={retry} />
+          </div>
         </header>
 
-        <div className="print-grid-2 grid grid-cols-1 gap-5 md:grid-cols-2">
-          {QUARTER_MONTHS.map((month) => (
+        {/* La rejilla es el panel de la pestaña del año: doce meses en una
+            columna en un teléfono y en dos a partir de `md`, como siempre.
+            Cambiar de año la vuelve a montar entera —de ahí el `key`—, que es
+            lo que hace que cada mes empiece de nuevo con su día 1 como parada
+            de tabulación en vez de heredar la del año anterior. */}
+        <div
+          id={gridId}
+          role="tabpanel"
+          aria-labelledby={yearTabId(tabsId, year)}
+          className="print-grid-2 grid grid-cols-1 gap-5 md:grid-cols-2"
+        >
+          {YEAR_MONTHS.map((month) => (
             <MonthCard
-              key={month.index}
+              key={`${year}-${month.index}`}
+              year={year}
               monthIndex={month.index}
               name={month.name}
               data={data}

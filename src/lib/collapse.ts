@@ -13,6 +13,12 @@ export const BOOT_STYLE_ID = 'month-boot';
  * Qué meses están desplegados, por su nombre en minúsculas:
  * `{ enero: true, febrero: false, … }`. `true` es abierto, que es también el
  * estado de fábrica de un mes que no aparezca.
+ *
+ * El año no entra en la clave, y es a propósito: quien pliega los seis primeros
+ * meses lo hace porque no le interesan, no porque no le interesen *en 2026*, y
+ * cambiar de pestaña con la mitad del año plegándose y desplegándose sola sería
+ * un sobresalto sin motivo. La hoja de arranque de `index.astro` depende de
+ * ello: sus selectores son `[data-month="enero"]`, sin año que mirar.
  */
 export type MonthExpansion = Record<string, boolean>;
 
