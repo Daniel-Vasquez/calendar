@@ -1,9 +1,10 @@
 import { useEffect, useId, useRef, useState } from 'react';
-import { formatLongDate, formatWeekday } from '../lib/calendar';
+import { dayHref, formatLongDate, formatWeekday, isInQuarter, YEAR } from '../lib/calendar';
 import { DAY_COLORS, DEFAULT_COLOR, colorHex, type ColorId } from '../lib/palette';
 import { labelFor, type ColorLabels } from '../lib/labels';
 import { dataUrlBytes, IMAGE_ACCEPT, MAX_IMAGES_PER_DAY, prepareImage } from '../lib/image';
 import { hasContent, imageCount, imagesReady, type DayEntry } from '../lib/storage';
+import { isDateKey } from '../lib/wire';
 import type { Reminder } from '../lib/reminder';
 import ReminderField from './ReminderField';
 import { useDialog } from './useDialog';
@@ -22,7 +23,31 @@ type Props = {
    * llega sabiendo cuántas tiene pero sin ninguna.
    */
   onNeedImages: (key: string) => Promise<void>;
+  /**
+   * Mueve el día entero a otra fecha, con lo tecleado dentro. Opcional: solo
+   * lo pasa la agenda, donde la fecha es un campo más del día. En la rejilla no
+   * tiene sentido —el sitio de la casilla *es* la fecha— y sin este `onMove` el
+   * modal no enseña el campo, así que allí todo sigue igual.
+   */
+  onMove?: (from: string, to: string, entry: DayEntry) => void;
+  /**
+   * ¿Hay algo guardado ese día? Se pregunta por el **destino** de la mudanza,
+   * para avisar antes de pisarlo. Solo hace falta con `onMove`.
+   */
+  hasDay?: (key: string) => boolean;
+  /**
+   * Enseña el enlace al día en el calendario. Lo enciende quien abre el modal
+   * fuera de la rejilla: desde la propia rejilla no lleva a ninguna parte.
+   */
+  showCalendarLink?: boolean;
+  /** Botón desde el que se abrió, si lo hay: a él vuelve el foco al cerrarse. */
+  triggerRef?: React.RefObject<HTMLElement | null>;
 };
+
+const FIELD =
+  'w-full rounded-xl border border-edge bg-raised px-4 py-2.5 text-sm text-ink ' +
+  'focus:border-accent focus:ring-2 focus:ring-accent/30 focus:outline-none ' +
+  'disabled:cursor-not-allowed disabled:opacity-60';
 
 const IMAGE_ACTION =
   'rounded-lg border border-edge bg-raised px-3 py-1.5 text-xs font-medium text-ink-soft ' +
@@ -49,6 +74,10 @@ export default function DayModal({
   onClear,
   onClose,
   onNeedImages,
+  onMove,
+  hasDay,
+  showCalendarLink = false,
+  triggerRef,
 }: Props) {
   const [marked, setMarked] = useState(entry?.marked ?? false);
   const [note, setNote] = useState(entry?.note ?? '');
@@ -56,12 +85,15 @@ export default function DayModal({
   /** Data URL de cada imagen adjunta, en el orden en que se añadieron. */
   const [images, setImages] = useState<string[]>(entry?.images ?? []);
   const [reminder, setReminder] = useState<Reminder | undefined>(entry?.reminder);
+  /** Fecha elegida. Mientras nadie la toque es la del día que se abrió. */
+  const [day, setDay] = useState(dateKey);
   const [imageError, setImageError] = useState('');
   const [processing, setProcessing] = useState(false);
   /** La descarga de adjuntos falló: se avisa y se protege lo que hay arriba. */
   const [imagesLost, setImagesLost] = useState(false);
   const noteId = useId();
   const titleId = useId();
+  const dayId = useId();
   const imageHelpId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -80,12 +112,22 @@ export default function DayModal({
     setColor(entry?.color ?? DEFAULT_COLOR);
     setImages(entry?.images ?? []);
     setReminder(entry?.reminder);
+    setDay(dateKey);
     setImageError('');
   }, [dateKey, entry?.marked, entry?.note, entry?.color, entry?.images, entry?.reminder]);
 
   useEffect(() => {
     closeRef.current?.focus();
   }, [dateKey]);
+
+  // Al cerrarse, el foco vuelve a donde estaba. Solo cuando quien abre el modal
+  // dice desde dónde: la rejilla no lo pasa y allí el foco ya lo recupera la
+  // casilla. Se captura al montar, porque al desmontar el `ref` puede haberse
+  // quedado sin nodo.
+  useEffect(() => {
+    const trigger = triggerRef?.current;
+    return () => trigger?.focus();
+  }, [triggerRef]);
 
   // Los adjuntos se piden al abrir, no al cargar el calendario: son megas, y
   // la inmensa mayoría de los días no se llegan a abrir.
@@ -117,6 +159,13 @@ export default function DayModal({
   const missing = Math.max(0, total - images.length);
   const totalBytes = images.reduce((sum, image) => sum + dataUrlBytes(image), 0);
   const unsaved = !sameImages(images, entry?.images ?? []);
+
+  /** ¿Se puede mudar el día de fecha? Solo si quien abrió el modal sabe moverlo. */
+  const movable = Boolean(onMove);
+  const validDay = isDateKey(day) && isInQuarter(day);
+  const moves = movable && validDay && day !== dateKey;
+  /** El destino ya tiene día y solo cabe uno: se avisa antes de pisarlo. */
+  const overwrites = moves && Boolean(hasDay?.(day));
 
   /**
    * Procesa los archivos elegidos uno a uno, en orden, hasta llenar el cupo.
@@ -189,6 +238,17 @@ export default function DayModal({
     };
   }
 
+  /**
+   * Guarda el borrador. Con la fecha tocada es una mudanza —el día entero se va
+   * a la fecha nueva—; con la fecha intacta, el guardado de siempre. Van por la
+   * misma puerta porque para quien edita son lo mismo: pulsar Guardar.
+   */
+  function save() {
+    const next = draft();
+    if (moves) onMove?.(dateKey, day, next);
+    else onSave(dateKey, next);
+  }
+
   function removeImage(index: number) {
     setImages((current) => current.filter((_, i) => i !== index));
     setImageError('');
@@ -237,6 +297,47 @@ export default function DayModal({
             </svg>
           </button>
         </div>
+
+        {/* La fecha, solo donde se puede cambiar. Va la primera porque es la
+            identidad del día: lo demás son sus contenidos. */}
+        {movable && (
+          <div className="mb-4">
+            <label htmlFor={dayId} className="mb-1.5 block text-sm font-medium text-ink-soft">
+              Fecha
+            </label>
+            <input
+              id={dayId}
+              type="date"
+              value={day}
+              min={`${YEAR}-01-01`}
+              max={`${YEAR}-12-31`}
+              // Mudar un día cuyos adjuntos aún no han bajado los perdería: el
+              // día de origen se borra —y con él sus imágenes en la cuenta—
+              // mientras que el nuevo solo heredaría la cuenta, sin contenido.
+              disabled={!ready}
+              onChange={(event) => setDay(event.target.value)}
+              className={FIELD}
+            />
+
+            {!ready ? (
+              <p className="mt-1.5 text-xs text-ink-muted">
+                La fecha no se puede cambiar hasta que lleguen las imágenes de tu cuenta.
+              </p>
+            ) : !validDay ? (
+              <p role="alert" className="mt-1.5 text-xs font-medium text-highlight">
+                El calendario solo cubre {YEAR}: elige un día de ese año.
+              </p>
+            ) : overwrites ? (
+              <p className="mt-1.5 text-xs font-medium text-highlight">
+                El {formatLongDate(day)} ya tiene contenido: si guardas, se sustituye por este.
+              </p>
+            ) : moves ? (
+              <p className="mt-1.5 text-xs text-ink-soft">
+                Al guardar, el día entero se mueve al {formatLongDate(day)}.
+              </p>
+            ) : null}
+          </div>
+        )}
 
         <label className="flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-edge bg-surface px-4 py-3">
           <span className="text-sm font-medium text-ink-soft">Marcar día</span>
@@ -439,8 +540,8 @@ export default function DayModal({
         <div className="mt-6 flex flex-col gap-2 sm:flex-row-reverse">
           <button
             type="button"
-            onClick={() => onSave(dateKey, draft())}
-            disabled={processing}
+            onClick={save}
+            disabled={processing || !validDay}
             style={marked ? { backgroundColor: colorHex(color) } : undefined}
             className={
               'flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold text-white transition focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none ' +
@@ -465,6 +566,21 @@ export default function DayModal({
             Cerrar
           </button>
         </div>
+
+        {/* La salida hacia la rejilla, para quien edita desde otra página y
+            quiere ver el día en su sitio, con el mes alrededor. Secundaria a
+            propósito: aquí ya se puede hacer todo, y el enlace se lleva por
+            delante lo que no se haya guardado. */}
+        {showCalendarLink && (
+          <p className="mt-4 text-center">
+            <a
+              href={dayHref(dateKey)}
+              className="rounded text-xs font-medium text-ink-muted underline underline-offset-2 transition-colors hover:text-ink focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none"
+            >
+              Ver día completo en el calendario
+            </a>
+          </p>
+        )}
       </div>
     </div>
   );

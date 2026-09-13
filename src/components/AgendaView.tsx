@@ -1,11 +1,21 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AgendaList from './AgendaList';
+import DayModal from './DayModal';
 import NavBar, { type NavUser } from './NavBar';
 import SyncBadge from './SyncBadge';
 import { useCalendarStore } from './useCalendarStore';
-import { msUntilNextMidnight, todayKey } from '../lib/calendar';
+import { formatLongDate, msUntilNextMidnight, todayKey } from '../lib/calendar';
 import { LABELS_KEY, loadLabels, type ColorLabels } from '../lib/labels';
-import { hasImages } from '../lib/storage';
+import { fetchImages, storeImages } from '../lib/sync';
+import { hasContent, hasImages, moveDay, type CalendarData, type DayEntry } from '../lib/storage';
+
+/**
+ * Aviso efímero del pie. Con `snapshot` ofrece deshacer —guarda el calendario
+ * entero anterior al cambio—; sin él es solo un mensaje. El mismo trato que en
+ * el calendario y en los recordatorios, y por el mismo motivo: desde aquí se
+ * borra y se mueven días, y las dos cosas son irreversibles sin esto.
+ */
+type Notice = { message: string; snapshot?: CalendarData };
 
 /**
  * La agenda del año, con las cuentas del calendario encima.
@@ -18,11 +28,26 @@ import { hasImages } from '../lib/storage';
  * Lee por `useCalendarStore`, igual que el calendario y los recordatorios: las
  * cuentas salen del mismo estado, así que marcar un día allí las mueve aquí en
  * cuanto se recarga o llega el cambio de otra pestaña.
+ *
+ * Y **escribe** por el mismo sitio: pulsar una fila abre aquí el modal del día,
+ * el mismo de la rejilla, en vez de saltar a la portada. Lo que se guarda entra
+ * en el estado, en localStorage y en la cola de subida por la vía de siempre, y
+ * la lista —con su búsqueda y sus filtros intactos— lo enseña en el acto.
  */
 export default function AgendaView({ user }: { user: NavUser }) {
-  const { data, hydrated, sync, pending, retry } = useCalendarStore();
+  const [notice, setNotice] = useState<Notice | null>(null);
+  /**
+   * Lo que cuente la sincronía se enseña en la misma banda del pie que el resto
+   * de avisos. Estable a propósito: el almacén la guarda para el `pull` inicial.
+   */
+  const announce = useCallback((message: string) => setNotice({ message }), []);
+  const { data, setData, hydrated, sync, pending, retry, adopt } = useCalendarStore(announce);
   const [labels, setLabels] = useState<ColorLabels>({});
   const [today, setToday] = useState('');
+  /** Día abierto en el modal, o `null` si no hay ninguno. */
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  /** Fila desde la que se abrió: a ella vuelve el foco al cerrarse el modal. */
+  const triggerRef = useRef<HTMLElement | null>(null);
 
   // Igual que en el calendario: localStorage se lee después de montar para que
   // el primer render coincida con el HTML del servidor.
@@ -63,6 +88,117 @@ export default function AgendaView({ user }: { user: NavUser }) {
       window.clearTimeout(timer);
       document.removeEventListener('visibilitychange', onVisible);
     };
+  }, []);
+
+  // El aviso caduca solo. Cada cambio crea un objeto nuevo, así que el
+  // temporizador se reinicia con él en lugar de heredar la cuenta anterior.
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  // Si el día abierto desaparece desde otra pestaña, el modal se cierra solo en
+  // vez de quedarse editando algo que ya no existe.
+  const openEntry = selectedKey ? data[selectedKey] : undefined;
+  useEffect(() => {
+    if (selectedKey && !openEntry) setSelectedKey(null);
+  }, [selectedKey, openEntry]);
+
+  /**
+   * Guarda el día editado. Es el mismo `handleSave` del calendario: un día sin
+   * marca, ni nota, ni imagen, ni aviso no se guarda —se borra—, y ahí es donde
+   * hace falta poder deshacer.
+   */
+  const handleSave = useCallback(
+    (key: string, entry: DayEntry) => {
+      const removes = !hasContent(entry);
+      const snapshot = data;
+
+      setData((current) => {
+        const next = { ...current };
+        if (removes) delete next[key];
+        else next[key] = entry;
+        return next;
+      });
+
+      setNotice(
+        removes && snapshot[key] ? { message: `Se borró ${formatLongDate(key)}.`, snapshot } : null,
+      );
+      setSelectedKey(null);
+    },
+    [data, setData],
+  );
+
+  const handleClear = useCallback(
+    (key: string) => {
+      const snapshot = data;
+      setData((current) => {
+        const next = { ...current };
+        delete next[key];
+        return next;
+      });
+      if (snapshot[key]) setNotice({ message: `Se borró ${formatLongDate(key)}.`, snapshot });
+      setSelectedKey(null);
+    },
+    [data, setData],
+  );
+
+  /**
+   * Mueve el día a la fecha que se haya elegido en el modal.
+   *
+   * Un día vaciado se borra aunque además se le haya cambiado la fecha: no hay
+   * nada que mudar, y recrearlo en el destino dejaría un día en blanco. El
+   * resto lo hace `moveDay`, que es quien sabe rehacer el aviso con la fecha
+   * nueva; aquí solo queda contarlo y dejar deshacerlo, porque el destino pudo
+   * tener contenido y lo pierde.
+   */
+  const handleMove = useCallback(
+    (from: string, to: string, entry: DayEntry) => {
+      if (!hasContent(entry)) {
+        handleSave(from, entry);
+        return;
+      }
+
+      const snapshot = data;
+      const replaces = Boolean(data[to]);
+      setData((current) => moveDay(current, from, to, entry));
+      setSelectedKey(null);
+      setNotice({
+        message: replaces
+          ? `El día se movió al ${formatLongDate(to)} y sustituyó lo que había.`
+          : `El día se movió al ${formatLongDate(to)}.`,
+        snapshot,
+      });
+    },
+    [data, setData, handleSave],
+  );
+
+  const handleUndo = useCallback(() => {
+    if (!notice?.snapshot) return;
+    setData(notice.snapshot);
+    setNotice(null);
+  }, [notice, setData]);
+
+  /**
+   * Pide los adjuntos de un día al servidor, igual que en el calendario: no
+   * viajan con el día, así que un dispositivo recién estrenado abre la nota
+   * sabiendo cuántas imágenes tiene y sin ninguna dentro.
+   */
+  const loadImages = useCallback(
+    async (key: string) => {
+      const images = await fetchImages(key);
+      if (!images) return;
+      adopt(storeImages(key, images));
+    },
+    [adopt],
+  );
+
+  const hasDay = useCallback((key: string) => Boolean(data[key]), [data]);
+
+  const handleSelect = useCallback((key: string, event: React.MouseEvent<HTMLElement>) => {
+    triggerRef.current = event.currentTarget;
+    setSelectedKey(key);
   }, []);
 
   const summary = useMemo(() => {
@@ -126,9 +262,66 @@ export default function AgendaView({ user }: { user: NavUser }) {
         {!hydrated ? (
           <div className="min-h-64" aria-busy="true" />
         ) : (
-          <AgendaList data={data} labels={labels} today={today} />
+          <AgendaList data={data} labels={labels} today={today} onSelect={handleSelect} />
         )}
       </main>
+
+      {notice && (
+        // Bajo el modal (z-50) y sin capturar el cursor salvo en la tarjeta: la
+        // banda ocupa todo el ancho y bloquearía lo que haya debajo.
+        <div
+          role="status"
+          className="animate-panel-in print-hidden pointer-events-none fixed inset-x-0 bottom-6 z-40 flex justify-center px-4"
+        >
+          <div className="pointer-events-auto flex flex-wrap items-center gap-3 rounded-xl bg-ink px-4 py-3 text-sm text-canvas shadow-2xl">
+            <span>{notice.message}</span>
+            {notice.snapshot && (
+              <button
+                type="button"
+                onClick={handleUndo}
+                className="rounded-lg bg-canvas/15 px-3 py-1 text-sm font-semibold transition-colors hover:bg-canvas/25 focus-visible:ring-2 focus-visible:ring-canvas focus-visible:outline-none"
+              >
+                Deshacer
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setNotice(null)}
+              aria-label="Descartar aviso"
+              className="rounded-lg p-1 text-canvas/70 transition-colors hover:text-canvas focus-visible:ring-2 focus-visible:ring-canvas focus-visible:outline-none"
+            >
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path
+                  d="M4 4l8 8M12 4l-8 8"
+                  stroke="currentColor"
+                  strokeWidth="1.75"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* El modal del día, el mismo de la rejilla. Aquí se le encienden dos
+          cosas que allí no tendrían sentido: el campo de fecha —en una lista la
+          fecha es un dato del día, no el sitio donde está— y el enlace a la
+          rejilla, para ver el día con su mes alrededor. */}
+      {selectedKey && openEntry && (
+        <DayModal
+          dateKey={selectedKey}
+          entry={openEntry}
+          labels={labels}
+          onNeedImages={loadImages}
+          onSave={handleSave}
+          onClear={handleClear}
+          onMove={handleMove}
+          hasDay={hasDay}
+          showCalendarLink
+          triggerRef={triggerRef}
+          onClose={() => setSelectedKey(null)}
+        />
+      )}
     </>
   );
 }

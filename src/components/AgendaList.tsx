@@ -1,5 +1,5 @@
 import { useId, useMemo, useState } from 'react';
-import { dayHref, dayTimeState, formatLongDate, formatWeekday } from '../lib/calendar';
+import { dayTimeState, formatLongDate, formatWeekday } from '../lib/calendar';
 import { colorHex, DAY_COLORS, DEFAULT_COLOR, type ColorId } from '../lib/palette';
 import { hasCustomLabel, labelFor, type ColorLabels } from '../lib/labels';
 import ReminderChip from './ReminderChip';
@@ -20,6 +20,11 @@ type Props = {
   labels: ColorLabels;
   /** Clave `YYYY-MM-DD` de hoy; vacía hasta que el cliente hidrata. */
   today: string;
+  /**
+   * Abre el día para editarlo. Se pasa el botón pulsado para que el foco pueda
+   * volver a esta misma fila al cerrarse el modal.
+   */
+  onSelect: (key: string, event: React.MouseEvent<HTMLElement>) => void;
 };
 
 const CHIP =
@@ -50,12 +55,14 @@ const IDLE = ' border-edge bg-raised text-ink-soft hover:bg-edge';
  * (notas o recordatorios), el color y el pasado. Todos son una lente sobre la
  * lista, no un ajuste del calendario: viven aquí y se olvidan al recargar.
  *
- * Cada fila es un **enlace** al día en el calendario, no un botón que abra nada
- * aquí. Es el mismo camino que "Ver nota" en la galería y "Ver en el calendario"
- * en los recordatorios: editar un día entero es cosa de su modal, y ese vive
- * donde está la rejilla.
+ * Cada fila **abre el día aquí mismo**, en el modal de la página. Antes era un
+ * enlace a `/?day=…`, y eso costaba caro: buscar «médico», pulsar un resultado
+ * y aparecer en la portada dejaba atrás lo tecleado, los filtros y el sitio de
+ * la lista, que había que rehacer a mano para seguir repasando. El modal es el
+ * mismo que el de la rejilla, así que se puede hacer lo mismo sin salir; para
+ * ver el día con su mes alrededor, el modal lleva su propio enlace.
  */
-export default function AgendaList({ data, labels, today }: Props) {
+export default function AgendaList({ data, labels, today, onSelect }: Props) {
   // Un solo instante para toda la lista: pedir la hora por fila daría estados
   // distintos dentro del mismo repintado.
   const now = Date.now();
@@ -242,9 +249,10 @@ export default function AgendaList({ data, labels, today }: Props) {
 
             return (
               <li key={key}>
-                <a
-                  href={dayHref(key)}
-                  aria-label={`Ver ${formatWeekday(key)} ${formatLongDate(key)} en el calendario`}
+                <button
+                  type="button"
+                  onClick={(event) => onSelect(key, event)}
+                  aria-label={`Editar ${formatWeekday(key)} ${formatLongDate(key)}`}
                   className={
                     'flex w-full items-start gap-3 rounded-lg px-2 py-3 text-left transition ' +
                     'hover:bg-raised focus-visible:ring-2 focus-visible:ring-accent ' +
@@ -320,7 +328,7 @@ export default function AgendaList({ data, labels, today }: Props) {
                       )}
                     </span>
                   )}
-                </a>
+                </button>
               </li>
             );
           })}

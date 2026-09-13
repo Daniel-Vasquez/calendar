@@ -68,10 +68,9 @@ const SENT_FORMAT: Intl.DateTimeFormatOptions = {
 function stateLine(reminder: Reminder, now: number): string {
   switch (reminderState(reminder, now)) {
     case 'done':
-      // Se marca desde la lista de recordatorios, no desde aquí; lo que hace
-      // falta es que al abrir el día no parezca que el aviso sigue vivo. Y que
-      // se sepa que tocar la hora o el texto lo devuelve a pendiente, porque
-      // eso es justo lo que hace `makeReminder`.
+      // Lo que hace falta es que al abrir el día no parezca que el aviso sigue
+      // vivo, y que se sepa que tocar la hora o el texto lo devuelve a
+      // pendiente, porque eso es justo lo que hace `makeReminder`.
       return 'Lo diste por hecho, así que no se enviará. Cambiar la hora o el texto lo reactiva.';
     case 'sent':
       return `Enviado el ${new Date(reminder.sent ?? reminder.at).toLocaleString('es', SENT_FORMAT)}.`;
@@ -146,6 +145,19 @@ export default function ReminderField({
         ? (makeReminder(dateKey, nextTime, nextText, value) ?? undefined)
         : undefined,
     );
+  }
+
+  /**
+   * Da el aviso por hecho, o lo devuelve a pendiente.
+   *
+   * No pasa por `makeReminder` a propósito, igual que `withDone` en la lista de
+   * recordatorios: ese recalcula el instante y suelta `sent`, y dar algo por
+   * hecho no mueve ninguna de las dos cosas. Es el único campo que cambia.
+   */
+  function toggleDone(done: boolean) {
+    if (!value) return;
+    const { done: _previo, ...rest } = value;
+    onChange(done ? { ...rest, done: Date.now() } : rest);
   }
 
   function toggle(next: boolean) {
@@ -244,6 +256,35 @@ export default function ReminderField({
                 : `Sin texto se manda la nota: «${placeholder}». Llega por Telegram a la hora que pongas.`}
             </p>
           </div>
+
+          {/* Hecho o pendiente. Solo con un aviso en pie: sin hora válida no hay
+              `value`, y no se puede dar por hecho lo que todavía no existe.
+              Estaba únicamente en la lista de recordatorios, que obligaba a
+              salir del día para tachar lo que se acababa de leer aquí. */}
+          {value && (
+            <label className="flex w-fit cursor-pointer items-center gap-2">
+              <input
+                type="checkbox"
+                checked={Boolean(value.done)}
+                onChange={(event) => toggleDone(event.target.checked)}
+                className="peer sr-only"
+              />
+              {/* El visto se oculta con `text-transparent`, como en la lista:
+                  pintarlo del color del fondo lo dejaría visible en oscuro. */}
+              <span className="flex h-5 w-5 items-center justify-center rounded-md border border-edge bg-raised text-transparent transition-colors peer-checked:border-accent peer-checked:bg-accent peer-checked:text-white peer-focus-visible:ring-2 peer-focus-visible:ring-accent peer-focus-visible:ring-offset-2">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+                  <path
+                    d="M2.5 6.3l2.4 2.4L9.6 4"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </span>
+              <span className="text-xs font-medium text-ink-soft">Dado por hecho</span>
+            </label>
+          )}
 
           {/* El caso callado: la hora se guarda, el cron encuentra el aviso y
               no tiene a dónde mandarlo. Sin este texto, la única señal es que

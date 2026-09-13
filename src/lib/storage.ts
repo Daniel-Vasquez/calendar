@@ -1,6 +1,6 @@
 import { DEFAULT_COLOR, isColorId, type ColorId } from './palette';
 import { isImageDataUrl, isThumb, MAX_IMAGES_PER_DAY } from './image';
-import { sanitizeReminder, type Reminder } from './reminder';
+import { makeReminder, sanitizeReminder, type Reminder } from './reminder';
 
 export const STORAGE_KEY = 'calendar_2026_q4_data';
 
@@ -35,6 +35,43 @@ export type DayEntry = {
  */
 export function hasContent(entry: DayEntry): boolean {
   return entry.marked || Boolean(entry.note) || hasImages(entry) || Boolean(entry.reminder);
+}
+
+/**
+ * Mueve un día entero a otra fecha: la marca, el color, la nota, los adjuntos
+ * y el aviso se van con él, y el de origen desaparece.
+ *
+ * Lo usa la agenda, donde la fecha es un campo más del día y no un sitio en la
+ * rejilla. El día que se mueve llega ya editado —es el borrador del modal—, así
+ * que mover y guardar son un solo paso y no dos.
+ *
+ * Dos reglas que no se pueden olvidar:
+ *
+ * 1. **El aviso se rehace con la fecha nueva.** Un recordatorio guarda el
+ *    instante absoluto de su día (ver `reminder.ts`); arrastrarlo tal cual
+ *    dejaría el aviso sonando en la fecha de la que se acaba de salir.
+ *    `makeReminder` recalcula ese instante y de paso suelta `sent` y `done`,
+ *    que es lo correcto: en el día nuevo está por sonar y por hacer.
+ * 2. **Si el destino ya tenía algo, lo pierde.** Un día es una clave y solo
+ *    cabe uno; quien llama avisa antes y ofrece deshacer. Ver `AgendaView`.
+ *
+ * Un día que se ha quedado sin contenido no se recrea en el destino: vaciarlo
+ * es borrarlo, se mueva o no.
+ */
+export function moveDay(
+  data: CalendarData,
+  from: string,
+  to: string,
+  entry: DayEntry,
+): CalendarData {
+  const next = { ...data };
+  delete next[from];
+  if (!hasContent(entry)) return next;
+
+  const { reminder: previous, ...rest } = entry;
+  const reminder = previous ? makeReminder(to, previous.time, previous.text ?? '') : null;
+  next[to] = { ...rest, ...(reminder ? { reminder } : {}) };
+  return next;
 }
 
 /** Cuántas imágenes tiene la nota, las tenga descargadas o no este navegador. */
