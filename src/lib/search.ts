@@ -1,5 +1,5 @@
-import { formatLongDate, formatWeekday } from './calendar';
-import { labelFor, type ColorPalette } from './palette';
+import { dayTimeState, formatLongDate, formatWeekday } from './calendar';
+import { DEFAULT_COLOR, labelFor, type ColorId, type ColorPalette } from './palette';
 import { hasImages, type CalendarData, type DayEntry } from './storage';
 import { labelOf, type Tag } from './tags';
 
@@ -125,4 +125,41 @@ export function matchesQuery(haystack: string | undefined, tokens: string[]): bo
   if (tokens.length === 0) return true;
   if (!haystack) return false;
   return tokens.every((token) => haystack.includes(token));
+}
+
+/**
+ * La lente de la agenda **menos el tipo**: lo buscado, la etiqueta, el color y
+ * el pasado.
+ *
+ * El tipo se queda fuera a propósito, y no es un descuido: de este resultado
+ * salen las cuentas de las pestañas —«Recordatorios 2»—, que tienen que
+ * responder «cuántos avisos hay entre lo que estoy mirando», no «cuántos
+ * quedan después de elegir una pestaña», que sería siempre el total de esa
+ * pestaña o cero.
+ *
+ * Los cuatro se cumplen a la vez: buscar «entrenamiento» con la etiqueta
+ * «Ejercicio» puesta deja los días que cumplen las dos cosas.
+ */
+export type AgendaLens = {
+  tokens: string[];
+  /** Un color, o `all`. Un día sin marcar no tiene color y no pasa el filtro. */
+  color: ColorId | 'all';
+  /** Una etiqueta —por su `slug`—, o `all`. */
+  tag: string | 'all';
+  hidePast: boolean;
+};
+
+export function matchesLens(
+  key: string,
+  entry: DayEntry,
+  lens: AgendaLens,
+  haystack: string | undefined,
+  today: string,
+): boolean {
+  if (lens.hidePast && dayTimeState(key, today) === 'past') return false;
+  if (lens.color !== 'all') {
+    if (!entry.marked || (entry.color ?? DEFAULT_COLOR) !== lens.color) return false;
+  }
+  if (lens.tag !== 'all' && !entry.tags?.includes(lens.tag)) return false;
+  return matchesQuery(haystack, lens.tokens);
 }

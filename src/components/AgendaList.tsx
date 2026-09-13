@@ -11,13 +11,13 @@ import {
 } from '../lib/palette';
 import ReminderChip from './ReminderChip';
 import { TagBadges } from './TagChips';
-import type { Tag } from '../lib/tags';
+import { labelOf, type Tag } from '../lib/tags';
 import {
   AGENDA_TYPES,
   buildSearchIndex,
   hasNote,
   hasReminder,
-  matchesQuery,
+  matchesLens,
   matchesType,
   tokenize,
   type AgendaType,
@@ -62,9 +62,10 @@ const IDLE = ' border-edge bg-raised text-ink-soft hover:bg-edge';
  * fuera el resto de la página. Ahora tiene página, así que se la deja crecer: ni
  * marco, ni título propio —el de la página ya lo dice— ni alto máximo.
  *
- * Los filtros son cuatro y se combinan entre sí: el texto buscado, el tipo
- * (notas o recordatorios), el color y el pasado. Todos son una lente sobre la
- * lista, no un ajuste del calendario: viven aquí y se olvidan al recargar.
+ * Los filtros son cinco y se combinan entre sí: el texto buscado, el tipo
+ * (notas o recordatorios), la etiqueta, el color y el pasado. Todos son una
+ * lente sobre la lista, no un ajuste del calendario: viven aquí y se olvidan al
+ * recargar.
  *
  * Cada fila **abre el día aquí mismo**, en el modal de la página. Antes era un
  * enlace a `/?day=…`, y eso costaba caro: buscar «médico», pulsar un resultado
@@ -81,6 +82,8 @@ export default function AgendaList({ data, palette, catalogue, today, onSelect }
   const [query, setQuery] = useState('');
   const [type, setType] = useState<AgendaType>('all');
   const [colorFilter, setColorFilter] = useState<ColorId | 'all'>('all');
+  /** Una etiqueta cada vez, como el color: volver a pulsarla vuelve a «Todas». */
+  const [tagFilter, setTagFilter] = useState<string | 'all'>('all');
   const [hidePast, setHidePast] = useState(false);
 
   // `YYYY-MM-DD` es de ancho fijo: ordenar como texto ya da el orden cronológico.
@@ -100,6 +103,37 @@ export default function AgendaList({ data, palette, catalogue, today, onSelect }
     [allKeys, data],
   );
 
+  /**
+   * Solo las etiquetas que alguien ha usado, igual que con los colores:
+   * ofrecer una que no lleva ningún día solo sirve para vaciar la lista.
+   *
+   * Van en el orden del catálogo, y al final las que él ya no conoce —se
+   * borraron, o llegaron de otro dispositivo—, que se siguen pudiendo filtrar
+   * porque los días las siguen llevando. Ver `labelOf` en `tags.ts`.
+   */
+  const usedTags = useMemo(() => {
+    const seen = new Set<string>();
+    for (const key of allKeys) for (const slug of data[key].tags ?? []) seen.add(slug);
+
+    const known = catalogue.filter((tag) => seen.has(tag.slug)).map((tag) => tag.slug);
+    const unknown = [...seen].filter((slug) => !known.includes(slug)).sort();
+    return [...known, ...unknown];
+  }, [allKeys, data, catalogue]);
+
+  /**
+   * Un filtro puesto sobre algo que ya no existe se suelta.
+   *
+   * Pasa de verdad: se borra la etiqueta en Ajustes —o se le quita al último
+   * día que la llevaba, o se desmarca el último día de un color— y el chip
+   * desaparece mientras el filtro sigue puesto. La lista se quedaría vacía sin
+   * nada encendido que explicara por qué. Ajustar el estado aquí, y no en un
+   * efecto, evita pintar ese cuadro intermedio.
+   */
+  if (tagFilter !== 'all' && !usedTags.includes(tagFilter)) setTagFilter('all');
+  if (colorFilter !== 'all' && !usedColors.some((color) => color.id === colorFilter)) {
+    setColorFilter('all');
+  }
+
   // El texto buscable se arma una vez por calendario, no una vez por tecla:
   // quitarle tildes a trescientos días en cada pulsación se nota al escribir.
   const index = useMemo(() => buildSearchIndex(data, palette, catalogue), [data, palette, catalogue]);
@@ -113,18 +147,10 @@ export default function AgendaList({ data, palette, catalogue, today, onSelect }
    * con "médico" escrito, "Recordatorios 2" dice cuántos avisos coinciden con
    * lo buscado, que es la pregunta que se está haciendo en ese momento.
    */
-  const base = useMemo(
-    () =>
-      allKeys.filter((key) => {
-        const entry = data[key];
-        if (hidePast && dayTimeState(key, today) === 'past') return false;
-        if (colorFilter !== 'all') {
-          if (!entry.marked || (entry.color ?? DEFAULT_COLOR) !== colorFilter) return false;
-        }
-        return matchesQuery(index[key], tokens);
-      }),
-    [allKeys, data, hidePast, today, colorFilter, index, tokens],
-  );
+  const base = useMemo(() => {
+    const lens = { tokens, color: colorFilter, tag: tagFilter, hidePast };
+    return allKeys.filter((key) => matchesLens(key, data[key], lens, index[key], today));
+  }, [allKeys, data, hidePast, today, colorFilter, tagFilter, index, tokens]);
 
   const counts = useMemo(
     () => ({
@@ -141,12 +167,13 @@ export default function AgendaList({ data, palette, catalogue, today, onSelect }
   );
 
   const filtering =
-    tokens.length > 0 || type !== 'all' || colorFilter !== 'all' || hidePast;
+    tokens.length > 0 || type !== 'all' || colorFilter !== 'all' || tagFilter !== 'all' || hidePast;
 
   function clearFilters() {
     setQuery('');
     setType('all');
     setColorFilter('all');
+    setTagFilter('all');
     setHidePast(false);
   }
 
@@ -195,6 +222,47 @@ export default function AgendaList({ data, palette, catalogue, today, onSelect }
               </button>
             )}
           </div>
+
+          {/* Las etiquetas, pegadas a las pestañas porque es el filtro que más se
+              usa después del tipo. Envuelven en vez de irse en un carrusel
+              horizontal: un carrusel deja chips fuera de la pantalla sin nada
+              que lo anuncie, y aquí solo salen las que algún día lleva puestas,
+              que son pocas. */}
+          {usedTags.length > 0 && (
+            <div
+              role="group"
+              aria-label="Filtrar por etiqueta"
+              className="flex flex-wrap items-center gap-2"
+            >
+              <span className="text-xs font-medium text-ink-muted">Etiqueta</span>
+
+              <button
+                type="button"
+                aria-pressed={tagFilter === 'all'}
+                onClick={() => setTagFilter('all')}
+                className={CHIP + (tagFilter === 'all' ? ACTIVE : IDLE)}
+              >
+                Todas
+              </button>
+
+              {usedTags.map((slug) => {
+                const active = tagFilter === slug;
+                return (
+                  <button
+                    key={slug}
+                    type="button"
+                    aria-pressed={active}
+                    // Volver a pulsar la que ya está puesta la suelta: es el
+                    // mismo gesto que en los colores, y ahorra ir a «Todas».
+                    onClick={() => setTagFilter(active ? 'all' : slug)}
+                    className={CHIP + (active ? ACTIVE : IDLE)}
+                  >
+                    {labelOf(catalogue, slug)}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {usedColors.length > 1 && (
             <div role="group" aria-label="Filtrar por color" className="flex flex-wrap items-center gap-2">
@@ -246,7 +314,12 @@ export default function AgendaList({ data, palette, catalogue, today, onSelect }
       {allKeys.length === 0 ? (
         <EmptyState />
       ) : keys.length === 0 ? (
-        <NoResults query={query.trim()} type={type} onClear={filtering ? clearFilters : undefined} />
+        <NoResults
+          query={query.trim()}
+          type={type}
+          tag={tagFilter === 'all' ? '' : labelOf(catalogue, tagFilter)}
+          onClear={filtering ? clearFilters : undefined}
+        />
       ) : (
         <ul className="divide-y divide-edge rounded-2xl border border-edge bg-surface px-2 shadow-sm sm:px-3">
           {keys.map((key) => {
@@ -433,14 +506,21 @@ function SearchField({ value, onChange }: { value: string; onChange: (value: str
 function NoResults({
   query,
   type,
+  tag,
   onClear,
 }: {
   query: string;
   type: AgendaType;
+  /** Rótulo de la etiqueta puesta, o vacío si no hay ninguna. */
+  tag: string;
   onClear?: () => void;
 }) {
   const typeLabel =
     type === 'notes' ? 'notas' : type === 'reminders' ? 'recordatorios' : '';
+  /** «con recordatorios y la etiqueta Trabajo», ya montado para la frase. */
+  const what = [typeLabel ? `con ${typeLabel}` : '', tag ? `con la etiqueta «${tag}»` : '']
+    .filter(Boolean)
+    .join(' y ');
 
   return (
     <div className="flex flex-col items-center rounded-2xl border border-dashed border-edge bg-surface px-6 py-12 text-center">
@@ -453,12 +533,12 @@ function NoResults({
       <p className="mt-2 max-w-sm text-sm text-ink-soft" aria-live="polite">
         {query ? (
           <>
-            Ningún día {typeLabel ? `con ${typeLabel} ` : ''}coincide con{' '}
+            Ningún día {what ? `${what} ` : ''}coincide con{' '}
             <span className="font-medium text-ink">«{query}»</span>. Prueba con otra palabra o
             con una fecha, como «marzo» o «15/03».
           </>
-        ) : typeLabel ? (
-          `No hay ningún día con ${typeLabel} entre los que deja ver el filtro.`
+        ) : what ? (
+          `No hay ningún día ${what} entre los que deja ver el filtro.`
         ) : (
           'Ningún día coincide con el filtro.'
         )}

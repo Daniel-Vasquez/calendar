@@ -95,7 +95,10 @@ MongoDB es la fuente de verdad, pero **no** el camino crítico.
   encuentra «MÉDICO»— y combina palabras con *Y*: «medico marzo» estrecha en vez
   de ampliar.
 - **Pestañas** por tipo (todos / notas / recordatorios) con sus recuentos, filtro
-  por color y un interruptor para ocultar los días pasados.
+  por etiqueta, filtro por color y un interruptor para ocultar los días pasados.
+  Los cinco se combinan: «entrenamiento» + Recordatorios + Ejercicio deja los
+  días que cumplen las tres cosas. Solo se ofrecen las etiquetas y los colores
+  que algún día lleva puestos, porque filtrar por uno vacío solo vacía la lista.
 - **Edición in situ**: pulsar una fila abre el modal del día sobre la propia
   agenda, sin perder lo tecleado, los filtros ni el sitio en la lista. Desde ahí
   se puede incluso **mover el día entero a otra fecha**.

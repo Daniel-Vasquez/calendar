@@ -776,6 +776,20 @@ nada que los distinga. Por eso el modal rápido pregunta por el día **elegido**
 no por el de origen, igual que ya hacía con la nota: mover el aviso a otra fecha
 enseña —y escribe— las de esa fecha.
 
+La agenda **filtra por ellas**, y el filtro vive donde vivían los otros cuatro:
+dentro de la base de la que salen las cuentas de las pestañas, no después. Así
+«Recordatorios 2» sigue contestando a «cuántos avisos hay entre lo que estoy
+mirando» con la etiqueta ya puesta, que es la pregunta del momento; contarlos
+después de elegir pestaña daría siempre el total de esa pestaña o cero.
+
+Los cinco se cumplen a la vez —texto, tipo, etiqueta, color y pasado—, así que la
+regla dejó de ser un `filter` en el componente y se fue a `matchesLens`, en
+`search.ts`, donde se puede probar sin pintar nada. Y un filtro puesto sobre algo
+que ya no existe se suelta solo: borrar la etiqueta en Ajustes, o quitársela al
+último día que la llevaba, hacía desaparecer el chip dejando el filtro puesto, y
+la lista se quedaba vacía sin nada encendido que explicara por qué. Le pasaba
+igual al color desde que existe.
+
 Donde no se ven es en la casilla del calendario. No cabe: son cuarenta píxeles
 que ya llevan el color, el punto de la nota, la campana del aviso y el aro de
 hoy. Se ven en la agenda, en las tarjetas de recordatorio y dentro del día.
