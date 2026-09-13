@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { olvidarEstadoTelegram } from './ReminderField';
 
 /**
  * Vincular Telegram para recibir los recordatorios.
@@ -106,6 +107,9 @@ export default function TelegramSettings() {
       }
 
       if (body.connected) {
+        // El campo del recordatorio cachea si hay chat vinculado, y lo que
+        // tuviera guardado acaba de dejar de ser cierto.
+        olvidarEstadoTelegram();
         setStatus({ configured: true, connected: true, ...(body.name ? { name: body.name } : {}) });
         setNote({ kind: 'ok', text: 'Conectado. Te he mandado un mensaje para confirmarlo.' });
       } else {
@@ -127,6 +131,7 @@ export default function TelegramSettings() {
         setNote({ kind: 'bad', text: await failureOf(response) });
         return;
       }
+      olvidarEstadoTelegram();
       setStatus({ configured: true, connected: false });
       setLinkUrl('');
       await mintLink();

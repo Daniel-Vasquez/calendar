@@ -20,11 +20,34 @@ type Props = {
 const DEFAULT_TIME = '09:00';
 
 /**
- * Mientras no exista la tanda 6 el aviso se guarda pero no sale. Decirlo aquí
- * cuesta una línea y evita que alguien confíe en un mensaje que no va a llegar.
+ * ¿Hay un Telegram conectado en esta cuenta?
+ *
+ * Se pregunta una vez por carga de página y se guarda aquí a propósito: el
+ * modal se abre y se cierra decenas de veces mientras se planifica un mes, y la
+ * respuesta no cambia entre una vez y la siguiente.
+ *
+ * Un fallo **no** se cachea: si la red falla una vez, la siguiente vuelve a
+ * preguntar en lugar de quedarse avisando en falso para siempre.
  */
-const NOT_WIRED =
-  'De momento el aviso solo queda guardado: el envío llega en la próxima tanda.';
+let telegramConectado: boolean | null = null;
+
+/** Lo llama el panel de ajustes al vincular o desvincular. Ver `TelegramSettings`. */
+export function olvidarEstadoTelegram(): void {
+  telegramConectado = null;
+}
+
+async function hayTelegram(): Promise<boolean> {
+  if (telegramConectado !== null) return telegramConectado;
+  try {
+    const response = await fetch('/api/telegram', { headers: { accept: 'application/json' } });
+    if (!response.ok) return false;
+    const body = (await response.json()) as { connected?: boolean };
+    telegramConectado = Boolean(body.connected);
+    return telegramConectado;
+  } catch {
+    return false;
+  }
+}
 
 const FIELD =
   'w-full rounded-xl border border-edge bg-white px-4 py-2.5 text-sm text-ink ' +
@@ -77,6 +100,8 @@ export default function ReminderField({
   const [on, setOn] = useState(Boolean(value));
   const [time, setTime] = useState(value?.time ?? '');
   const [text, setText] = useState(value?.text ?? '');
+  /** Sin chat vinculado el aviso se guarda y no llega a ninguna parte. */
+  const [sinDestino, setSinDestino] = useState(false);
   const timeId = useId();
   const textId = useId();
 
@@ -90,6 +115,22 @@ export default function ReminderField({
     // porque cada pulsación devuelve un `Reminder` nuevo desde el modal.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateKey]);
+
+  // Solo se pregunta con el aviso encendido: a quien no pone recordatorios no
+  // hay que contarle nada de Telegram.
+  useEffect(() => {
+    if (!on) {
+      setSinDestino(false);
+      return;
+    }
+    let alive = true;
+    void hayTelegram().then((listo) => {
+      if (alive) setSinDestino(!listo);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [on]);
 
   /**
    * Sube el cambio al modal. Una hora a medias —o ninguna— no es un aviso: se
@@ -195,10 +236,20 @@ export default function ReminderField({
             />
             <p className="mt-1.5 text-xs text-ink-muted">
               {text.trim()
-                ? NOT_WIRED
-                : `Sin texto se manda la nota: «${placeholder}». ${NOT_WIRED}`}
+                ? 'Se manda por Telegram a la hora que pongas.'
+                : `Sin texto se manda la nota: «${placeholder}». Llega por Telegram a la hora que pongas.`}
             </p>
           </div>
+
+          {/* El caso callado: la hora se guarda, el cron encuentra el aviso y
+              no tiene a dónde mandarlo. Sin este texto, la única señal es que
+              nunca suena. */}
+          {sinDestino && (
+            <p className="text-xs font-medium text-highlight">
+              No tienes Telegram conectado, así que este aviso no llegará a
+              ninguna parte. Se conecta en Ajustes, en un minuto.
+            </p>
+          )}
 
           {!isTime(time) && (
             <p role="alert" className="text-xs font-medium text-highlight">
