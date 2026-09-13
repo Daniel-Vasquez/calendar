@@ -1,8 +1,8 @@
 # Planificador 2026
 
 Calendario anual —2026 y 2027, un año a la vista— con notas, colores, imágenes
-adjuntas y recordatorios diarios por Telegram. Astro + React, MongoDB Atlas,
-desplegado en Vercel; las imágenes van camino de Cloudinary (tanda 8).
+adjuntas y recordatorios diarios por Telegram. Astro + React, MongoDB Atlas y
+Cloudinary para los adjuntos, desplegado en Vercel.
 
 **En producción:** <https://planificador.danielvasquez.lat>
 · estado: <https://planificador.danielvasquez.lat/api/health>
@@ -64,9 +64,13 @@ middleware ───────────────────────
 | `src/lib/telegram.ts` | El bot: enviar, leer `getUpdates`, clasificar fallos |
 | `src/pages/api/telegram.ts` | Vincular, comprobar, probar y desvincular |
 | `src/pages/api/cron/reminders.ts` | Lo dispara el programador externo |
-| `src/lib/image.ts` | Redimensionado, compresión y miniaturas |
+| `src/lib/image.ts` | Redimensionado y compresión antes de subir; y de qué `src` sale cada imagen |
+| `src/lib/cloudinary.ts` | El almacén de los bytes: sube, renombra, borra y firma. Solo servidor |
+| `src/lib/gallery.ts` | Reúne las imágenes del año y da la vista previa de un día |
 | `src/pages/api/days.ts` | Lectura y subida por lotes de días |
 | `src/pages/api/images.ts` | Una imagen por petición; recorte de cola |
+| `src/pages/api/images/raw.ts` | El proxy: valida la sesión, firma y sirve los bytes |
+| `scripts/migrate-images.mjs` | Llevó a Cloudinary los adjuntos que estaban en Mongo |
 | `src/pages/api/health.ts` | ¿Alcanza la función desplegada a Atlas? |
 | `src/components/SyncBadge.tsx` | «Al día» / «Guardando…» / «N sin subir» |
 | `src/components/Fold.tsx` | Una sección plegable de los ajustes; quién está abierta lo decide el panel |
@@ -77,10 +81,10 @@ middleware ───────────────────────
 | Colección | Contenido | Índice |
 |---|---|---|
 | `user` `session` `account` | Las crea Better Auth. Tu nombre vive en `user` | propios |
-| `days` | Un día por usuario: marca, nota, color, `imageCount`, `thumb`, `reminder`, `tags` | `{userId, key}` único |
+| `days` | Un día por usuario: marca, nota, color, `imageCount`, `thumb` —el testigo de la primera imagen, no la imagen—, `reminder`, `tags` | `{userId, key}` único |
 | `settings` | Ajustes que no son de este dispositivo: hoy, el chat de Telegram | `{userId}` único |
 | `allowlist` | Qué correos pueden **crearse** una cuenta. No afecta a quien ya la tiene | `{email}` único |
-| `images` | Una imagen por documento, con su posición. Hoy guarda la imagen entera como data URL; la tanda 8 deja aquí solo la referencia a Cloudinary | `{userId, key, index}` único |
+| `images` | Una imagen por documento, con su posición. **Aquí no hay bytes**: solo el `publicId`, la `version` y el `etag` de lo que guarda Cloudinary | `{userId, key, index}` único |
 
 `userId` se guarda como **ObjectId**, no como cadena.
 
@@ -157,7 +161,9 @@ tumbarían el sitio por una función accesoria.
 | `TELEGRAM_BOT_USERNAME` | El `@algo_bot`. No es secreto: va dentro del enlace |
 | `CRON_SECRET` | Cabecera que autoriza `POST /api/cron/reminders` |
 
-Las que traerá la tanda 8, todas de servidor y todas `secret`:
+Las de Cloudinary son **obligatorias** como las primeras, no opcionales como
+las de Telegram: sin ellas no se puede ni guardar un adjunto ni enseñar uno ya
+guardado. Todas de servidor y todas `secret`:
 
 | Variable | Nota |
 |---|---|
@@ -241,6 +247,8 @@ cuerpo de una función de Vercel.
 La miniatura se genera al subir el conjunto, no al adjuntar: es el momento en
 que se sabe que ya no va a cambiar. Localmente la agenda usa la imagen completa
 que ya tiene, así que la miniatura existe solo para los demás dispositivos.
+*(La tanda 8 se quedó con el momento y cambió el contenido: donde había un
+base64 hay ahora el testigo de una derivada.)*
 
 **Guardar nunca borra adjuntos que no están descargados.** Abrir un día en el
 móvil antes de que lleguen sus imágenes y pulsar Guardar habría mandado
@@ -413,8 +421,9 @@ calendario, salen solos y llegan a Telegram sin que nadie toque nada.
 
 #### `/recordatorios`
 
-Va sin número a propósito: la tanda 8 —las imágenes en Cloudinary— sigue sin
-hacerse, y numerar esta como la 9 daría a entender que sí.
+Va sin número a propósito: cuando se hizo, la tanda 8 —las imágenes en
+Cloudinary— seguía sin hacerse, y numerar esta como la 9 habría dado a entender
+que sí. Llegó después, y esta se quedó sin número.
 
 Tercera pregunta que el proyecto no sabía contestar. La rejilla responde a «¿qué
 pasa este día?» y la agenda a «¿qué tengo por delante?»; faltaba «¿qué me queda
@@ -940,167 +949,170 @@ marcado, cuál lleva nota y qué hace Shift+clic: se aprende una vez y ocupaba s
 todos los días al pie de la portada. Va fuera del acordeón, fija, porque no es un
 ajuste sino la chuleta de lo que se ve en la rejilla. En su hueco quedó la firma.
 
-## Lo que falta
+---
 
-### Tanda 8 · Multimedia en Cloudinary
+### Las imágenes se mudan a Cloudinary — tanda 8, septiembre de 2026
 
-La tanda 4 sacó las imágenes del documento del día, pero los bytes siguen en
-Atlas y una copia completa sigue en `localStorage`. Eso deja tres techos a la
+La tanda 4 sacó las imágenes del documento del día, pero los bytes seguían en
+Atlas y una copia completa seguía en `localStorage`. Eso dejaba tres techos a la
 vez: la cuota del navegador, el tope de 4,5 MB del cuerpo de una función y la
-miniatura en base64 que baja con cada día. Cloudinary se queda con los bytes;
-Mongo, con la referencia y el orden.
+miniatura en base64 que bajaba con cada día. Ahora los bytes son de Cloudinary y
+Mongo se queda con la referencia y el orden.
 
-**Lo que no cambia:** el día sigue llevando solo la cuenta y una miniatura, las
-imágenes se siguen pidiendo bajo demanda, y la cola de subida de `sync.ts` sigue
-mandando una imagen por petición. Esto es un cambio de almacén, no de
-arquitectura.
+**Lo que no ha cambiado:** el día sigue llevando solo la cuenta y una miniatura,
+las imágenes se siguen pidiendo bajo demanda, y la cola de `sync.ts` sigue
+mandando una imagen por petición. Es un cambio de almacén, no de arquitectura.
 
 #### Dónde vive cada imagen
-
-El `public_id` se compone en el servidor y es determinista:
 
 ```
 uploads/users/{userId}/{key}/{index}
         └── ObjectId de la sesión, nunca lo que venga en el cuerpo
 ```
 
-La carpeta **no es la frontera de seguridad** —eso lo hace la firma, más abajo—,
-pero se gana lo suyo igualmente: borrar todo lo de una persona es borrar un
-prefijo, y el panel de Cloudinary se puede leer. Que el `public_id` sea
-determinista quita además el paso de «guardar qué id me devolvió»: la posición
-del adjunto ya lo dice.
+El `public_id` se compone en el servidor y es determinista: la posición del
+adjunto ya dice su nombre, así que no hay que guardar «qué id me devolvió» para
+poder escribir encima. La carpeta **no es la frontera de seguridad** —eso lo
+hace la firma— pero se gana lo suyo igualmente: borrar todo lo de una persona es
+borrar un prefijo, y el panel de Cloudinary se puede leer.
 
-- [ ] `userId` siempre desde `locals.user`, jamás desde el cuerpo de la
-      petición. Es la misma regla que ya siguen `days.ts` e `images.ts`.
-- [ ] `overwrite: true` al subir: reemplazar el adjunto 2 de un día es escribir
-      en el mismo sitio, y así no quedan dos versiones vivas.
+Todo sube con `type: 'authenticated'`, que es lo que había que usar y no
+`private`: con `private` solo el original queda protegido y las derivadas se
+sirven públicamente, que es justo el agujero por el que se vería una miniatura
+sin haber entrado nunca.
 
 #### Que nadie la vea sin sesión
 
-- [ ] Subir todo con **`type: 'authenticated'`**. Es lo que hay que usar aquí y
-      no `private`: con `private` solo el original queda protegido y las
-      derivadas se sirven públicamente, que es justo el agujero por el que se
-      vería una miniatura sin haber entrado nunca.
-- [ ] **Las imágenes se sirven por proxy**, no con una URL de Cloudinary en el
-      navegador: `GET /api/images/raw?key=…&i=N&size=thumb|view` valida la
-      sesión, comprueba que ese día es de quien pregunta, firma la URL en el
-      servidor, trae los bytes y los devuelve. La URL firmada no sale nunca de
-      la función.
-- [ ] `Cache-Control: private, max-age=31536000, immutable` en la respuesta del
-      proxy. El `public_id` lleva la `version` pegada, así que una imagen
-      cambiada es otra URL: se puede cachear para siempre sin miedo, y sin eso
-      cada pintada de la galería sería una invocación.
+Las imágenes se sirven **por proxy**, no con una URL de Cloudinary en el
+navegador: `GET /api/images/raw?key=…&i=N&size=thumb|view&v=…` valida la sesión,
+busca el metadato —y buscarlo por `userId` *es* la comprobación de propiedad—,
+firma la URL, trae los bytes y los devuelve. La firma no sale nunca de la
+función.
 
-Por qué proxy y no una URL firmada directa al CDN, que sería más barata: **una
-URL firmada de Cloudinary no caduca**. Para que caduque hace falta
+**Dentro de ese endpoint manda el testigo, no la posición.** Quitar un adjunto
+que no es el último corre una posición a los de detrás en el navegador al
+instante, y aquí no lo hacen hasta que sube la cola; en ese hueco, buscar por
+posición devolvería la imagen equivocada y la caché de un año la dejaría
+equivocada para siempre. Buscando por `etag` se devuelve siempre el contenido
+que la dirección dice llevar, y la posición queda de respaldo para lo que no
+traiga testigo reconocible — con un minuto de caché en vez de un año, porque
+entonces no hay nada que garantizar.
+
+Por qué proxy y no una URL firmada directa al CDN, que sería más barata:
+**una URL firmada de Cloudinary no caduca**. Para que caduque hace falta
 autenticación por token (`auth_token` con `duration`), y eso es plan *Advanced*
-o superior. Con una firma perpetua, una URL que se escape por un historial, un
-registro o un *Copiar dirección de la imagen* vale para siempre y para
-cualquiera — que es exactamente lo que no queremos. El proxy cumple el
-requisito sin depender del plan: sin cookie de sesión no hay bytes, punto.
+o superior. Con una firma perpetua, una dirección que se escape por un
+historial, un registro o un *Copiar dirección de la imagen* vale para siempre y
+para cualquiera. El proxy cumple el requisito sin depender del plan: sin cookie
+de sesión no hay bytes, punto.
 
-- [ ] Con `type: 'authenticated'` **no hay transformaciones al vuelo**. Las dos
-      medidas se piden **eager** al subir: 192 para la miniatura y 1280 para la
-      vista, las mismas que hoy calcula `image.ts` en el navegador.
-- [ ] El proxy acepta `size=thumb|view` y **nada más**. Admitir una cadena de
-      transformación del cliente convierte esto en un proxy de transformaciones
-      abierto, y las transformaciones son lo que gasta créditos.
+El precio es que el tráfico pasa dos veces —Cloudinary, función, navegador— y lo
+que lo deja en una vez por imagen y dispositivo es
+`Cache-Control: private, max-age=31536000, immutable`. Se puede cachear para
+siempre porque **la dirección lleva dentro un testigo del contenido**: otra
+imagen, otra URL.
 
-Si algún día hay plan con token: el proxy se puede sustituir por un
-`GET /api/images/urls?key=…` que devuelva URLs firmadas de diez minutos y deje
-que el CDN sirva los bytes. El contrato del cliente apenas cambia; por eso
-conviene que lo que se pinte salga de una función `srcOf(ref, size)` y no de una
-cadena repartida por los componentes.
+El proxy acepta `size=thumb|view` y **nada más**. Admitir una cadena de
+transformación del cliente lo convertiría en un proxy de transformaciones
+abierto, y las transformaciones son lo que gasta créditos. Las dos medidas
+—192 y 1280, las mismas que antes calculaba el navegador— se piden *eager* al
+subir, así que la primera petición encuentra la derivada hecha.
 
-#### Qué se toca
+Si algún día hay plan con token, el proxy se sustituye por un endpoint que
+devuelva URLs firmadas de diez minutos y deje que el CDN sirva los bytes. Por
+eso todo lo que se pinta sale de `srcOf(ref, key, index, size)` y no de una
+cadena repartida por los componentes: se cambia una función y ya está.
 
-| Archivo | Cambio |
-|---|---|
-| `src/lib/cloudinary.ts` | **Nuevo.** `cloudinary.config()` explícito con las tres variables de `astro:env`. Firma, sube, borra |
-| `src/lib/image.ts` | Se queda: redimensionar y comprimir antes de subir sigue siendo lo que mantiene cada archivo pequeño |
-| `src/pages/api/images.ts` | `PUT` sube a Cloudinary y guarda la referencia; `GET` devuelve referencias; `DELETE` borra también allí |
-| `src/pages/api/images/raw.ts` | **Nuevo.** El proxy |
-| `src/lib/sync.ts` | Casi nada: el cable de `PUT` no cambia (ver abajo) |
-| `src/lib/wire.ts` | `thumb` deja de ser base64 |
-| `src/lib/gallery.ts`, `GalleryView.tsx`, `Lightbox.tsx`, `DayModal.tsx` | `src` sale de `srcOf(ref, size)` en vez de ser la data URL |
-| `src/lib/transfer.ts` | La exportación deja de llevar las imágenes dentro (ver *Lo que se pierde*) |
+#### El adjunto tiene dos formas, y las dos son válidas
 
-- [ ] **`PUT /api/images` mantiene su contrato**: sigue recibiendo
-      `{ key, index, dataUrl, updatedAt }`. El cargador de Cloudinary acepta una
-      data URI tal cual, así que el cambio se queda entero del lado del
-      servidor y `flushImages()` no se entera. Cada archivo ya llega por debajo
-      de los 700 KB, muy lejos del tope del cuerpo de la función.
-- [ ] La colección `images` pasa a ser metadatos:
-      `{ userId, key, index, publicId, version, format, bytes, width, height, updatedAt }`.
-      El índice único `{userId, key, index}` sigue valiendo, y el recorte de
-      cola con `from` también.
-- [ ] `days.thumb` deja de guardar base64. La miniatura es la derivada eager de
-      la primera imagen, así que el día solo necesita saber que existe. **Esto
-      retira la deuda de los ~1,8 MB por carga.**
-- [ ] `DayEntry.images` admite dos formas en el mismo array: una data URL
-      mientras el adjunto está sin subir, y `cld:{publicId}@{version}` una vez
-      confirmado. Se mantienen `sameImages`, el orden, la cola e `imagesReady`
-      sin tocarlos, y quien pinta resuelve cuál es cuál.
-- [ ] `isImageDataUrl` sigue guardando la puerta de subida —solo se acepta lo
-      que el navegador podría haber generado—, pero hace falta un `isImageRef`
-      aparte para lo que baja: hoy el saneado del cliente rechazaría una
-      referencia por no ser una data URL.
-- [ ] Borrar un adjunto tiene que borrar también en Cloudinary: `destroy` con
-      `type: 'authenticated'` e `invalidate: true`. Y la lápida de un día
-      arrastra los suyos; si no, el almacén crece con imágenes de días que ya no
-      existen.
+En el mismo array conviven una **data URL**, mientras el adjunto está recién
+elegido y sin subir, y una **referencia** `cld:{publicId}@{etag}` en cuanto el
+servidor confirma la subida. `sameImages`, el orden, la cola e `imagesReady` no
+se tocaron: quien pinta resuelve cuál es cuál y ya.
 
-#### Las credenciales
+Eso obligó a partir en dos lo que era una sola comprobación: `isImageDataUrl`
+guarda la puerta de **subida** —solo se acepta lo que el navegador podría haber
+generado— e `isImageRef` la de **bajada**. Sin la segunda, el saneado del
+cliente tiraba todo lo que viene del servidor por no ser una data URL, y el
+calendario se quedaba sin adjuntos a la primera recarga.
 
-Ya las tienes: *Cloud Name*, *API Key*, *API Secret* y la *API Environment
-Variable*. No hace falta pedirte nada más para esta tanda.
+**El testigo es el `etag` y no la `version`**, que era lo natural. La razón
+apareció probando: renombrar en Cloudinary **no cambia la versión**. Quitar la
+primera de dos imágenes corre la segunda al sitio de la primera con su versión
+intacta, y si las dos se subieron en el mismo segundo la dirección del proxy
+saldría idéntica con otro contenido detrás — y cacheada un año. Con el hash del
+contenido eso no puede pasar, y dos veces la misma imagen comparten caché, que
+es lo correcto.
 
-Van en `.env` en local y en el panel de Vercel en producción, como las demás. Se
-declaran **por separado** en el esquema de `astro:env` y se pasan a
-`cloudinary.config()` a mano: la *API Environment Variable* (`CLOUDINARY_URL`)
-funciona sola en producción y **no** en `astro dev`, porque el SDK la busca en
-`process.env` y ahí no llega el `.env`. Esa asimetría es la que costó dos
-despliegues con `BETTER_AUTH_URL`.
+#### Mover no es resubir
 
-La *API Secret* no se declara nunca con `access: 'public'`. En este diseño no
-hay subida desde el navegador, así que tampoco hace falta un *upload preset* sin
-firmar — que es la otra forma habitual de dejar una nube abierta de par en par.
+Quitar un adjunto que no es el último corre una posición a todos los de detrás,
+y como el nombre lleva el índice dentro, hay que mover los bytes. El navegador
+**no puede resubirlos**: los soltó al confirmarse la subida y solo guarda la
+referencia. Por eso `PUT /api/images` admite dos cuerpos: el de siempre
+—`{ key, index, dataUrl, updatedAt }`, que no ha cambiado— y uno con `ref` en
+lugar de `dataUrl`, que el servidor resuelve con un `rename`. No mueve bytes y
+cuesta una llamada.
+
+De ahí sale el único caso raro de todo esto. Si la subida se corta a la mitad,
+el reintento vuelve a mandar el día entero y se encuentra con que el origen del
+renombrado ya no existe, porque el renombrado ya se hizo. El servidor mira
+entonces quién ocupa esa posición y devuelve su referencia, con lo que el
+navegador se pone al día; y si no la ocupa nadie, contesta `410` y el navegador
+**deja caer esa imagen** y reintenta el resto con los índices ya corridos. Es
+feo, pero es lo único que impide que un adjunto perdido deje la cola girando
+para siempre, y cada vuelta quita uno: termina seguro.
 
 #### Lo que se pierde
 
-Hoy las imágenes están en `localStorage` y se ven sin conexión. Con Cloudinary,
-un dispositivo que no las haya abierto nunca no las tiene. La caché del proxy
+Antes las imágenes estaban en `localStorage` y se veían sin conexión. Ahora, un
+dispositivo que no las haya abierto nunca no las tiene. La caché del proxy
 mantiene visible lo ya visto, pero es una caché, no una garantía: **el
 local-first se conserva para las notas y deja de valer para las imágenes.** Es
 el precio de quitar los tres techos, y conviene tenerlo escrito antes de
 descubrirlo en un avión.
 
-A cambio, `MAX_DATA_URL_LENGTH` deja de estar atado a la cuota de
-`localStorage`, y la exportación de `transfer.ts` deja de arrastrar megas de
-base64 — pero también deja de ser una copia completa. Si se quiere que lo siga
-siendo, exportar tiene que bajar las imágenes por el proxy primero.
+La exportación (v7) tampoco es ya una copia completa: los adjuntos viajan como
+referencias, así que el archivo pasa de megas a kilobytes y se puede reimportar
+en la misma cuenta sin perder ninguna imagen — pero fuera de ella esas
+referencias no apuntan a nada.
 
-#### Migrar lo que ya hay
+#### La migración
 
-- [ ] Un script suelto, **idempotente y reanudable**: por cada documento de
-      `images`, subir su `dataUrl`, escribir `publicId` y `version`, y solo
-      entonces quitar el `dataUrl`. Si se corta a la mitad, un documento que ya
-      tenga `publicId` se salta.
-- [ ] Correrlo desde el portátil contra Atlas con las credenciales de
-      producción, no desde una función: no hay prisa y no hay límite de tiempo.
-- [ ] Contar imágenes por usuario antes y después, y comparar. Es la única
-      comprobación que importa.
-- [ ] Regenerar las miniaturas de `days` como derivadas y vaciar el base64 en
-      la misma pasada.
+`scripts/migrate-images.mjs`, idempotente y reanudable: por cada documento con
+`dataUrl` lo sube, escribe la referencia y **solo entonces** suelta los bytes,
+en dos escrituras. Cortado a la mitad deja un documento con las dos cosas, que
+es recuperable; al revés dejaría uno sin ninguna, que no lo es. Cuenta las
+imágenes por usuario antes y después y compara, que es la única comprobación que
+importa.
 
-#### Riesgos
+**El orden contra producción es migrar *después* de desplegar**, que no es el
+que parece. El código viejo lee los bytes de `images`: migrar primero deja todas
+las imágenes sin verse hasta que suba el nuevo. Al revés, el nuevo convive con
+lo que quede sin migrar —lo omite en `GET /api/images`, y el proxy contesta 404
+en vez de fingir una avería del almacén— y solo falta lo que aún no ha subido.
 
-- El plan gratuito va por créditos, y el proxy hace que el tráfico pase dos
-  veces: Cloudinary → función → navegador. La caché `immutable` es lo que
-  mantiene eso en una vez por imagen y dispositivo; sin ella, cada visita a la
-  galería lo paga entero.
+Las miniaturas de `days` se rehacen en la misma pasada, **sin tocar
+`updatedAt`**: es el árbitro de la fusión, y subirlo haría que el día del
+servidor le ganara a cualquier edición sin subir que alguien tenga en su
+navegador. Perder una nota por una miniatura sería un mal negocio.
+
+Y del lado del navegador la migración no necesita script: `pull` encola los días
+cuyos adjuntos siguen siendo data URL, así que el primer arranque tras la
+actualización los resube y los convierte en referencias. De ahí sale, sin caso
+especial, la limpieza de `localStorage`.
+
+#### Riesgos que quedan
+
+- El plan gratuito va por créditos y el proxy hace que el tráfico pase dos
+  veces. La caché `immutable` es lo que lo mantiene en una vez por imagen y
+  dispositivo; sin ella, cada visita a la galería lo pagaría entero.
 - Un `destroy` que falle deja un huérfano que nadie mira y que sigue ocupando.
   Anotado en la deuda.
+
+---
+
+## Lo que falta
 
 ### Despliegue
 
@@ -1138,23 +1150,24 @@ Pendiente:
       en el panel no la mete en la función que ya está corriendo.
 - [x] El programador externo, con `CRON_SECRET` y la URL del endpoint. Está en
       cron-job.org; ver *Quién llama al cron* en el historial.
-- [ ] Las tres variables de Cloudinary en el panel, cuando llegue la tanda 8.
+- [ ] **Las tres variables de Cloudinary en el panel**, y **redesplegar**:
+      editar una variable no la mete en la función que ya está corriendo. Sin
+      ellas el sitio arranca y se cae en cuanto alguien abra una nota con
+      imágenes. `CLOUDINARY_URL` no hace falta — ver *Variables de entorno*.
+- [x] Correr `scripts/migrate-images.mjs` **justo después** de desplegar, no
+      antes. El orden importa y no es el que parece: el código viejo lee los
+      bytes de `images`, así que migrar primero deja todas las imágenes sin
+      verse hasta que suba el código nuevo; al revés, el nuevo convive con lo
+      que quede sin migrar —lo omite en `GET /api/images` y el proxy contesta
+      404— y solo falta lo que aún no ha subido.
 
 ### Deuda conocida
 
-- [ ] Las miniaturas viajan dentro de `GET /api/days`. La actual pesa 5 KB y el
-      tope son 20 KB: un año con imagen todos los días serían ~1,8 MB por carga.
-      Irreal para uso personal, pero si se acerca, basta bajar `THUMB_SIDE` de
-      192 a 128 o servirlas aparte. **La tanda 8 lo retira**: la miniatura pasa
-      a ser una derivada y deja de viajar.
 - [ ] Cambiar un adjunto reenvía los seis del día. Con seis como tope y
       ediciones contadas, comparar cuáles cambiaron costaría más de lo que
-      ahorra — pero está ahí.
+      ahorra — y desde la tanda 8 cuesta mucho menos, porque los que ya estaban
+      arriba viajan como referencia y no como bytes. Pero está ahí.
 - [ ] Las lápidas no se purgan nunca. Sobra sitio, pero crecen sin fin.
-- [ ] `localStorage` sigue guardando la copia completa con imágenes, así que su
-      cuota sigue siendo un techo. `MAX_DATA_URL_LENGTH` (700 KB) se dimensionó
-      para esa cuota y ahora podría subir. **La tanda 8 lo retira**, a cambio de
-      que las imágenes dejen de verse sin conexión.
 - [ ] **El tema claro no llega a AA en varios pares, y es anterior al oscuro.**
       Medido: `ink-muted` sobre `canvas` da 2,46:1, `text-highlight` sobre
       `canvas` 3,05:1 y sobre `highlight-soft` 2,86:1, con 4,5:1 de mínimo para
@@ -1197,14 +1210,20 @@ Pendiente:
       igual a la nota, al color y ahora al recordatorio; es anterior a esta
       tanda y se arregla comparando valores en vez de reaccionar al objeto.
 - [ ] La galería descarga en serie todas las imágenes que falten, sin límite ni
-      desalojo. Con muchas notas conviene paginar. La tanda 8 lo alivia —el
-      navegador cachea lo servido por el proxy y ya no hay que guardarlo— pero
-      no lo arregla: sigue faltando paginar.
-- [ ] *(tanda 8)* Un `destroy` que falle deja la imagen huérfana en Cloudinary.
+      desalojo. Con muchas notas conviene paginar. La tanda 8 lo alivió —lo que
+      baja son referencias, y los bytes los cachea el navegador— pero no lo
+      arregla: sigue faltando paginar, y ahora cada miniatura es además una
+      invocación de la función la primera vez.
+- [ ] Un `destroy` que falle deja la imagen huérfana en Cloudinary: se traga el
+      error a propósito, porque tumbar el borrado del día por eso sería peor.
       Haría falta un repaso que liste el prefijo `uploads/users/{userId}` y
       borre lo que no tenga documento en Mongo.
-- [ ] *(tanda 8)* La exportación de `transfer.ts` deja de ser una copia
-      completa: para que lo siga siendo hay que bajar las imágenes al exportar.
+- [ ] La exportación (v7) ha dejado de ser una copia completa: lleva
+      referencias, no imágenes. Para que lo siga siendo hay que bajar los bytes
+      por el proxy al exportar.
+- [ ] Una lápida borra los adjuntos del día **desde el navegador que lo borró**:
+      es él quien encola el recorte. Si ese navegador no vuelve a conectarse,
+      las imágenes se quedan en Cloudinary sin día que las reclame.
 - [ ] **La vinculación de Telegram no escala más allá de unas pocas personas.**
       Para reconocer el `/start` se leen los mensajes recientes del bot con
       `getUpdates` y se busca el código, pero **no se confirman**: confirmarlos
@@ -1348,13 +1367,16 @@ no tenían chat vinculado.
 borró.
 
 Contra eso está el propio diseño —cada navegador guarda su copia completa en
-`localStorage`, así que el calendario sobrevive a perder el servidor— pero eso
-deja de ser cierto para las imágenes en cuanto llegue la tanda 8, y no cubre
-tener dos dispositivos desincronizados.
+`localStorage`, así que el calendario sobrevive a perder el servidor— pero desde
+la tanda 8 **eso ya no vale para las imágenes**: sus bytes están en Cloudinary y
+en el navegador solo queda la referencia. Tampoco cubre tener dos dispositivos
+desincronizados.
 
 - [ ] Exportar el JSON desde Ajustes de vez en cuando, y guardarlo fuera del
       portátil. Es un archivo pequeño y es la única copia de verdad que hay.
-- [ ] Para algo más completo: `mongodump` contra la URI de producción.
+- [ ] Para algo más completo: `mongodump` contra la URI de producción. Ojo con
+      lo que **no** entra ahí: los adjuntos ya no están en Mongo, y recuperar un
+      volcado sin la nube dejaría días que dicen tener imágenes que no existen.
 
 ### Los techos del plan gratuito
 
@@ -1367,9 +1389,16 @@ Medido hoy, con 52 días guardados, 3 imágenes y 2 usuarios:
 | Operaciones | 100 por segundo | el cron hace una consulta cada 5 min |
 | Conexiones | 500 | una por función caliente |
 
-Sobra sitio por varios órdenes de magnitud. Lo que crece sin freno son las
-**lápidas** —13 de 52 días ya lo son— y las imágenes en `localStorage`; las dos
-están en *Deuda conocida*. Con este ritmo tardarían años en molestar.
+Sobra sitio por varios órdenes de magnitud, y desde la tanda 8 sobra más: los
+adjuntos ya no ocupan en Atlas. Lo que crece sin freno son las **lápidas** —13
+de 52 días ya lo son—, que están en *Deuda conocida*. Con este ritmo tardarían
+años en molestar.
+
+El plan gratuito de Cloudinary va por **créditos** (25 al mes, y un crédito son
+1 GB de almacenamiento, 1 GB de tráfico o 1.000 transformaciones). Lo que se
+gasta aquí es casi todo tráfico, y el proxy lo paga dos veces por imagen y
+dispositivo — una sola vez gracias a la caché `immutable`. Con adjuntos de menos
+de 700 KB y uso personal, ni se roza.
 
 En cron-job.org: 30 segundos de tope por ejecución y lee como mucho 64 KB de
 respuesta. El endpoint contesta en menos de un segundo y devuelve cuatro
@@ -1379,7 +1408,8 @@ números, así que no hay nada que vigilar ahí.
 
 - [ ] ¿Sigue activo el job en cron-job.org, y sus últimas ejecuciones en verde?
 - [ ] Exportar el JSON y guardarlo fuera.
-- [ ] Mirar el almacenamiento en Atlas por si algo creció de forma rara.
+- [ ] Mirar el almacenamiento en Atlas por si algo creció de forma rara, y los
+      créditos de Cloudinary en su panel.
 - [ ] Si el secreto va en la URL —hoy sí—, rotarlo: nuevo valor en Vercel,
       **redesplegar**, y actualizar la URL del job. En ese orden, o el job
       empieza a fallar y en dos horas se desactiva.
@@ -1405,6 +1435,21 @@ respondiendo — que es lo que hacía el fallo tan desconcertante.
 Ahora el cliente recibe su origen explícito y ya no depende del entorno.
 Para reproducir algo así en local: compilar con `@astrojs/node`, arrancar
 `dist/server/entry.mjs` y poner la variable en `process.env` a mano.
+
+La misma trampa estaba esperando en Cloudinary, y esta vez se esquivó antes de
+morder: el SDK se configura solo con `CLOUDINARY_URL` **leyéndola de
+`process.env`**, así que habría funcionado en producción y no en `astro dev`.
+Por eso esa variable no se usa —puede estar en el `.env` o no, da igual— y las
+tres piezas se declaran por separado en `astro:env` y se pasan a
+`cloudinary.config()` a mano.
+
+**Renombrar en Cloudinary no cambia la `version`.** Parece un detalle y decide
+si una caché de un año sirve la imagen correcta: si el testigo de la URL fuera
+la versión, correr una imagen de la posición 1 a la 0 dejaría la misma
+dirección apuntando a otro contenido cuando las dos se hubieran subido en el
+mismo segundo. Por eso la referencia lleva el `etag`, que es el hash de los
+bytes. Se descubrió probando contra la nube de verdad, no leyendo la
+documentación.
 
 **Un campo que desaparece no es lo mismo que un campo que no viaja.** `$set` no
 borra lo que no le mandas, y los opcionales de `WireDay` se omiten cuando están

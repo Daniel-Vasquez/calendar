@@ -30,12 +30,14 @@ propio clúster de MongoDB y en tu propio despliegue.
 La decisión de arquitectura que explica casi todo lo demás:
 
 ```
-navegador                     servidor                   Atlas
-─────────                     ────────                   ─────
+navegador                     servidor                   Atlas / Cloudinary
+─────────                     ────────                   ──────────────────
 DayModal → handleSave
         → localStorage  (instantáneo, sin red)
         → sync.ts (cola)  ──POST /api/days──────────────→ days
-                          ──PUT  /api/images (1 a 1)────→ images
+                          ──PUT  /api/images (1 a 1)────→ images (metadatos)
+                                       └───────────────→ Cloudinary (bytes)
+<img src> ────────────────→ GET /api/images/raw ────────→ Cloudinary (firmado)
 middleware ──────────────────────────────────────────────→ session, user
 ```
 
@@ -87,10 +89,14 @@ MongoDB es la fuente de verdad, pero **no** el camino crítico.
 - Nota de texto libre por día, con hasta **6 imágenes adjuntas**.
 - Formatos `JPEG`, `PNG` y `WebP`; archivos de hasta 12 MB, que el navegador
   **redimensiona a 1280 px** y comprime antes de guardar nada.
-- De cada nota se genera una **miniatura de 192 px** que viaja con el día, para
-  que la agenda pueda pintar la fila sin esperar a ninguna descarga.
+- Los bytes viven en **Cloudinary**, en privado: se sirven por un proxy propio
+  (`/api/images/raw`) que comprueba la sesión y firma la URL en el servidor, así
+  que una dirección suelta no enseña nada a nadie.
+- De cada nota hay una **miniatura de 192 px** —una derivada, generada al
+  subir—, y con el día solo viaja el testigo que hace falta para pedirla: la
+  agenda pinta la fila sin esperar a ninguna descarga.
 - Las imágenes completas se piden **bajo demanda**, solo al abrir la nota o la
-  galería: no lastran la carga del año.
+  galería, y el navegador las cachea para siempre: no lastran la carga del año.
 
 ### 🔍 Agenda del año
 
@@ -151,8 +157,9 @@ MongoDB es la fuente de verdad, pero **no** el camino crítico.
 
 ### 💾 Copia de seguridad
 
-- **Exportar a JSON**: el año entero con sus categorías, y las imágenes que este
-  navegador tenga descargadas.
+- **Exportar a JSON**: el año entero con sus categorías. Desde que los adjuntos
+  están en Cloudinary lleva **referencias y no imágenes**: reimportarlo en la
+  misma cuenta las recupera todas, fuera de ella no apuntan a nada.
 - **Exportar a `.ics`**: los días marcados y sus notas, para cualquier calendario.
 - **Importar JSON**: fusiona con lo que ya haya, sin machacar el resto del año.
 
@@ -185,7 +192,7 @@ MongoDB es la fuente de verdad, pero **no** el camino crítico.
 |---|---|---|
 | `user` `session` `account` | Las crea Better Auth | propios |
 | `days` | Un día por usuario: marca, nota, color, `imageCount`, `thumb`, `reminder`, `tags` | `{userId, key}` único |
-| `images` | Una imagen por documento, con su posición dentro del día | `{userId, key, index}` único |
+| `images` | Un adjunto por documento, con su posición: `publicId`, `version`, `etag` y medidas. **Sin bytes** | `{userId, key, index}` único |
 | `settings` | Ajustes que no son del dispositivo: hoy, el chat de Telegram | `{userId}` único |
 | `allowlist` | Qué correos pueden **crearse** una cuenta | `{email}` único |
 
@@ -193,16 +200,18 @@ MongoDB es la fuente de verdad, pero **no** el camino crítico.
 
 | Servicio | Para qué | ¿Obligatorio? |
 |---|---|---|
-| ☁️ **MongoDB Atlas** | Base de datos (días, imágenes, sesiones, ajustes) | ✅ Sí |
+| ☁️ **MongoDB Atlas** | Base de datos (días, metadatos de imagen, sesiones, ajustes) | ✅ Sí |
+| 🖼️ **Cloudinary** | Los bytes de los adjuntos, en privado | ✅ Sí |
 | ▲ **Vercel** | Alojamiento y funciones serverless | ✅ Para producción |
 | 🤖 **Telegram Bot API** | Envío de los recordatorios | ⬜ Opcional |
 | ⏱️ **GitHub Actions** | Programador que despierta al cron cada 5 min | ⬜ Opcional |
 
 > [!NOTE]
-> **Sobre Cloudinary:** hoy las imágenes **no** pasan por Cloudinary. Se guardan
-> como *data URL* en la colección `images` de MongoDB, una por documento, y se
-> sirven desde `GET /api/images`. Mover los adjuntos a Cloudinary está en el
-> [roadmap](#-roadmap) y todavía no hay ninguna credencial suya en el proyecto.
+> **Sobre Cloudinary:** todo sube como `authenticated`, así que ni el original
+> ni sus derivadas se pueden ver sin firma. El navegador nunca recibe una URL
+> de Cloudinary: pide los bytes a `/api/images/raw`, que valida la sesión y
+> firma del lado del servidor. Es a propósito — una URL firmada de Cloudinary
+> **no caduca**, y para que caducara haría falta un plan de pago.
 
 ---
 
@@ -240,6 +249,16 @@ cp .env.example .env
 | `MONGODB_URI` | Cadena de conexión de Atlas. Si su ruta trae nombre de base, esa manda |
 | `BETTER_AUTH_SECRET` | Firma las cookies de sesión. Genérala con `openssl rand -base64 32`. Cambiarla cierra todas las sesiones abiertas |
 | `BETTER_AUTH_URL` | Origen público del sitio, **con esquema** y sin barra final |
+| `CLOUDINARY_CLOUD_NAME` | El nombre de tu nube, a secas. Está en *Settings → API Keys* |
+| `CLOUDINARY_API_KEY` | Pública en la práctica, pero no hace falta que salga del servidor |
+| `CLOUDINARY_API_SECRET` | Firma las subidas y las URLs. **Nunca al navegador y nunca a un commit** |
+
+> [!TIP]
+> La *API Environment Variable* de Cloudinary (`CLOUDINARY_URL`) **no se usa**:
+> el SDK la leería de `process.env`, donde el `.env` no llega en `astro dev`, y
+> funcionaría en producción y no en local. Las tres piezas de arriba se declaran
+> por separado y se configuran a mano en `src/lib/cloudinary.ts`. Puedes dejarla
+> en el `.env` o quitarla, da igual.
 
 #### 🔔 Opcionales — recordatorios por Telegram
 
@@ -263,6 +282,9 @@ Ejemplo de `.env` mínimo para desarrollo:
 MONGODB_URI="mongodb+srv://usuario:contraseña@clúster.mongodb.net/planificador?retryWrites=true&w=majority"
 BETTER_AUTH_SECRET="…salida de openssl rand -base64 32…"
 BETTER_AUTH_URL="http://localhost:4321"
+CLOUDINARY_CLOUD_NAME="mi-nube"
+CLOUDINARY_API_KEY="123456789012345"
+CLOUDINARY_API_SECRET="…de Settings → API Keys…"
 ```
 
 > [!IMPORTANT]
@@ -355,7 +377,9 @@ src/
 │   ├── palette.ts              # Los colores: los de fábrica y los de cada persona
 │   ├── tags.ts                 # El catálogo de etiquetas y las que lleva un día
 │   ├── search.ts               # La lente de la agenda: buscar y filtrar
-│   ├── image.ts                # Redimensionado, compresión y miniaturas
+│   ├── image.ts                # Redimensionado, compresión y el `src` de cada imagen
+│   ├── gallery.ts              # Las imágenes del año y la vista previa de un día
+│   ├── cloudinary.ts           # Subir, renombrar, borrar y firmar. Solo servidor
 │   ├── mongo.ts                # Cliente cacheado, colecciones e índices
 │   └── …
 ├── pages/
@@ -388,8 +412,9 @@ src/
 | `GET /api/days` | Todos los días del usuario | 🔒 Sesión |
 | `POST /api/days` | Sube días por lotes (hasta 500), arbitrando por `updatedAt` | 🔒 Sesión |
 | `GET /api/images?key=` | Las imágenes de un día, en orden | 🔒 Sesión |
-| `PUT /api/images` | Sube **una** imagen (el cuerpo de Vercel topa en 4,5 MB) | 🔒 Sesión |
-| `DELETE /api/images?key=&from=` | Recorta la cola de imágenes de un día | 🔒 Sesión |
+| `PUT /api/images` | Sube **una** imagen a Cloudinary, o mueve de sitio una ya subida (el cuerpo de Vercel topa en 4,5 MB) | 🔒 Sesión |
+| `DELETE /api/images?key=&from=` | Recorta la cola de imágenes de un día, en Mongo y en Cloudinary | 🔒 Sesión |
+| `GET /api/images/raw?key=&i=&size=` | Los bytes de un adjunto, firmados y servidos por la casa. `size` es `thumb` o `view` | 🔒 Sesión |
 | `GET/POST/DELETE /api/telegram` | Comprobar, vincular, probar y desvincular el chat | 🔒 Sesión |
 | `POST /api/cron/reminders` | Manda los avisos que toquen | 🔑 `x-cron-secret` |
 | `GET /api/health` | ¿Alcanza la función desplegada a Atlas? | 🌐 Pública |
@@ -405,11 +430,24 @@ El proyecto está pensado para **Vercel** y se despliega desde `main`.
 2. Define **todas** las variables de entorno en el panel del proyecto.
    `BETTER_AUTH_SECRET` conviene que sea **distinta** de la local, y
    `BETTER_AUTH_URL` debe llevar `https://` delante.
-3. En Atlas, pon *Network Access* en `0.0.0.0/0`. Con solo tu IP en lista
+3. Si vienes de una versión anterior a la tanda 8, lleva los adjuntos a
+   Cloudinary **justo después de desplegar**, no antes:
+
+   ```bash
+   node --env-file=.env scripts/migrate-images.mjs          # solo mirar
+   node --env-file=.env scripts/migrate-images.mjs migrar   # hacerlo
+   ```
+
+   El orden importa y no es el que parece. El código viejo lee los bytes de
+   `images`, así que migrar primero deja **todas** las imágenes sin verse hasta
+   que subas el código nuevo; al revés, el código nuevo convive con lo que
+   quede sin migrar y solo falta lo que aún no ha subido. Es idempotente y
+   reanudable: si se corta, se vuelve a lanzar.
+4. En Atlas, pon *Network Access* en `0.0.0.0/0`. Con solo tu IP en lista
    blanca, las funciones de Vercel no entran, y el síntoma despista: Atlas corta
    el saludo TLS y el driver lo reporta como `tlsv1 alert internal error`, que no
    se parece a un problema de permisos.
-4. Comprueba el despliegue con `GET /api/health`, que responde sin depender del
+5. Comprueba el despliegue con `GET /api/health`, que responde sin depender del
    middleware ni de que haya sesión válida:
 
 ```bash
@@ -420,12 +458,10 @@ curl https://tu-dominio/api/health
 
 ## 7. 🗺️ Roadmap
 
-- ☁️ **Multimedia en Cloudinary** *(tanda 8)*: mover los adjuntos de MongoDB a
-  Cloudinary con almacenamiento privado y URLs firmadas. Traerá tres variables
-  nuevas —`CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY` y
-  `CLOUDINARY_API_SECRET`— y retirará dos límites actuales: las miniaturas
-  dejarán de viajar dentro de `GET /api/days` y `localStorage` dejará de guardar
-  la copia completa de las imágenes.
+- 🖼️ **Paginar la galería**: hoy pide de golpe las referencias de todos los días
+  con imágenes. Baja poco y se cachea bien, pero sigue sin tope.
+- 🧭 **Las imágenes ya no se ven sin conexión**: es el precio de sacarlas de
+  `localStorage`, y lo único del proyecto que dejó de ser local-first.
 - 🏷️ **El nombre se quedó corto**: la marca sigue diciendo «Planificador 2026» en
   la barra, en los títulos y en los archivos exportados, pero el calendario ya
   cubre dos años.
