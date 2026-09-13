@@ -5,8 +5,10 @@ import DayModal from './DayModal';
 import AgendaPanel from './AgendaPanel';
 import SettingsModal from './SettingsModal';
 import NavBar, { type NavUser } from './NavBar';
-import SyncBadge, { type SyncState } from './SyncBadge';
+import SyncBadge from './SyncBadge';
+import { useCalendarStore } from './useCalendarStore';
 import {
+  DAY_PARAM,
   formatLongDate,
   isInQuarter,
   keysBetween,
@@ -27,7 +29,6 @@ import {
   type MonthExpansion,
 } from '../lib/collapse';
 import { DAY_COLORS, DEFAULT_COLOR, type ColorId } from '../lib/palette';
-import { DAY_PARAM } from '../lib/gallery';
 import {
   labelFor,
   loadLabels,
@@ -37,25 +38,8 @@ import {
   type ColorLabels,
 } from '../lib/labels';
 import { downloadFile, exportFilename, parseImport, toIcs, toJson } from '../lib/transfer';
-import {
-  fetchImages,
-  flush,
-  flushImages,
-  pendingCount,
-  pull,
-  recordChanges,
-  storeImages,
-  SYNC_KEY,
-} from '../lib/sync';
-import {
-  hasContent,
-  hasImages,
-  loadData,
-  saveData,
-  STORAGE_KEY,
-  type CalendarData,
-  type DayEntry,
-} from '../lib/storage';
+import { fetchImages, storeImages } from '../lib/sync';
+import { hasContent, hasImages, type CalendarData, type DayEntry } from '../lib/storage';
 
 /**
  * Aviso efímero del pie. Con `snapshot` ofrece deshacer —guarda el calendario
@@ -64,15 +48,20 @@ import {
 type Notice = { message: string; snapshot?: CalendarData };
 
 export default function CalendarDashboard({ user }: { user: NavUser }) {
-  const [data, setData] = useState<CalendarData>({});
+  const [notice, setNotice] = useState<Notice | null>(null);
+  /**
+   * Lo que cuente la sincronía se enseña en la misma banda del pie que el resto
+   * de avisos. Estable a propósito: el almacén la guarda para el `pull` inicial.
+   */
+  const announce = useCallback((message: string) => setNotice({ message }), []);
+  const { data, setData, hydrated, sync, pending, retry, adopt } = useCalendarStore(announce);
+
   const [labels, setLabels] = useState<ColorLabels>({});
-  const [hydrated, setHydrated] = useState(false);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   /** Engrane de la cabecera: de él brota el modal de ajustes y a él vuelve el foco. */
   const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const [today, setToday] = useState('');
-  const [notice, setNotice] = useState<Notice | null>(null);
   /** Último día abierto: ancla del rango que dibuja un clic con Shift. */
   const [anchorKey, setAnchorKey] = useState<string | null>(null);
   /** Color del último día guardado, que es el que hereda un rango marcado. */
@@ -80,26 +69,12 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
   /** Qué meses están desplegados. El servidor los dibuja todos abiertos. */
   const [expansion, setExpansion] = useState<MonthExpansion>(DEFAULT_EXPANSION);
   const [expansionLoaded, setExpansionLoaded] = useState(false);
-  const [sync, setSync] = useState<SyncState>('starting');
-  const [pending, setPending] = useState(0);
-  /**
-   * Última versión que ya está en localStorage. Comparar contra ella es lo que
-   * dice qué días han cambiado, sin tener que releer y reparsear el año entero
-   * —imágenes incluidas— en cada guardado.
-   */
-  const persistedRef = useRef<CalendarData>({});
-  /** Subida en curso: evita que dos disparos se pisen. */
-  const flushingRef = useRef(false);
-  const flushTimerRef = useRef(0);
 
-  // El primer render debe coincidir con el HTML del servidor, así que
-  // localStorage se lee después de montar.
+  // Las etiquetas de color son solo del calendario, así que se leen aquí y no
+  // en el almacén. Igual que él: después de montar, para que el primer render
+  // coincida con el HTML del servidor.
   useEffect(() => {
-    const initial = loadData();
-    persistedRef.current = initial;
-    setData(initial);
     setLabels(loadLabels());
-    setHydrated(true);
   }, []);
 
   // Los meses plegados se leen en un efecto de layout: el cambio de estado se
@@ -118,153 +93,6 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
   useEffect(() => {
     if (expansionLoaded) saveExpansion(expansion);
   }, [expansion, expansionLoaded]);
-
-  // Si el navegador rechaza el guardado (cuota llena, casi siempre por las
-  // imágenes adjuntas) el estado sigue en memoria, pero hay que decirlo: al
-  // recargar se perdería lo último.
-  /**
-   * Vacía la cola de subida. Un solo envío a la vez: dos a la vez mandarían el
-   * mismo día dos veces, y el segundo llegaría con una marca de tiempo que el
-   * servidor ya tiene y descartaría.
-   */
-  const runFlush = useCallback(async () => {
-    if (flushingRef.current) return;
-    flushingRef.current = true;
-    setSync('saving');
-
-    try {
-      // Se repite mientras quede cola: el lote tiene tope, y una edición
-      // hecha en pleno vuelo la vuelve a llenar.
-      for (let round = 0; round < 20; round++) {
-        // Primero los días, que son baratos: así la cuenta de imágenes y la
-        // miniatura llegan aunque los adjuntos tarden.
-        const result = await flush();
-        if (!result.ok) {
-          setSync('offline');
-          setPending(pendingCount());
-          return;
-        }
-
-        const images = await flushImages();
-        if (!images.ok) {
-          setSync('offline');
-          setPending(pendingCount());
-          return;
-        }
-
-        // Las miniaturas nacen al subir los adjuntos. Entran por la vía
-        // normal —como una edición cualquiera— para que suban con su día en
-        // la tanda que el propio guardado programe.
-        const thumbs = Object.keys(images.thumbs);
-        if (thumbs.length > 0) {
-          setData((current) => withThumbs(current, images.thumbs));
-          setSync('saving');
-          return;
-        }
-
-        setPending(pendingCount());
-        if (result.remaining === 0 && images.remaining === 0) {
-          setSync('synced');
-          return;
-        }
-      }
-      // Diez vueltas sin vaciarla: algo no va bien y es mejor decirlo que
-      // seguir girando en silencio.
-      setSync('offline');
-    } finally {
-      flushingRef.current = false;
-    }
-  }, []);
-
-  const scheduleFlush = useCallback(() => {
-    window.clearTimeout(flushTimerRef.current);
-    // Escribir una nota dispara varios guardados seguidos. Esperar un momento
-    // los agrupa en una sola subida en vez de una por tecla.
-    flushTimerRef.current = window.setTimeout(() => void runFlush(), 1200);
-  }, [runFlush]);
-
-  useEffect(() => () => window.clearTimeout(flushTimerRef.current), []);
-
-  /**
-   * Primera parada tras hidratar: traer lo del servidor y fundirlo con lo de
-   * aquí. De esa fusión sale, sin caso especial, la migración de lo que ya
-   * hubiera en este navegador antes de existir la cuenta.
-   */
-  useEffect(() => {
-    if (!hydrated) return;
-    let alive = true;
-
-    void (async () => {
-      const result = await pull();
-      if (!alive) return;
-
-      if (!result.ok) {
-        setSync('offline');
-        setPending(pendingCount());
-        setNotice({ message: `${result.reason} Tus cambios siguen guardados en este navegador.` });
-        return;
-      }
-
-      // La referencia se actualiza antes que el estado: así el efecto de
-      // guardado no confunde lo que acaba de bajar con una edición local y no
-      // lo devuelve al servidor.
-      persistedRef.current = result.data;
-      setData(result.data);
-      setPending(pendingCount());
-
-      await runFlush();
-      if (!alive) return;
-
-      const count = result.queued;
-      const withImages = result.queuedImages;
-      if (count === 0 && withImages === 0) return;
-
-      const parts: string[] = [];
-      if (count > 0) parts.push(`${count} ${count === 1 ? 'día' : 'días'}`);
-      if (withImages > 0) {
-        parts.push(`${withImages} ${withImages === 1 ? 'nota con imágenes' : 'notas con imágenes'}`);
-      }
-
-      const left = pendingCount();
-      setNotice({
-        message:
-          left === 0
-            ? `Se subió ${parts.join(' y ')} de este navegador a tu cuenta.`
-            : `Subiendo ${parts.join(' y ')} a tu cuenta; queda${left === 1 ? '' : 'n'} ${left}.`,
-      });
-    })();
-
-    return () => {
-      alive = false;
-    };
-  }, [hydrated, runFlush]);
-
-  // Al recuperar la conexión se reintenta sin esperar a la siguiente edición.
-  useEffect(() => {
-    if (!hydrated) return;
-    function retry() {
-      void runFlush();
-    }
-    window.addEventListener('online', retry);
-    return () => window.removeEventListener('online', retry);
-  }, [hydrated, runFlush]);
-
-  useEffect(() => {
-    if (!hydrated) return;
-    if (!saveData(data)) {
-      setNotice({
-        message: 'No hay espacio para guardar en este navegador. Quita alguna imagen adjunta.',
-      });
-      return;
-    }
-
-    // Todas las vías de edición —el modal, el borrado, un rango con Shift, la
-    // importación— desembocan aquí, así que ninguna puede olvidarse de avisar.
-    recordChanges(persistedRef.current, data);
-    persistedRef.current = data;
-    setPending(pendingCount());
-    scheduleFlush();
-  }, [data, hydrated, scheduleFlush]);
 
   useEffect(() => {
     if (!hydrated) return;
@@ -297,14 +125,13 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
     };
   }, []);
 
-  // Mantiene el calendario en sincronía con otras pestañas abiertas.
+  // Mantiene el calendario en sincronía con otras pestañas abiertas. Los días
+  // y la cola de subida los vigila el almacén; aquí quedan los ajustes que son
+  // solo de esta página.
   useEffect(() => {
     function onStorage(event: StorageEvent) {
-      if (event.key === null || event.key === STORAGE_KEY) setData(loadData());
       if (event.key === null || event.key === LABELS_KEY) setLabels(loadLabels());
       if (event.key === null || event.key === EXPANSION_KEY) setExpansion(loadExpansion());
-      // Otra pestaña pudo subir lo que había en cola, o encolar algo nuevo.
-      if (event.key === null || event.key === SYNC_KEY) setPending(pendingCount());
     }
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
@@ -374,13 +201,14 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
    * Actualiza la referencia antes que el estado a propósito: lo que acaba de
    * bajar no es una edición y no debe volver a subir.
    */
-  const loadImages = useCallback(async (key: string) => {
-    const images = await fetchImages(key);
-    if (!images) return;
-    const next = storeImages(key, images);
-    persistedRef.current = next;
-    setData(next);
-  }, []);
+  const loadImages = useCallback(
+    async (key: string) => {
+      const images = await fetchImages(key);
+      if (!images) return;
+      adopt(storeImages(key, images));
+    },
+    [adopt],
+  );
 
   const openDay = useCallback((key: string) => {
     setAnchorKey(key);
@@ -582,7 +410,7 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
                   label={summary.marked === 1 ? 'día marcado' : 'días marcados'}
                   tone="accent"
                 />
-                <SyncBadge state={sync} pending={pending} onRetry={() => void runFlush()} />
+                <SyncBadge state={sync} pending={pending} onRetry={retry} />
                 <SummaryTile
                   value={summary.notes}
                   label={summary.notes === 1 ? 'nota guardada' : 'notas guardadas'}
@@ -723,15 +551,6 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
       )}
     </>
   );
-}
-
-/** Devuelve el calendario con las miniaturas recién generadas puestas. */
-function withThumbs(data: CalendarData, thumbs: Record<string, string>): CalendarData {
-  const next = { ...data };
-  for (const [key, thumb] of Object.entries(thumbs)) {
-    if (next[key]) next[key] = { ...next[key], thumb };
-  }
-  return next;
 }
 
 /** Botón cuadrado de la cabecera; el icono es su único contenido visible. */

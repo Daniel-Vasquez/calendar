@@ -1,0 +1,18 @@
+---
+import Layout from '../layouts/Layout.astro';
+import RemindersView from '../components/RemindersView';
+
+// Igual que el calendario y la galería: la sesión se resuelve por petición.
+export const prerender = false;
+
+const user = Astro.locals.user!;
+---
+
+<Layout
+  title="Recordatorios · Planificador 2026"
+  description="Todos los recordatorios programados en el Planificador 2026, pendientes y hechos."
+>
+  {/* La barra de navegación y el <main> los dibuja el componente: la
+      barra debe quedar fuera del contenedor para cruzar la pantalla. */}
+  <RemindersView user={{ name: user.name, email: user.email }} client:load />
+</Layout>

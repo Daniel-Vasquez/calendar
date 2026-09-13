@@ -45,6 +45,9 @@ middleware ───────────────────────
 | `src/lib/sync.ts` | Cola, fusión, subida y descarga bajo demanda |
 | `src/lib/storage.ts` | `localStorage`, saneado, forma de `DayEntry` |
 | `src/lib/reminder.ts` | Hora, texto y estado del aviso; lo importan los dos lados |
+| `src/lib/reminders.ts` | La lista: recoger, ordenar, filtrar y escribir avisos |
+| `src/components/useCalendarStore.ts` | El calendario y su sincronía, para toda página que escriba |
+| `src/pages/recordatorios.astro` | La lista de recordatorios |
 | `src/lib/telegram.ts` | El bot: enviar, leer `getUpdates`, clasificar fallos |
 | `src/pages/api/telegram.ts` | Vincular, comprobar, probar y desvincular |
 | `src/pages/api/cron/reminders.ts` | Lo dispara el programador externo |
@@ -389,6 +392,69 @@ calendario, salen solos y llegan a Telegram sin que nadie toque nada.
 
 ---
 
+### La lista de recordatorios — septiembre de 2026
+
+#### `/recordatorios`
+
+Va sin número a propósito: la tanda 8 —las imágenes en Cloudinary— sigue sin
+hacerse, y numerar esta como la 9 daría a entender que sí.
+
+Tercera pregunta que el proyecto no sabía contestar. La rejilla responde a «¿qué
+pasa este día?» y la agenda a «¿qué tengo por delante?»; faltaba «¿qué me queda
+por hacer, y qué ya está?», que obligaba a recorrer doce meses cazando campanas.
+
+**`done` es un campo nuevo, y va aparte de `sent` a propósito.** Son dos cosas
+distintas: `sent` lo escribe *solo* el servidor y dice que el aviso salió;
+`done` lo escribe *solo* el navegador y dice que la persona ya lo ha resuelto.
+Reutilizar `sent` habría roto la fusión —se adopta sin arbitrar marcas de tiempo
+justamente porque nadie de este lado lo toca (ver `pull()`)— y habría dejado sin
+respuesta la pregunta de la lista: ¿esto está hecho, o solo ha sonado?
+
+Lo hecho **no suena**: el cron añade `'reminder.done': { $exists: false }` a su
+filtro. Es lo que hace útil la casilla — tachar algo por la mañana evita el
+aviso de por la tarde, en vez de solo pintarlo distinto. Y `makeReminder` suelta
+`done` con la misma regla que ya soltaba `sent`: cambiar la hora o el texto
+devuelve el aviso a pendiente, porque reprogramar algo resuelto es programar
+algo nuevo.
+
+**La sincronía se extrajo a `useCalendarStore`.** Vivía dentro de
+`CalendarDashboard` mientras la única página que escribía era el calendario; con
+dos, copiarla habría sido copiar lo más delicado del proyecto —la referencia de
+lo persistido, el orden entre guardar y encolar, el único vuelo a la vez— y una
+copia que se desviara de la otra rompería la subida en silencio. La página nueva
+no toca `localStorage` ni la cola: escribe en `setData` y el resto pasa solo.
+
+El mismo modal crea y edita, y lo único que los distingue es si hay día de
+origen: sin él se está creando. Van juntos porque son la misma pantalla —fecha,
+hora y texto— y separarlos habría dejado dos copias que se desviarían a la
+primera corrección. Crear pone el aviso en un día que puede no existir todavía,
+y entonces nace vacío: sin marca, sin nota y sin imágenes. Un día que solo
+existe por su recordatorio es legítimo, y `hasContent` lo reconoce como tal.
+
+El marcador de posición del texto sigue a la **fecha elegida**, no al día de
+origen: sin texto propio lo que se manda es la nota del día en el que el aviso
+acabe, así que preguntar por el de partida enseñaría una nota que no es la que
+se va a mandar.
+
+La edición rápida puede **cambiar la fecha**, y eso mueve el aviso de día: el
+recordatorio vive dentro de su día, así que se saca de uno y se mete en otro. De
+ahí las tres reglas de `reminders.ts`: el día de destino nace si no existía, el
+de origen desaparece si se queda sin nada, y si el destino ya tenía aviso lo
+pierde —solo cabe uno— previo aviso en el propio modal. Al mudarse **no se
+hereda nada del anterior**: el instante es otro, y con él la respuesta a «¿ya
+salió?» y a «¿ya está hecho?».
+
+El orden es el del uso, no el del almanaque: lo próximo de lo más inminente en
+adelante, y lo pasado **al revés**, del más reciente hacia atrás. De un aviso
+vencido importa el de ayer, no el de hace ocho meses. El corte entre los dos
+grupos es el instante del aviso y no su estado: uno que venció hace diez minutos
+y sigue sin enviarse está en «ya pasaron», que es donde se le busca.
+
+`ReminderChip` salió de `AgendaPanel` a su propio archivo. El mismo dato merece
+el mismo aspecto en los dos sitios, o el ámbar de «se pasó» dejaría de
+significar lo mismo según desde qué página se mire.
+
+
 ## Lo que falta
 
 ### Tanda 8 · Multimedia en Cloudinary
@@ -606,6 +672,11 @@ Pendiente:
       que las imágenes dejen de verse sin conexión.
 - [ ] No hay recuperación de contraseña: haría falta un servidor de correo.
 - [ ] `IMAGE_ACTION` en `DayModal.tsx` no se usa. Anterior a esta sesión.
+- [ ] Dar por hecho un aviso que el servidor acaba de marcar como enviado —sin
+      que este navegador se haya enterado todavía— sube el aviso sin `sent` y
+      borra esa marca en Mongo. No se reenvía, porque `done` también excluye del
+      cron, pero el día pierde el rastro de que salió. Es el mismo agujero que
+      cualquier otra edición local hecha entre el envío y la siguiente lectura.
 - [ ] El borrador del modal se reinicia si el día cambia de identidad mientras
       está abierto —que es lo que pasa cuando llegan sus imágenes—. Afecta por
       igual a la nota, al color y ahora al recordatorio; es anterior a esta
@@ -905,4 +976,4 @@ Hay que sustituir también el `import`, no solo la llamada. Y la variable va
 **delante** del comando: `--env-file` no pisa lo que ya venga del shell, que es
 justo lo que aquí interesa.
 
-claude --resume f1245293-0ffd-4582-ac35-4024aa8d6dc5
+claude --resume 2133f376-4327-490d-a161-88961ec6eef8

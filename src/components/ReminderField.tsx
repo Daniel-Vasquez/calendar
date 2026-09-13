@@ -1,5 +1,6 @@
 import { useEffect, useId, useState } from 'react';
 import {
+  DEFAULT_REMINDER_TIME,
   defaultReminderText,
   isTime,
   makeReminder,
@@ -15,9 +16,6 @@ type Props = {
   value?: Reminder;
   onChange: (next: Reminder | undefined) => void;
 };
-
-/** Hora que se propone al encender el aviso. */
-const DEFAULT_TIME = '09:00';
 
 /**
  * ¿Hay un Telegram conectado en esta cuenta?
@@ -69,6 +67,12 @@ const SENT_FORMAT: Intl.DateTimeFormatOptions = {
 
 function stateLine(reminder: Reminder, now: number): string {
   switch (reminderState(reminder, now)) {
+    case 'done':
+      // Se marca desde la lista de recordatorios, no desde aquí; lo que hace
+      // falta es que al abrir el día no parezca que el aviso sigue vivo. Y que
+      // se sepa que tocar la hora o el texto lo devuelve a pendiente, porque
+      // eso es justo lo que hace `makeReminder`.
+      return 'Lo diste por hecho, así que no se enviará. Cambiar la hora o el texto lo reactiva.';
     case 'sent':
       return `Enviado el ${new Date(reminder.sent ?? reminder.at).toLocaleString('es', SENT_FORMAT)}.`;
     case 'due':
@@ -145,7 +149,7 @@ export default function ReminderField({
   }
 
   function toggle(next: boolean) {
-    const nextTime = next && !time ? DEFAULT_TIME : time;
+    const nextTime = next && !time ? DEFAULT_REMINDER_TIME : time;
     setOn(next);
     setTime(nextTime);
     emit(next, nextTime, text);

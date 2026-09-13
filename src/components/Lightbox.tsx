@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef } from 'react';
-import { formatLongDate, formatWeekday } from '../lib/calendar';
-import { dayHref, type GalleryImage } from '../lib/gallery';
+import { dayHref, formatLongDate, formatWeekday } from '../lib/calendar';
+import { type GalleryImage } from '../lib/gallery';
 import { useDialog } from './useDialog';
 
 type Props = {

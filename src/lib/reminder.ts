@@ -28,7 +28,27 @@ export type Reminder = {
   text?: string;
   /** Cuándo salió el aviso, en ms. Ausente mientras no haya salido. */
   sent?: number;
+  /**
+   * Cuándo se dio por hecho, en ms. Ausente mientras siga pendiente.
+   *
+   * Va aparte de `sent` y no en su lugar porque son dos cosas distintas:
+   * `sent` lo escribe **solo** el servidor y dice que el aviso salió; `done` lo
+   * escribe **solo** el navegador y dice que la persona ya lo ha resuelto.
+   * Mezclarlos rompería la fusión —`sent` se adopta sin arbitrar marcas de
+   * tiempo justamente porque nadie de este lado lo toca— y además dejaría sin
+   * respuesta la pregunta que hace la lista: ¿esto está hecho o solo ha sonado?
+   *
+   * Un aviso hecho no se manda: el cron lo excluye igual que a los ya enviados.
+   */
+  done?: number;
 };
+
+/**
+ * Hora que se propone al encender un aviso o al crear uno desde la lista. Vive
+ * aquí y no en un componente porque ya son dos los que la proponen, y que un
+ * sitio sugiera las 9:00 y el otro las 8:00 solo despistaría.
+ */
+export const DEFAULT_REMINDER_TIME = '09:00';
 
 /** Tope del texto propio. El aviso es una línea, no una segunda nota. */
 export const MAX_REMINDER_TEXT = 200;
@@ -80,17 +100,21 @@ export function sanitizeReminder(raw: unknown, key: string): Reminder | null {
     typeof value.at === 'number' && Number.isFinite(value.at) ? value.at : toEpoch(key, value.time);
 
   const text = typeof value.text === 'string' ? value.text.trim().slice(0, MAX_REMINDER_TEXT) : '';
-  const sent =
-    typeof value.sent === 'number' && Number.isFinite(value.sent) && value.sent > 0
-      ? value.sent
-      : undefined;
+  const sent = stamp(value.sent);
+  const done = stamp(value.done);
 
   return {
     time: value.time,
     at,
     ...(text ? { text } : {}),
     ...(sent ? { sent } : {}),
+    ...(done ? { done } : {}),
   };
+}
+
+/** Una marca de tiempo que valga como tal, o nada. */
+function stamp(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
 /**
@@ -99,8 +123,10 @@ export function sanitizeReminder(raw: unknown, key: string): Reminder | null {
  *
  * 1. `at` se recalcula con la hora nueva. Si no, cambiar las 9:00 por las 18:00
  *    dejaría el absoluto viejo y el cron seguiría mirando las 9:00.
- * 2. `sent` se pierde en cuanto cambia la hora o el texto. Si no, mover un
- *    aviso ya enviado lo dejaría marcado como hecho y no sonaría nunca.
+ * 2. `sent` y `done` se pierden en cuanto cambia la hora o el texto. Si no,
+ *    mover un aviso ya enviado lo dejaría marcado como salido y no sonaría
+ *    nunca; y reprogramar uno ya resuelto lo dejaría tachado sin serlo, que es
+ *    la forma de que un aviso nuevo no llegue a ninguna parte.
  */
 export function makeReminder(
   key: string,
@@ -118,6 +144,7 @@ export function makeReminder(
     at: toEpoch(key, time),
     ...(clean ? { text: clean } : {}),
     ...(untouched && previous?.sent ? { sent: previous.sent } : {}),
+    ...(untouched && previous?.done ? { done: previous.done } : {}),
   };
 }
 
@@ -128,7 +155,8 @@ export function sameReminder(a?: Reminder, b?: Reminder): boolean {
     a.time === b.time &&
     a.at === b.at &&
     (a.text ?? '') === (b.text ?? '') &&
-    (a.sent ?? 0) === (b.sent ?? 0)
+    (a.sent ?? 0) === (b.sent ?? 0) &&
+    (a.done ?? 0) === (b.done ?? 0)
   );
 }
 
@@ -136,9 +164,12 @@ export function sameReminder(a?: Reminder, b?: Reminder): boolean {
  * En qué punto está el aviso. Lo mira la interfaz para pintarlo y lo mirará el
  * cron para decidir qué manda, así que la regla vive una sola vez.
  */
-export type ReminderState = 'pending' | 'due' | 'missed' | 'sent';
+export type ReminderState = 'done' | 'pending' | 'due' | 'missed' | 'sent';
 
 export function reminderState(reminder: Reminder, now: number = Date.now()): ReminderState {
+  // Lo primero, por encima incluso de `sent`: darlo por hecho es lo único que
+  // dice la persona, y no hay estado que le gane.
+  if (reminder.done) return 'done';
   if (reminder.sent) return 'sent';
   if (reminder.at > now) return 'pending';
   return now - reminder.at <= GRACE_MS ? 'due' : 'missed';

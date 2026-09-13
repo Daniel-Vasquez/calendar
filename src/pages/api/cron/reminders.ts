@@ -160,6 +160,10 @@ export const POST: APIRoute = async ({ request, url }) => {
       .find({
         'reminder.at': { $lte: started, $gt: started - GRACE_MS },
         'reminder.sent': { $exists: false },
+        // Lo dado por hecho no suena. Es lo que hace útil la casilla de la
+        // lista de recordatorios: tachar algo por la mañana evita el aviso de
+        // por la tarde, en vez de solo pintarlo distinto.
+        'reminder.done': { $exists: false },
         deleted: { $ne: true },
       })
       .sort({ 'reminder.at': 1 })

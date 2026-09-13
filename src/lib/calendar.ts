@@ -178,3 +178,15 @@ export function msUntilNextMidnight(now: Date = new Date()): number {
   const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
   return midnight.getTime() - now.getTime();
 }
+
+/** Parámetro con el que el calendario abre un día al cargar: `/?day=2026-03-15`. */
+export const DAY_PARAM = 'day';
+
+/**
+ * Ruta del calendario con el día ya abierto. Es el destino de todo enlace que
+ * salga de una vista lateral hacia su origen: "Ver nota" en la galería y "Ver
+ * en el calendario" en los recordatorios.
+ */
+export function dayHref(key: string): string {
+  return `/?${DAY_PARAM}=${key}`;
+}

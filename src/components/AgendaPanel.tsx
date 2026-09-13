@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { dayTimeState, formatLongDate, formatWeekday } from '../lib/calendar';
 import { colorHex, DAY_COLORS, DEFAULT_COLOR, type ColorId } from '../lib/palette';
 import { hasCustomLabel, labelFor, type ColorLabels } from '../lib/labels';
-import { reminderState, type Reminder } from '../lib/reminder';
+import ReminderChip from './ReminderChip';
 import { hasImages, imageCount, type CalendarData } from '../lib/storage';
 
 type Props = {
@@ -17,56 +17,6 @@ const CHIP =
   'rounded-full border px-3 py-1 text-xs font-medium transition-colors ' +
   'focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 ' +
   'focus-visible:outline-none';
-
-/**
- * Aspecto de la hora del aviso según en qué punto esté. El ámbar queda para lo
- * que se pasó sin enviarse, que es lo único que pide atención; lo ya enviado se
- * apaga, porque enterarse de que un aviso salió no es urgente.
- */
-const REMINDER_TONE: Record<ReturnType<typeof reminderState>, string> = {
-  pending: 'bg-accent/10 text-accent-strong',
-  due: 'bg-accent/10 text-accent-strong',
-  missed: 'bg-highlight-soft text-highlight',
-  sent: 'bg-edge text-ink-muted',
-};
-
-const REMINDER_TITLE: Record<ReturnType<typeof reminderState>, string> = {
-  pending: 'Aviso pendiente',
-  due: 'Aviso pendiente de envío',
-  missed: 'El aviso se pasó sin enviarse',
-  sent: 'Aviso enviado',
-};
-
-/** La hora del recordatorio, junto a los demás indicadores de la fila. */
-function ReminderChip({ reminder, now }: { reminder: Reminder; now: number }) {
-  const state = reminderState(reminder, now);
-  return (
-    <span
-      title={REMINDER_TITLE[state]}
-      className={
-        'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold ' +
-        REMINDER_TONE[state]
-      }
-    >
-      <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-        <path
-          d="M8 2a4 4 0 00-4 4v2.6L2.8 11h10.4L12 8.6V6a4 4 0 00-4-4z"
-          stroke="currentColor"
-          strokeWidth="1.6"
-          strokeLinejoin="round"
-        />
-        <path
-          d="M6.4 13a1.7 1.7 0 003.2 0"
-          stroke="currentColor"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-        />
-      </svg>
-      {reminder.time}
-      <span className="sr-only"> · {REMINDER_TITLE[state]}</span>
-    </span>
-  );
-}
 
 /**
  * Lista cronológica de todo lo registrado en el año.

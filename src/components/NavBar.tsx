@@ -4,7 +4,7 @@ export type NavUser = { name: string; email: string };
 
 type Props = {
   /** Página que se está viendo: marca el enlace activo. */
-  current: 'calendar' | 'gallery';
+  current: 'calendar' | 'reminders' | 'gallery';
   /** Quién ha entrado. Lo resuelve el servidor y baja como prop. */
   user: NavUser;
   /**
@@ -21,6 +21,7 @@ type Props = {
 
 const LINKS = [
   { id: 'calendar', href: '/', label: 'Calendario' },
+  { id: 'reminders', href: '/recordatorios', label: 'Recordatorios' },
   { id: 'gallery', href: '/galeria', label: 'Galería' },
 ] as const;
 

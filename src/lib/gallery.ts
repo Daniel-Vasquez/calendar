@@ -34,11 +34,3 @@ export function collectImages(data: CalendarData): GalleryImage[] {
       }));
     });
 }
-
-/** Parámetro con el que el calendario abre un día al cargar: `/?day=2026-03-15`. */
-export const DAY_PARAM = 'day';
-
-/** Ruta del calendario con el día ya abierto; destino del botón "Ver nota". */
-export function dayHref(key: string): string {
-  return `/?${DAY_PARAM}=${key}`;
-}
