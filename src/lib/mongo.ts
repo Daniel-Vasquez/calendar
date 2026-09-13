@@ -37,6 +37,8 @@ type MongoCache = {
   settingsIndex: Promise<unknown> | null;
   /** Creación del índice por hora de aviso. Ver `getDays`. */
   remindersIndex: Promise<unknown> | null;
+  /** Creación del índice de `allowlist`. Ver `getAllowlist`. */
+  allowlistIndex: Promise<unknown> | null;
 };
 
 /**
@@ -57,6 +59,7 @@ const cache: MongoCache = (globalForMongo.__planificadorMongo ??= {
   imagesIndex: null,
   settingsIndex: null,
   remindersIndex: null,
+  allowlistIndex: null,
 });
 
 /**
@@ -198,6 +201,45 @@ export async function getSettings(): Promise<Collection<SettingsDoc>> {
     throw error;
   }
   return settings;
+}
+
+/**
+ * Quién puede crearse una cuenta.
+ *
+ * Vive en Mongo y no en una variable de entorno por una razón práctica: el
+ * panel de Vercel no enseña el valor actual al editar, así que cambiar una
+ * lista allí es escribir a ciegas y borrar de un tecleo a quien no recordabas.
+ * Aquí se lee siempre, se cambia sin desplegar, y no es un secreto — saber qué
+ * correos pueden registrarse no le abre la puerta a nadie: sigue haciendo falta
+ * la contraseña.
+ *
+ * Solo mira a quien **se da de alta**. Quien ya tiene cuenta entra igual, esté
+ * o no en la lista.
+ */
+export type AllowlistDoc = {
+  /** En minúsculas y sin espacios; es también la clave única. */
+  email: string;
+  /** Para poder distinguir después quién invitó a quién, o cuándo. */
+  note?: string;
+  addedAt: number;
+};
+
+/** La lista de invitados, con su índice garantizado. */
+export async function getAllowlist(): Promise<Collection<AllowlistDoc>> {
+  const allowlist = getDb().collection<AllowlistDoc>('allowlist');
+  cache.allowlistIndex ??= allowlist.createIndex({ email: 1 }, { unique: true });
+  try {
+    await cache.allowlistIndex;
+  } catch (error) {
+    cache.allowlistIndex = null;
+    throw error;
+  }
+  return allowlist;
+}
+
+/** Normaliza un correo para guardarlo y para compararlo. Siempre el mismo. */
+export function normalizeEmail(value: string): string {
+  return value.trim().toLowerCase();
 }
 
 /** La colección de imágenes, con su índice garantizado. */
