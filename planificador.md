@@ -48,6 +48,7 @@ middleware ───────────────────────
 | `src/lib/reminders.ts` | La lista: recoger, ordenar, filtrar y escribir avisos |
 | `src/components/useCalendarStore.ts` | El calendario y su sincronía, para toda página que escriba |
 | `src/pages/recordatorios.astro` | La lista de recordatorios |
+| `src/pages/agenda.astro` | La agenda del año y las cuentas del calendario |
 | `src/lib/telegram.ts` | El bot: enviar, leer `getUpdates`, clasificar fallos |
 | `src/pages/api/telegram.ts` | Vincular, comprobar, probar y desvincular |
 | `src/pages/api/cron/reminders.ts` | Lo dispara el programador externo |
@@ -450,7 +451,8 @@ vencido importa el de ayer, no el de hace ocho meses. El corte entre los dos
 grupos es el instante del aviso y no su estado: uno que venció hace diez minutos
 y sigue sin enviarse está en «ya pasaron», que es donde se le busca.
 
-`ReminderChip` salió de `AgendaPanel` a su propio archivo. El mismo dato merece
+`ReminderChip` salió de la agenda (entonces `AgendaPanel`, hoy `AgendaList`) a
+su propio archivo. El mismo dato merece
 el mismo aspecto en los dos sitios, o el ámbar de «se pasó» dejaría de
 significar lo mismo según desde qué página se mire.
 
@@ -485,6 +487,30 @@ porque la página sigue necesitando un encabezado del que colgar el resto.
 La fila de contadores se parte en tres bloques apilados —acciones, cuentas,
 plegado— de dos columnas iguales, y vuelve a una sola fila en `sm`. De paso sale
 del `<dl>` el indicador de sincronía, que llevaba dentro sin ser ni `dt` ni `dd`.
+
+#### La agenda se muda a `/agenda`
+
+Vivía apretada al pie del calendario, con `max-h-96` y scroll propio para no
+empujar el pie de página fuera de la vista. Eso es una lista de hasta trescientos
+sesenta y seis días mirada por una rendija de trescientos ochenta píxeles. Ahora
+tiene página: sin marco, sin título propio —el de la página ya lo dice— y sin
+alto máximo. Con ella se fue la regla de impresión de `.max-h-96`, que describía
+un scroll que ya no existe.
+
+Las filas pasaron de botón a **enlace** a `/?day=…`. En el calendario abrían el
+modal del día porque el modal estaba ahí al lado; desde otra página el camino es
+el que ya usaban «Ver nota» en la galería y «Ver en el calendario» en los
+recordatorios. Editar un día entero sigue siendo cosa de su modal, y ese vive
+donde está la rejilla.
+
+Las dos cuentas —días marcados y notas guardadas— se fueron con ella. Estaban en
+la cabecera de la portada, que es donde menos falta hacían: encima de una rejilla
+que ya enseña de un vistazo cuántos días llevan color. Junto a la lista de la que
+salen sí dicen algo, y la cabecera del calendario se queda con lo que solo sirve
+allí: ir a hoy, el estado de la sincronía y el plegado de los meses.
+
+`AgendaPanel` pasó a llamarse `AgendaList`: dejó de ser un panel dentro de otra
+página el día que tuvo la suya.
 
 ## Lo que falta
 

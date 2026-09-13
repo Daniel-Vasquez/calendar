@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import MonthCard from './MonthCard';
 import DayModal from './DayModal';
-import AgendaPanel from './AgendaPanel';
 import SettingsModal from './SettingsModal';
 import NavBar, { type NavUser } from './NavBar';
 import SyncBadge from './SyncBadge';
@@ -40,7 +39,7 @@ import {
 } from '../lib/labels';
 import { downloadFile, exportFilename, parseImport, toIcs, toJson } from '../lib/transfer';
 import { fetchImages, storeImages } from '../lib/sync';
-import { hasContent, hasImages, type CalendarData, type DayEntry } from '../lib/storage';
+import { hasContent, type CalendarData, type DayEntry } from '../lib/storage';
 
 /**
  * Aviso efímero del pie. Con `snapshot` ofrece deshacer —guarda el calendario
@@ -365,15 +364,6 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
     cell.focus({ preventScroll: true });
   }, [today, expansion]);
 
-  const summary = useMemo(() => {
-    const entries = Object.values(data);
-    return {
-      marked: entries.filter((entry) => entry.marked).length,
-      // Una imagen sola también cuenta como nota: es contenido del día.
-      notes: entries.filter((entry) => entry.note || hasImages(entry)).length,
-    };
-  }, [data]);
-
   return (
     <>
       <NavBar
@@ -387,11 +377,11 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
       />
 
       <main className="mx-auto w-full max-w-5xl px-4 py-10 sm:px-6 sm:py-14">
-        {/* En un teléfono esta fila no cabe en una línea, y apretarla era lo
-            que amontonaba los contadores. Se parte en tres bloques que se
-            apilan —acciones, cuentas, plegado—, cada uno en dos columnas
-            iguales; a partir de `sm` los tres vuelven a la misma fila. */}
-        <header className="mb-8 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
+        {/* Lo que queda arriba: ir a hoy, el estado de la sincronía y el
+            plegado de los meses. Las cuentas del año se fueron a `/agenda`,
+            junto a la lista de la que salen. En un teléfono los dos bloques se
+            apilan; a partir de `sm` vuelven a la misma fila. */}
+        <header className="mb-8 flex gap-2 justify-between sm:items-center sm:gap-3">
           {/* El rótulo del año se quitó de la vista: los doce meses ya lo
               dicen, y en un teléfono ocupaba una línea entera. Se queda para
               quien lea la página con un lector, que sí necesita un encabezado
@@ -415,23 +405,6 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
             )}
             <SyncBadge state={sync} pending={pending} onRetry={retry} />
           </div>
-
-          <dl className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-3" aria-live="polite">
-            <SummaryTile
-              value={summary.marked}
-              label={summary.marked === 1 ? 'día marcado' : 'días marcados'}
-              tone="accent"
-            >
-              <MarkedIcon />
-            </SummaryTile>
-            <SummaryTile
-              value={summary.notes}
-              label={summary.notes === 1 ? 'nota guardada' : 'notas guardadas'}
-              tone="highlight"
-            >
-              <NoteIcon />
-            </SummaryTile>
-          </dl>
 
           <div className="print-hidden flex justify-end gap-2 sm:ml-auto">
             <IconButton
@@ -465,8 +438,6 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
             />
           ))}
         </div>
-
-        <AgendaPanel data={data} labels={labels} today={today} onSelectDay={openDay} />
 
         <footer className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-ink-muted">
           <span className="flex items-center gap-2">
@@ -608,73 +579,6 @@ function ChevronsIcon({ direction }: { direction: 'up' | 'down' }) {
       className={direction === 'up' ? 'rotate-180' : undefined}
     >
       <path d="M7 6l5 5 5-5M7 13l5 5 5-5" />
-    </svg>
-  );
-}
-
-/**
- * Una cuenta de la cabecera: icono, número y —solo cuando hay ancho— el rótulo.
- *
- * En un teléfono el texto se va y queda el distintivo: el icono repite el mismo
- * dibujo que la leyenda del pie, así que la asociación ya está hecha. El rótulo
- * no se pierde, sigue en el `<dt>`, que es de donde lo saca un lector de
- * pantalla tanto si se ve como si no.
- */
-function SummaryTile({
-  value,
-  label,
-  tone,
-  children,
-}: {
-  value: number;
-  label: string;
-  tone: 'accent' | 'highlight';
-  children: React.ReactNode;
-}) {
-  const toneClass =
-    tone === 'accent'
-      ? 'border-accent/25 bg-accent/10 text-accent-strong'
-      : 'border-highlight/25 bg-highlight-soft text-highlight';
-
-  return (
-    <div
-      className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2 sm:justify-start sm:px-4 sm:py-2.5 ${toneClass}`}
-    >
-      <dt className="sr-only">{label}</dt>
-      <dd className="flex items-center gap-1.5">
-        <span aria-hidden="true">{children}</span>
-        <span className="text-xl font-semibold tabular-nums sm:text-2xl">{value}</span>
-        <span className="hidden text-xs font-medium sm:inline">{label}</span>
-      </dd>
-    </div>
-  );
-}
-
-/** Recuadro lleno: un día marcado, el mismo que la leyenda del pie. */
-function MarkedIcon() {
-  return (
-    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <rect x="2" y="2" width="12" height="12" rx="3" fill="currentColor" />
-    </svg>
-  );
-}
-
-/** Hoja con dos renglones: una nota guardada. */
-function NoteIcon() {
-  return (
-    <svg
-      width="15"
-      height="15"
-      viewBox="0 0 16 16"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M3.5 2.5h9v11h-9z" />
-      <path d="M6 6h4M6 9h4" />
     </svg>
   );
 }

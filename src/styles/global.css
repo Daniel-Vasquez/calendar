@@ -165,10 +165,4 @@ html {
   .month-body > * {
     opacity: 1 !important;
   }
-
-  /* La agenda se lee entera: en pantalla tiene scroll propio, aquí no cabría. */
-  .max-h-96 {
-    max-height: none !important;
-    overflow: visible !important;
-  }
 }

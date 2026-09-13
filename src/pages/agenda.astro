@@ -1,0 +1,18 @@
+---
+import Layout from '../layouts/Layout.astro';
+import AgendaView from '../components/AgendaView';
+
+// Igual que el resto de páginas con sesión: se resuelve por petición.
+export const prerender = false;
+
+const user = Astro.locals.user!;
+---
+
+<Layout
+  title="Agenda · Planificador 2026"
+  description="Todo lo registrado en el año del Planificador 2026, en orden cronológico."
+>
+  {/* La barra de navegación y el <main> los dibuja el componente: la
+      barra debe quedar fuera del contenedor para cruzar la pantalla. */}
+  <AgendaView user={{ name: user.name, email: user.email }} client:load />
+</Layout>

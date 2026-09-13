@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { dayTimeState, formatLongDate, formatWeekday } from '../lib/calendar';
+import { dayHref, dayTimeState, formatLongDate, formatWeekday } from '../lib/calendar';
 import { colorHex, DAY_COLORS, DEFAULT_COLOR, type ColorId } from '../lib/palette';
 import { hasCustomLabel, labelFor, type ColorLabels } from '../lib/labels';
 import ReminderChip from './ReminderChip';
@@ -10,7 +10,6 @@ type Props = {
   labels: ColorLabels;
   /** Clave `YYYY-MM-DD` de hoy; vacía hasta que el cliente hidrata. */
   today: string;
-  onSelectDay: (key: string) => void;
 };
 
 const CHIP =
@@ -19,12 +18,21 @@ const CHIP =
   'focus-visible:outline-none';
 
 /**
- * Lista cronológica de todo lo registrado en el año.
+ * Lista cronológica de todo lo registrado en el año, con sus filtros.
  *
  * La rejilla responde a "¿qué pasa este día?"; esta lista responde a "¿qué
  * tengo por delante?" sin recorrer doce meses cazando puntos de color.
+ *
+ * Vivía apretada al pie del calendario, con su propio scroll para no empujar
+ * fuera el resto de la página. Ahora tiene página, así que se la deja crecer: ni
+ * marco, ni título propio —el de la página ya lo dice— ni alto máximo.
+ *
+ * Cada fila es un **enlace** al día en el calendario, no un botón que abra nada
+ * aquí. Es el mismo camino que "Ver nota" en la galería y "Ver en el calendario"
+ * en los recordatorios: editar un día entero es cosa de su modal, y ese vive
+ * donde está la rejilla.
  */
-export default function AgendaPanel({ data, labels, today, onSelectDay }: Props) {
+export default function AgendaList({ data, labels, today }: Props) {
   // Un solo instante para toda la lista: pedir la hora por fila daría estados
   // distintos dentro del mismo repintado.
   const now = Date.now();
@@ -52,25 +60,9 @@ export default function AgendaPanel({ data, labels, today, onSelectDay }: Props)
   });
 
   return (
-    <section
-      aria-labelledby="agenda-title"
-      className="mt-5 rounded-2xl border border-edge bg-surface p-4 shadow-sm sm:p-5"
-    >
-      <header className="mb-3 flex flex-wrap items-baseline justify-between gap-3">
-        <h2 id="agenda-title" className="text-lg font-semibold tracking-tight text-ink">
-          Agenda del año
-        </h2>
-        {allKeys.length > 0 && (
-          <span className="text-xs font-medium text-ink-muted">
-            {keys.length === allKeys.length
-              ? `${allKeys.length} ${allKeys.length === 1 ? 'día registrado' : 'días registrados'}`
-              : `${keys.length} de ${allKeys.length} días`}
-          </span>
-        )}
-      </header>
-
+    <section aria-label="Días registrados">
       {allKeys.length > 0 && (usedColors.length > 1 || pastCount > 0) && (
-        <div className="print-hidden mb-3 flex flex-wrap items-center gap-2">
+        <div className="print-hidden mb-4 flex flex-wrap items-center gap-2">
           {usedColors.length > 1 && (
             <>
               <button
@@ -134,18 +126,22 @@ export default function AgendaPanel({ data, labels, today, onSelectDay }: Props)
         </div>
       )}
 
-      {allKeys.length === 0 ? (
-        <p className="py-8 text-center text-sm text-ink-muted">
-          Todavía no hay nada anotado. Haz clic en cualquier día del calendario para empezar.
+      {/* Cuántos quedan a la vista. Solo con un filtro puesto: sin él, el
+          total ya lo dice la cabecera de la página y repetirlo es ruido. */}
+      {keys.length > 0 && keys.length !== allKeys.length && (
+        <p className="mb-2 text-xs font-medium text-ink-muted">
+          {keys.length} de {allKeys.length} días
         </p>
+      )}
+
+      {allKeys.length === 0 ? (
+        <EmptyState />
       ) : keys.length === 0 ? (
-        <p className="py-8 text-center text-sm text-ink-muted">
+        <p className="rounded-2xl border border-dashed border-edge bg-surface py-12 text-center text-sm text-ink-muted">
           Ningún día coincide con el filtro.
         </p>
       ) : (
-        // El año admite más de cien entradas: la lista se queda con su
-        // propio scroll para no empujar el pie de página fuera de la vista.
-        <ul className="max-h-96 divide-y divide-edge overflow-y-auto">
+        <ul className="divide-y divide-edge rounded-2xl border border-edge bg-surface px-2 shadow-sm sm:px-3">
           {keys.map((key) => {
             const entry = data[key];
             const timeState = dayTimeState(key, today);
@@ -157,9 +153,9 @@ export default function AgendaPanel({ data, labels, today, onSelectDay }: Props)
 
             return (
               <li key={key}>
-                <button
-                  type="button"
-                  onClick={() => onSelectDay(key)}
+                <a
+                  href={dayHref(key)}
+                  aria-label={`Ver ${formatWeekday(key)} ${formatLongDate(key)} en el calendario`}
                   className={
                     'flex w-full items-start gap-3 rounded-lg px-2 py-3 text-left transition ' +
                     'hover:bg-white focus-visible:ring-2 focus-visible:ring-accent ' +
@@ -235,12 +231,54 @@ export default function AgendaPanel({ data, labels, today, onSelectDay }: Props)
                       )}
                     </span>
                   )}
-                </button>
+                </a>
               </li>
             );
           })}
         </ul>
       )}
     </section>
+  );
+}
+
+/** Sin nada anotado todavía: explica de dónde sale la lista y lleva a la rejilla. */
+function EmptyState() {
+  return (
+    <div className="flex flex-col items-center rounded-2xl border border-dashed border-edge bg-surface px-6 py-16 text-center">
+      <svg
+        width="64"
+        height="64"
+        viewBox="0 0 64 64"
+        fill="none"
+        aria-hidden="true"
+        className="text-ink-muted"
+      >
+        <rect x="10" y="12" width="44" height="40" rx="6" stroke="currentColor" strokeWidth="2.5" />
+        <path d="M10 24h44" stroke="currentColor" strokeWidth="2.5" />
+        <path
+          d="M22 8v8M42 8v8"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+        />
+        <path
+          d="M20 34h10M20 42h18"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+        />
+      </svg>
+      <h2 className="mt-5 text-lg font-semibold text-ink">Todavía no hay nada anotado</h2>
+      <p className="mt-2 max-w-sm text-sm text-ink-soft">
+        Marca un día en el calendario, escríbele una nota o adjúntale una imagen. Todo lo que
+        registres en el año se reúne aquí, en orden y con sus filtros.
+      </p>
+      <a
+        href="/"
+        className="mt-6 rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-accent-strong focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none"
+      >
+        Ir al calendario
+      </a>
+    </div>
   );
 }
