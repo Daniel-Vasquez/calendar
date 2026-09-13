@@ -358,7 +358,18 @@ export default function DayModal({
             <span>Color del recuadro</span>
             <span className="text-xs font-normal text-ink-muted">{labelFor(labels, color)}</span>
           </legend>
-          <div role="radiogroup" aria-label="Color del recuadro" className="grid grid-cols-8 gap-2">
+          {/* Columnas de ancho fijo, no ocho partes iguales del modal: repartido,
+              cada muestra se iba a los setenta píxeles en un portátil —un mural
+              de color encima de la nota— y se quedaba en veintiocho en un
+              teléfono, por debajo de lo que un dedo acierta. Las 2.75rem son el
+              punto en el que ni una cosa ni la otra: cuatro por fila en un
+              teléfono y las ocho seguidas a partir de `sm`, que es donde caben
+              sin apretar. El tamaño se declara una sola vez, aquí. */}
+          <div
+            role="radiogroup"
+            aria-label="Color del recuadro"
+            className="grid grid-cols-[repeat(4,2.75rem)] gap-2 sm:grid-cols-[repeat(8,2.75rem)]"
+          >
             {DAY_COLORS.map((option) => {
               const selected = option.id === color;
               const name = labelFor(labels, option.id);
@@ -373,7 +384,9 @@ export default function DayModal({
                   onClick={() => pickColor(option.id)}
                   style={{ backgroundColor: option.hex }}
                   className={
-                    'flex aspect-square w-full items-center justify-center rounded-lg transition ' +
+                    // El radio baja con la muestra: a 2.75rem, `rounded-lg`
+                    // pesaba de más y redondeaba el recuadro casi a pastilla.
+                    'flex aspect-square w-full items-center justify-center rounded-md transition ' +
                     'focus-visible:ring-2 focus-visible:ring-ink focus-visible:ring-offset-2 focus-visible:outline-none ' +
                     (selected
                       ? 'ring-2 ring-ink ring-offset-2 ring-offset-canvas'
