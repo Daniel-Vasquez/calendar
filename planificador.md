@@ -305,30 +305,41 @@ marcarlo como enviado. `getMe` confirma el bot y no hay webhook puesto.
 
 ### Lo que queda de los recordatorios
 
-El código está entero; falta encender el interruptor de fuera.
+- [x] **Telegram vinculado.** Ajustes → *Recordatorios por Telegram* → abrir el
+      chat, **Start**, volver y *Comprobar conexión*. Un bot no puede escribir
+      primero: hasta ese Start, Telegram no le deja mandar nada y el cron cuenta
+      el aviso como «sin destino».
+- [x] **`CRON_SECRET` y las tres variables de Telegram en Vercel.**
+- [ ] **Quien llame cada cinco minutos.** Es lo único que falta, y sin ello los
+      recordatorios solo salen cuando alguien dispara el endpoint a mano.
 
-- [ ] **Vincular tu Telegram.** Ajustes → *Recordatorios por Telegram* → abrir
-      el chat, pulsar **Start**, volver y pulsar *Comprobar conexión*. Un bot no
-      puede escribir primero: hasta ese Start, Telegram no le deja mandarte
-      nada, y el cron cuenta el aviso como «sin destino».
-- [ ] **`CRON_SECRET` en Vercel.** `openssl rand -hex 32`. Es lo único que
-      guarda la ruta del cron, que no tiene sesión.
-- [ ] **Las tres variables de Telegram en el panel de Vercel.** En local ya
-      están.
-- [ ] **El programador externo.** Ya está escrito en
-      `.github/workflows/recordatorios.yml`: llama cada 5 minutos y se puede
-      disparar a mano desde la pestaña *Actions*. Falta poner `CRON_SECRET` en
-      *Settings → Secrets and variables → Actions*, con el mismo valor que en
-      Vercel.
+**GitHub Actions no sirve para esto.** El workflow está en
+`.github/workflows/recordatorios.yml` y funciona —las ejecuciones manuales
+salen en verde—, pero **el `schedule` no se ejecuta**: cero ejecuciones de unas
+veintisiete esperadas en 137 minutos, medido contra la API. No es configuración
+del repositorio: el workflow figura como `active`, está en la rama por defecto y
+no es un fork. GitHub sencillamente no atiende los `*/5` aquí.
 
-      Sale gratis porque **el repositorio es público**; en uno privado, 288
-      ejecuciones diarias agotarían los 2000 minutos mensuales en una semana, y
-      habría que pasarse a cron-job.org o espaciar el intervalo.
+Se queda igualmente, porque el botón *Run workflow* es la forma cómoda de
+disparar a mano al probar algo.
 
-      Dos cosas que dan la lata con los `schedule` de GitHub: se retrasan entre
-      5 y 20 minutos en horas punta —la ventana de gracia lo absorbe— y **se
-      desactivan solos tras 60 días sin commits** en el repositorio. Si un día
-      dejan de llegar avisos sin haber tocado nada, mirar ahí primero.
+El programador de verdad va en **cron-job.org**: `POST` cada 5 minutos a
+`https://planificador.danielvasquez.lat/api/cron/reminders`, con el secreto en
+una de estas tres formas —las tres valen—:
+
+| Cabecera | Valor |
+|---|---|
+| `x-cron-secret` | el secreto |
+| `Authorization` | `Bearer <secreto>` |
+| `Authorization` | el secreto pelado |
+
+Y el cuerpo en `{}` con tipo `application/json`, que es lo que satisface la
+protección CSRF de Astro sin tener que añadir la cabecera a mano. Ver *Trampas*.
+
+Los campos de cabecera son **dos casillas de texto plano**, no JSON: el nombre
+en una y el valor en la otra. Escribirlo como `{x-cron-secret: …}` crea una
+cabecera llamada `{x-cron-secret`, que se descarta, y el endpoint contesta 401
+sin que nada diga por qué.
 
 ### Tanda 8 · Multimedia en Cloudinary
 

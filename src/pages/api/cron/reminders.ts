@@ -27,7 +27,15 @@ export const prerender = false;
  * cabecera ni el cron, así que sin esta nota se pierde la tarde.
  */
 
-/** Cabecera que autoriza la llamada. */
+/**
+ * Cabeceras que valen para autorizar, las dos con el mismo secreto.
+ *
+ * `Authorization: Bearer …` es la estándar y casi todos los programadores
+ * traen una casilla propia para ella; `x-cron-secret` se queda porque es la
+ * que ya está configurada y porque un nombre explícito se lee mejor en un
+ * formulario ajeno. Aceptar ambas cuesta cinco líneas y ahorra la tarde de
+ * pelearse con el formulario de turno.
+ */
 const SECRET_HEADER = 'x-cron-secret';
 
 /**
@@ -65,9 +73,27 @@ function reject(request: Request): Response | null {
     console.error('[cron] llamada rechazada: falta CRON_SECRET en el entorno');
     return json(401, { error: 'No autorizado' });
   }
-  const given = request.headers.get(SECRET_HEADER);
-  if (!given || !secretMatches(given, CRON_SECRET)) return json(401, { error: 'No autorizado' });
-  return null;
+  for (const given of offeredSecrets(request)) {
+    if (secretMatches(given, CRON_SECRET)) return null;
+  }
+  return json(401, { error: 'No autorizado' });
+}
+
+/** Los secretos que trae la petición, en cualquiera de las dos formas. */
+function offeredSecrets(request: Request): string[] {
+  const found: string[] = [];
+
+  const propia = request.headers.get(SECRET_HEADER);
+  if (propia) found.push(propia.trim());
+
+  // `Bearer` no distingue mayúsculas por especificación, y hay formularios que
+  // lo escriben `bearer`. Se admite también el valor pelado: alguien que pega
+  // solo el secreto en una casilla llamada «Authorization» tiene razón en
+  // esperar que funcione.
+  const auth = request.headers.get('authorization');
+  if (auth) found.push(auth.replace(/^\s*bearer\s+/i, '').trim());
+
+  return found;
 }
 
 export const POST: APIRoute = async ({ request }) => {
