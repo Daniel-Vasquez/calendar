@@ -69,6 +69,8 @@ middleware ───────────────────────
 | `src/pages/api/images.ts` | Una imagen por petición; recorte de cola |
 | `src/pages/api/health.ts` | ¿Alcanza la función desplegada a Atlas? |
 | `src/components/SyncBadge.tsx` | «Al día» / «Guardando…» / «N sin subir» |
+| `src/components/Fold.tsx` | Una sección plegable de los ajustes; quién está abierta lo decide el panel |
+| `src/components/Legend.tsx` | Qué significa cada marca del calendario, al fondo de los ajustes |
 
 ### Colecciones
 
@@ -911,6 +913,32 @@ habría devuelto la misma fuga por la puerta de atrás.
 El estado anterior **se migra en vez de tirarse**: un nombre de mes sin año se lee
 como 2026, que era el único que existía cuando se escribió. La hoja de arranque
 hace esa misma traducción por su cuenta, y el porqué está abajo, en las trampas.
+
+### Los ajustes se pliegan y la leyenda se muda — septiembre de 2026
+
+Las cuatro secciones de los ajustes —colores, etiquetas, copia de seguridad y
+Telegram— se pintaban a la vez en dos columnas. Cabían, pero el modal pedía toda
+la pantalla para enseñar cuatro cosas que casi nunca se tocan en la misma visita,
+y encontrar la que se venía a buscar era leerlas todas. Ahora son un **acordeón
+exclusivo**: los cuatro rótulos se ven de un vistazo, abrir uno cierra el
+anterior, y se entra por «Categorías de color», que es a lo que más se vuelve.
+
+`Fold` no guarda si está abierto. **La regla de exclusividad no la puede cumplir
+quien no ve a sus hermanos**, así que el estado —una sección, o ninguna— vive en
+`SettingsPanel` y `Fold` solo pinta lo que le digan. El cuerpo plegado sigue en el
+DOM, como en `MonthCard` y por lo mismo: una etiqueta a medio escribir no debe
+perderse porque se mire otra sección. `inert` lo saca del tabulado mientras no se
+vea, que si no la trampa de foco del modal pasearía por campos invisibles.
+
+El plegado en sí **es el de los meses**, no una copia: las reglas de `global.css`
+que animan `grid-template-rows` entre `0fr` y `1fr` valen ahora para `.month-body`
+y para `.fold-body`, y giran los dos chevrones a partir del mismo `data-open`. Dos
+copias de esa animación se habrían separado a la primera corrección.
+
+**La leyenda se fue al fondo de los ajustes.** Explicaba de qué color es un día
+marcado, cuál lleva nota y qué hace Shift+clic: se aprende una vez y ocupaba sitio
+todos los días al pie de la portada. Va fuera del acordeón, fija, porque no es un
+ajuste sino la chuleta de lo que se ve en la rejilla. En su hueco quedó la firma.
 
 ## Lo que falta
 

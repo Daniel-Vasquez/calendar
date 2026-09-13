@@ -142,14 +142,14 @@ export default function TelegramSettings() {
     }
   }
 
+  // El rótulo «Recordatorios por Telegram» y el plegado los pone el Fold de
+  // SettingsPanel: aquí solo va el contenido de la sección.
   return (
-    <section>
-      <h3 className="text-sm font-semibold text-ink-soft">Recordatorios por Telegram</h3>
-
+    <div>
       {status === null ? (
-        <p className="mt-1 text-xs text-ink-muted">Comprobando…</p>
+        <p className="text-xs text-ink-muted">Comprobando…</p>
       ) : !status.configured ? (
-        <p className="mt-1 text-xs text-ink-muted">
+        <p className="text-xs text-ink-muted">
           El servidor todavía no tiene el bot configurado{' '}
           {status.missing ? (
             <>
@@ -160,7 +160,7 @@ export default function TelegramSettings() {
         </p>
       ) : status.connected ? (
         <>
-          <p className="mt-1 text-xs text-ink-muted">
+          <p className="text-xs text-ink-muted">
             Conectado{status.name ? <> como <strong className="text-ink-soft">{status.name}</strong></> : null}.
             Los avisos de cada día llegarán a ese chat.
           </p>
@@ -181,7 +181,7 @@ export default function TelegramSettings() {
         </>
       ) : (
         <>
-          <p className="mt-1 text-xs text-ink-muted">
+          <p className="text-xs text-ink-muted">
             Tres pasos y no hay nada que copiar. Un bot no puede escribirte primero: hasta que no
             abras el chat y pulses Start, Telegram no le deja mandarte nada.
           </p>
@@ -227,6 +227,6 @@ export default function TelegramSettings() {
           {note.text}
         </p>
       )}
-    </section>
+    </div>
   );
 }

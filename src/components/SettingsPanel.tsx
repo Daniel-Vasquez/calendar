@@ -14,6 +14,8 @@ import {
   slugify,
   type Tag,
 } from '../lib/tags';
+import Fold from './Fold';
+import Legend from './Legend';
 import TelegramSettings from './TelegramSettings';
 
 type Props = {
@@ -51,11 +53,21 @@ const ACTION =
   'focus-visible:ring-offset-2 focus-visible:outline-none ' +
   'disabled:cursor-not-allowed disabled:text-ink-muted disabled:hover:bg-raised';
 
+/** Las cuatro secciones plegables, en el orden en que se pintan. */
+type Section = 'colores' | 'etiquetas' | 'copia' | 'telegram';
+
 /**
  * Ajustes secundarios: nombrar y teñir los colores, administrar las etiquetas y
  * sacar o meter los datos.
  * Es solo el contenido; el marco (cabecera, cierre, animación) lo pone
  * SettingsModal, que lo abre desde el engrane de la cabecera.
+ *
+ * Las cuatro secciones son un acordeón **exclusivo**: cabían en dos columnas,
+ * pero entonces el modal pedía toda la pantalla para enseñar cuatro cosas que
+ * casi nunca se tocan a la vez. Plegadas, los cuatro rótulos se leen de un
+ * vistazo y solo se despliega aquella a la que se viene; de ahí que abrir una
+ * cierre la anterior. La leyenda va aparte, fija al fondo: no es un ajuste
+ * sino la chuleta de lo que se ve en la rejilla.
  */
 export default function SettingsPanel({
   palette,
@@ -78,6 +90,14 @@ export default function SettingsPanel({
    * del calendario, porque la paleta no viaja con los datos.
    */
   const [confirmingReset, setConfirmingReset] = useState(false);
+  /** La única sección desplegada. Se entra por los colores, que es lo más pedido. */
+  const [openSection, setOpenSection] = useState<Section | null>('colores');
+
+  /** Abrir una cierra las demás; volver a pulsarla la pliega y no queda ninguna. */
+  const fold = (section: Section) => ({
+    open: openSection === section,
+    onToggle: () => setOpenSection((current) => (current === section ? null : section)),
+  });
 
   function pickFile(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -87,131 +107,139 @@ export default function SettingsPanel({
   }
 
   return (
-    <div className="grid gap-6 md:grid-cols-2">
-      <section>
-        <h3 className="text-sm font-semibold text-ink-soft">Categorías de color</h3>
-        <p className="mt-1 text-xs text-ink-muted">
-          Ponle nombre a cada color y la leyenda dejará de decir «Rosa» para decir «Entrega». El
-          cuadrito abre el tono: lo que elijas repinta al momento todos los días de esa categoría,
-          sus notas y sus recordatorios.
-        </p>
+    <>
+      {/* Un acordeón exclusivo: solo `openSection` está desplegada. */}
+      <div className="grid gap-2">
+        <Fold title="Categorías de color" {...fold('colores')}>
+          <p className="text-xs text-ink-muted">
+            Ponle nombre a cada color y la leyenda dejará de decir «Rosa» para decir «Entrega». El
+            cuadrito abre el tono: lo que elijas repinta al momento todos los días de esa categoría,
+            sus notas y sus recordatorios.
+          </p>
 
-        <ul className="mt-3 grid gap-2 sm:grid-cols-2">
-          {DAY_COLORS.map((color) => {
-            const tone = hexFor(palette, color.id);
-            return (
-              <li key={color.id} className="flex items-center gap-2">
-                {/* El día guarda el id de la categoría, nunca este valor, así
-                    que cambiarlo no toca ni un solo día: solo el tono con el
-                    que se dibujan. Ver `palette.ts`. */}
-                <input
-                  type="color"
-                  value={tone}
-                  aria-label={`Color de ${color.name}`}
-                  title={`${color.name} · ${tone}`}
-                  onChange={(event) => onRecolor(color.id, event.target.value)}
-                  className={SWATCH}
-                />
-                <input
-                  type="text"
-                  value={palette[color.id]?.name ?? ''}
-                  // Vacío es un estado válido: el marcador enseña el nombre
-                  // de fábrica que se usará mientras no haya otro.
-                  placeholder={color.name}
-                  maxLength={MAX_LABEL_LENGTH}
-                  aria-label={`Nombre para el color ${color.name}`}
-                  onChange={(event) => onRenameColor(color.id, event.target.value)}
-                  className="w-full min-w-0 rounded-lg border border-edge bg-raised px-2.5 py-1.5 text-sm text-ink placeholder:text-ink-muted focus:border-accent focus:ring-2 focus:ring-accent/30 focus:outline-none"
-                />
-              </li>
-            );
-          })}
-        </ul>
+          <ul className="mt-3 grid gap-2 sm:grid-cols-2">
+            {DAY_COLORS.map((color) => {
+              const tone = hexFor(palette, color.id);
+              return (
+                <li key={color.id} className="flex items-center gap-2">
+                  {/* El día guarda el id de la categoría, nunca este valor, así
+                      que cambiarlo no toca ni un solo día: solo el tono con el
+                      que se dibujan. Ver `palette.ts`. */}
+                  <input
+                    type="color"
+                    value={tone}
+                    aria-label={`Color de ${color.name}`}
+                    title={`${color.name} · ${tone}`}
+                    onChange={(event) => onRecolor(color.id, event.target.value)}
+                    className={SWATCH}
+                  />
+                  <input
+                    type="text"
+                    value={palette[color.id]?.name ?? ''}
+                    // Vacío es un estado válido: el marcador enseña el nombre
+                    // de fábrica que se usará mientras no haya otro.
+                    placeholder={color.name}
+                    maxLength={MAX_LABEL_LENGTH}
+                    aria-label={`Nombre para el color ${color.name}`}
+                    onChange={(event) => onRenameColor(color.id, event.target.value)}
+                    className="w-full min-w-0 rounded-lg border border-edge bg-raised px-2.5 py-1.5 text-sm text-ink placeholder:text-ink-muted focus:border-accent focus:ring-2 focus:ring-accent/30 focus:outline-none"
+                  />
+                </li>
+              );
+            })}
+          </ul>
 
-        {/* Deshabilitado cuando no hay nada que deshacer: así el botón también
-            responde a «¿le he cambiado algo a esto?». */}
-        <div className="mt-3">
-          {confirmingReset ? (
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-ink-soft">
-                Se perderán los nombres y los tonos que hayas puesto.
-              </span>
+          {/* Deshabilitado cuando no hay nada que deshacer: así el botón también
+              responde a «¿le he cambiado algo a esto?». */}
+          <div className="mt-3">
+            {confirmingReset ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-ink-soft">
+                  Se perderán los nombres y los tonos que hayas puesto.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onResetPalette();
+                    setConfirmingReset(false);
+                  }}
+                  className={
+                    ACTION + ' border-highlight/40 bg-highlight-soft text-highlight hover:bg-highlight hover:text-white'
+                  }
+                >
+                  Restablecer
+                </button>
+                <button type="button" onClick={() => setConfirmingReset(false)} className={ACTION}>
+                  Cancelar
+                </button>
+              </div>
+            ) : (
               <button
                 type="button"
-                onClick={() => {
-                  onResetPalette();
-                  setConfirmingReset(false);
-                }}
-                className={
-                  ACTION + ' border-highlight/40 bg-highlight-soft text-highlight hover:bg-highlight hover:text-white'
-                }
+                disabled={isDefaultPalette(palette)}
+                onClick={() => setConfirmingReset(true)}
+                className={ACTION}
               >
-                Restablecer
+                Restablecer paleta predeterminada
               </button>
-              <button type="button" onClick={() => setConfirmingReset(false)} className={ACTION}>
-                Cancelar
-              </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              disabled={isDefaultPalette(palette)}
-              onClick={() => setConfirmingReset(true)}
-              className={ACTION}
-            >
-              Restablecer paleta predeterminada
-            </button>
-          )}
-        </div>
-      </section>
+            )}
+          </div>
+        </Fold>
 
-      <TagSettings
-        catalogue={catalogue}
-        usage={tagUsage}
-        onAdd={onAddTag}
-        onDelete={onDeleteTag}
-      />
-
-      <section>
-        <h3 className="text-sm font-semibold text-ink-soft">Copia de seguridad</h3>
-        <p className="mt-1 text-xs text-ink-muted">
-          El calendario vive solo en este navegador: vaciar los datos del sitio lo borra. Guarda
-          una copia de vez en cuando.
-        </p>
-
-        <div className="mt-3 flex flex-wrap gap-2">
-          <button type="button" onClick={onExportJson} disabled={!hasData} className={ACTION}>
-            Exportar JSON
-          </button>
-          <button type="button" onClick={onExportIcs} disabled={!hasData} className={ACTION}>
-            Exportar .ics
-          </button>
-          <button type="button" onClick={() => fileRef.current?.click()} className={ACTION}>
-            Importar JSON
-          </button>
-          <input
-            ref={fileRef}
-            type="file"
-            accept="application/json,.json"
-            onChange={pickFile}
-            className="sr-only"
+        <Fold title="Etiquetas" {...fold('etiquetas')}>
+          <TagSettings
+            catalogue={catalogue}
+            usage={tagUsage}
+            onAdd={onAddTag}
+            onDelete={onDeleteTag}
           />
-        </div>
+        </Fold>
 
-        <p className="mt-2 text-xs text-ink-muted">
-          El <code>.json</code> vuelve a entrar aquí; el <code>.ics</code> lleva los días a
-          Google Calendar, Outlook o Apple Calendario. Importar añade lo del archivo a lo que ya
-          hay —y el aviso deja deshacerlo.
-        </p>
-      </section>
+        <Fold title="Copia de seguridad" {...fold('copia')}>
+          <p className="text-xs text-ink-muted">
+            El calendario vive solo en este navegador: vaciar los datos del sitio lo borra. Guarda
+            una copia de vez en cuando.
+          </p>
 
-      <TelegramSettings />
-    </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" onClick={onExportJson} disabled={!hasData} className={ACTION}>
+              Exportar JSON
+            </button>
+            <button type="button" onClick={onExportIcs} disabled={!hasData} className={ACTION}>
+              Exportar .ics
+            </button>
+            <button type="button" onClick={() => fileRef.current?.click()} className={ACTION}>
+              Importar JSON
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="application/json,.json"
+              onChange={pickFile}
+              className="sr-only"
+            />
+          </div>
+
+          <p className="mt-2 text-xs text-ink-muted">
+            El <code>.json</code> vuelve a entrar aquí; el <code>.ics</code> lleva los días a
+            Google Calendar, Outlook o Apple Calendario. Importar añade lo del archivo a lo que ya
+            hay —y el aviso deja deshacerlo.
+          </p>
+        </Fold>
+
+        <Fold title="Recordatorios por Telegram" {...fold('telegram')}>
+          <TelegramSettings />
+        </Fold>
+      </div>
+
+      <Legend palette={palette} />
+    </>
   );
 }
 
 /**
- * Alta y baja de etiquetas.
+ * Alta y baja de etiquetas. El rótulo y el plegado los pone el Fold que lo
+ * envuelve; aquí empieza ya el contenido.
  *
  * Solo eso: no se renombran. Cambiar el rótulo de una etiqueta cambiaría su
  * identidad —el `slug` sale del texto— y dejaría a los días apuntando a algo
@@ -247,9 +275,8 @@ function TagSettings({
   }
 
   return (
-    <section>
-      <h3 className="text-sm font-semibold text-ink-soft">Etiquetas</h3>
-      <p className="mt-1 text-xs text-ink-muted">
+    <div>
+      <p className="text-xs text-ink-muted">
         Clasifican un día por lo que es —«Trabajo», «Descanso»— al margen de su color, y se ponen
         desde la nota o el recordatorio. Las etiquetas viajan con el día; esta lista es de este
         navegador.
@@ -355,6 +382,6 @@ function TagSettings({
           «{clean}» ya está en la lista.
         </p>
       )}
-    </section>
+    </div>
   );
 }

@@ -33,7 +33,7 @@ import {
   withYear,
   type MonthExpansion,
 } from '../lib/collapse';
-import { colorVar, DAY_COLORS, DEFAULT_COLOR, labelFor, type ColorId } from '../lib/palette';
+import { DEFAULT_COLOR, labelFor, type ColorId } from '../lib/palette';
 import { fetchImages, storeImages } from '../lib/sync';
 import { hasContent, type DayEntry } from '../lib/storage';
 
@@ -439,36 +439,13 @@ export default function CalendarDashboard({ user, initialYear }: Props) {
           ))}
         </div>
 
-        <footer className="mt-8 flex flex-wrap items-center gap-x-6 gap-y-2 text-xs text-ink-muted">
-          <span className="flex items-center gap-2">
-            <span className="flex gap-1" aria-hidden="true">
-              {DAY_COLORS.map((color) => (
-                <span
-                  key={color.id}
-                  title={labelFor(palette, color.id)}
-                  className="h-3 w-3 rounded"
-                  style={{ backgroundColor: colorVar(color.id) }}
-                />
-              ))}
-            </span>
-            Día marcado ({DAY_COLORS.length} colores)
-          </span>
-          <span className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-highlight" aria-hidden="true" />
-            Contiene una nota
-          </span>
-          <span className="flex items-center gap-2">
-            <span className="h-3 w-3 rounded bg-today" aria-hidden="true" />
-            Día actual (violeta reservado)
-          </span>
-          <span className="flex items-center gap-2">
-            <span className="h-3 w-3 rounded bg-accent opacity-60" aria-hidden="true" />
-            Día pasado
-          </span>
-          <span className="print-hidden">
-            Haz clic en un día para editarlo, Shift+clic para marcar el tramo desde el anterior, o
-            recorre el año con las flechas.
-          </span>
+        {/* La leyenda de colores y los atajos vivían aquí, al pie de todos los
+            días. Ahora están al fondo de los ajustes —ver `Legend`—, que es
+            donde se busca una explicación cuando hace falta. */}
+        <footer className="print-hidden mt-8 flex items-center justify-center gap-1.5 text-xs text-ink-muted">
+          Creado con
+          <HeartIcon />
+          por Daniel Vásquez
         </footer>
       </main>
 
@@ -513,6 +490,22 @@ function IconButton({
     >
       {children}
     </button>
+  );
+}
+
+/** El corazón de la firma. Relleno, que a este tamaño el contorno se pierde. */
+function HeartIcon() {
+  return (
+    <svg
+      width="13"
+      height="13"
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+      className="text-highlight"
+    >
+      <path d="M12 21s-7.5-4.7-9.6-9.1C.9 8.6 2.5 5 6 4.2c2.2-.5 4.3.5 6 2.5 1.7-2 3.8-3 6-2.5 3.5.8 5.1 4.4 3.6 7.7C19.5 16.3 12 21 12 21z" />
+    </svg>
   );
 }
 
