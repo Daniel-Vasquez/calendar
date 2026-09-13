@@ -501,9 +501,15 @@ Ya resuelto, y anotado para cuando haya que montarlo otra vez:
 
 - [x] Las tres variables en el panel de Vercel. `BETTER_AUTH_SECRET` conviene
       que sea **distinta** de la local; hoy es la misma.
-- [x] `BETTER_AUTH_URL` **con `https://` delante**. Sin esquema lanza por dos
+- [ ] `BETTER_AUTH_URL` **con `https://` delante**. Sin esquema lanza por dos
       sitios distintos —el servidor y el cliente— y ambos están cubiertos por
       código, pero la variable debe estar bien puesta igualmente.
+
+      **Sigue mal puesta en Vercel.** Estaba marcada como resuelta y no lo
+      estaba: los registros del cron traen `[auth] BETTER_AUTH_URL no traía
+      esquema; se asume https://…`. No rompe nada —para eso está la red de
+      seguridad de `943751b`— pero es depender de ella en vez de tener la
+      variable bien.
 - [x] *Network Access* de Atlas en `0.0.0.0/0`. Con la IP propia en lista
       blanca las funciones de Vercel no entran, y el síntoma despista: Atlas
       corta el saludo TLS y el driver lo reporta como `tlsv1 alert internal
@@ -576,6 +582,20 @@ respondiendo — que es lo que hacía el fallo tan desconcertante.
 Ahora el cliente recibe su origen explícito y ya no depende del entorno.
 Para reproducir algo así en local: compilar con `@astrojs/node`, arrancar
 `dist/server/entry.mjs` y poner la variable en `process.env` a mano.
+
+**Un campo que desaparece no es lo mismo que un campo que no viaja.** `$set` no
+borra lo que no le mandas, y los opcionales de `WireDay` se omiten cuando están
+vacíos: apagar un recordatorio, quitar todas las imágenes de un día o —la que
+más caro salió— **borrar un día y volver a crearlo** dejaban el valor anterior
+pegado en Mongo. El día resucitado se quedaba con `deleted: true` en el
+servidor mientras el navegador lo daba por vivo: el cron no le mandaba el aviso,
+y abrir el calendario en otro dispositivo lo habría borrado sin decir nada.
+
+Ha pasado dos veces, así que ya no depende de acordarse: `OptionalWireKey` sale
+del propio tipo y los campos a limpiar son las claves de un
+`Record<OptionalWireKey, true>` en `days.ts`. Añadir un opcional al cable y no
+cubrirlo ahí **no compila**. Para comprobar que la red sigue puesta, añade un
+campo opcional de mentira a `WireDay` y mira que `npx astro check` lo nombre.
 
 **Astro rechaza el POST del cron si no lleva `content-type: application/json`.**
 La protección contra CSRF viene encendida de fábrica y bloquea cualquier POST
