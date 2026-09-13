@@ -61,6 +61,7 @@ middleware ───────────────────────
 | `user` `session` `account` | Las crea Better Auth. Tu nombre vive en `user` | propios |
 | `days` | Un día por usuario: marca, nota, color, `imageCount`, `thumb`, `reminder` | `{userId, key}` único |
 | `settings` | Ajustes que no son de este dispositivo: hoy, el chat de Telegram | `{userId}` único |
+| `allowlist` | Qué correos pueden **crearse** una cuenta. No afecta a quien ya la tiene | `{email}` único |
 | `images` | Una imagen por documento, con su posición. Hoy guarda la imagen entera como data URL; la tanda 8 deja aquí solo la referencia a Cloudinary | `{userId, key, index}` único |
 
 `userId` se guarda como **ObjectId**, no como cadena.
@@ -82,9 +83,22 @@ sesión y nunca del cuerpo de una petición, así que cada quien ve sus días y
 recibe sus avisos. El cron recorre los recordatorios de todo el mundo, los
 agrupa por usuario y manda a cada chat lo que le toca.
 
-Dos cosas que conviene tener presentes y que están en *Deuda conocida*: el
-registro está abierto a cualquiera que dé con la URL, y la vinculación de
-Telegram no aguanta a mucha gente vinculando el mismo día.
+**El registro está cerrado con lista de invitados.** Solo puede crearse una
+cuenta quien esté en la colección `allowlist`; el resto recibe un «Este correo
+no tiene invitación» en el propio formulario. La lista se gestiona con
+`scripts/allowlist.mjs` — ver *Trabajar en el proyecto*.
+
+La comprobación vive en el gancho `databaseHooks.user.create.before` de
+`auth.ts`, y no en el formulario, a propósito: así cubre cualquier vía de alta
+que se añada después sin que nadie tenga que acordarse de repetirla. Y **solo
+mira a quien se da de alta**: quien ya tiene cuenta entra aunque no esté en la
+lista, porque el gancho es de creación y no de entrada.
+
+Si la base no contesta, el alta se rechaza en vez de dejar pasar: ante la duda
+no se abre la puerta.
+
+Una sola cosa queda en *Deuda conocida*: la vinculación de Telegram no aguanta
+a mucha gente vinculando el mismo día.
 
 ### Cómo se resuelven los conflictos
 
@@ -610,12 +624,10 @@ Pendiente:
       alguien no se le encontraría su `/start`. Con dos o cinco usuarios da
       igual. El arreglo es un webhook, y entonces hay que cambiar las dos cosas
       a la vez, porque con webhook puesto `getUpdates` contesta 409.
-- [ ] **El registro está abierto**: cualquiera que dé con la URL puede crearse
-      una cuenta desde la pestaña *Crear cuenta* del formulario de entrada. Hoy
-      hay dos usuarios y es deliberado, pero no hay nada que lo limite. Si algún
-      día molesta, lo más simple es una lista de correos permitidos en
-      `auth.ts`; el candado del middleware ya está puesto y no haría falta
-      tocarlo.
+- [ ] Quitar a alguien de la `allowlist` **no** le cierra la cuenta ni las
+      sesiones: solo impide que ese correo vuelva a registrarse. Para echar a
+      alguien de verdad haría falta borrar su usuario y sus sesiones, y hoy eso
+      es un trabajo a mano contra Mongo.
 
 ---
 
@@ -792,6 +804,18 @@ actualización. Si aparece de nuevo con otro paquete:
 `npm approve-scripts <pkg> --no-allow-scripts-pin`.
 
 ## Trabajar en el proyecto
+
+Quién puede crearse una cuenta:
+
+```bash
+node --env-file=.env scripts/allowlist.mjs                  # ver la lista
+node --env-file=.env scripts/allowlist.mjs add ana@ejemplo.com "nota"
+node --env-file=.env scripts/allowlist.mjs remove ana@ejemplo.com
+```
+
+Enseña también quién tiene cuenta sin estar en la lista, que es el caso que
+despista: esas personas siguen entrando, porque el candado es del registro y no
+de la puerta.
 
 ```bash
 npm run dev                  # servidor de desarrollo
