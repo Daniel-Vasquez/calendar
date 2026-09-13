@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import { flushSync } from 'react-dom';
 import MonthCard from './MonthCard';
 import DayModal from './DayModal';
-import SettingsModal from './SettingsModal';
 import NavBar, { type NavUser } from './NavBar';
+import NoticeBar, { useNotice } from './NoticeBar';
 import SyncBadge from './SyncBadge';
 import { useCalendarStore } from './useCalendarStore';
+import { useSettings } from './useSettings';
 import {
   DAY_PARAM,
   formatLongDate,
@@ -28,48 +29,18 @@ import {
   saveExpansion,
   type MonthExpansion,
 } from '../lib/collapse';
-import {
-  colorHex,
-  colorVar,
-  DAY_COLORS,
-  DEFAULT_COLOR,
-  labelFor,
-  MAX_LABEL_LENGTH,
-  type ColorId,
-} from '../lib/palette';
-import { usePalette } from './usePalette';
-import { useTags } from './useTags';
-import { downloadFile, exportFilename, parseImport, toIcs, toJson } from '../lib/transfer';
+import { colorVar, DAY_COLORS, DEFAULT_COLOR, labelFor, type ColorId } from '../lib/palette';
 import { fetchImages, storeImages } from '../lib/sync';
-import { hasContent, type CalendarData, type DayEntry } from '../lib/storage';
-import { addTag, removeTag, type Tag } from '../lib/tags';
-
-/**
- * Aviso efímero del pie. Con `snapshot` ofrece deshacer —guarda el calendario
- * entero anterior al cambio—; sin él es solo un mensaje de error.
- *
- * `tags` va aparte porque el catálogo no vive en el calendario: borrar una
- * etiqueta cambia las dos cosas a la vez —el catálogo y los días que la
- * llevaban— y deshacer a medias dejaría la etiqueta puesta en días que ya no
- * pueden quitársela, o el catálogo con una etiqueta que ya no usa nadie.
- */
-type Notice = { message: string; snapshot?: CalendarData; tags?: Tag[] };
+import { hasContent, type DayEntry } from '../lib/storage';
 
 export default function CalendarDashboard({ user }: { user: NavUser }) {
-  const [notice, setNotice] = useState<Notice | null>(null);
-  /**
-   * Lo que cuente la sincronía se enseña en la misma banda del pie que el resto
-   * de avisos. Estable a propósito: el almacén la guarda para el `pull` inicial.
-   */
-  const announce = useCallback((message: string) => setNotice({ message }), []);
+  // Lo que cuente la sincronía se enseña en la misma banda del pie que el resto
+  // de avisos, así que `announce` va también al almacén.
+  const { notice, announce, dismiss } = useNotice();
   const { data, setData, hydrated, sync, pending, retry, adopt } = useCalendarStore(announce);
+  const { palette, catalogue, settings } = useSettings({ data, setData, announce });
 
-  const { palette, update: updatePalette } = usePalette();
-  const { catalogue, update: updateTags } = useTags();
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  /** Engrane de la cabecera: de él brota el modal de ajustes y a él vuelve el foco. */
-  const settingsButtonRef = useRef<HTMLButtonElement>(null);
   const [today, setToday] = useState('');
   /** Último día abierto: ancla del rango que dibuja un clic con Shift. */
   const [anchorKey, setAnchorKey] = useState<string | null>(null);
@@ -154,12 +125,14 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
 
       // Vaciar el formulario borra igual que el botón de eliminar; cualquier
       // otro guardado invalida el aviso pendiente, que ya hablaría de otro día.
-      setNotice(
-        removes && snapshot[key] ? { message: `Se borró ${formatLongDate(key)}.`, snapshot } : null,
-      );
+      if (removes && snapshot[key]) {
+        announce(`Se borró ${formatLongDate(key)}.`, () => setData(snapshot));
+      } else {
+        dismiss();
+      }
       setSelectedKey(null);
     },
-    [data],
+    [data, setData, announce, dismiss],
   );
 
   const handleClear = useCallback(
@@ -170,26 +143,11 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
         delete next[key];
         return next;
       });
-      if (snapshot[key]) setNotice({ message: `Se borró ${formatLongDate(key)}.`, snapshot });
+      if (snapshot[key]) announce(`Se borró ${formatLongDate(key)}.`, () => setData(snapshot));
       setSelectedKey(null);
     },
-    [data],
+    [data, setData, announce],
   );
-
-  const handleUndo = useCallback(() => {
-    if (!notice?.snapshot) return;
-    setData(notice.snapshot);
-    if (notice.tags) updateTags(() => notice.tags!);
-    setNotice(null);
-  }, [notice, updateTags]);
-
-  // El aviso caduca solo. Cada cambio crea un objeto nuevo, así que el
-  // temporizador se reinicia con él en lugar de heredar la cuenta anterior.
-  useEffect(() => {
-    if (!notice) return;
-    const timer = window.setTimeout(() => setNotice(null), 8000);
-    return () => window.clearTimeout(timer);
-  }, [notice]);
 
   /**
    * Pide los adjuntos de un día al servidor. Lo llama el modal cuando se abre
@@ -261,14 +219,14 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
         return next;
       });
 
-      setNotice({
-        message: `Se marcaron ${keys.length} ${keys.length === 1 ? 'día' : 'días'} en ${labelFor(palette, lastColor)}.`,
-        snapshot,
-      });
+      announce(
+        `Se marcaron ${keys.length} ${keys.length === 1 ? 'día' : 'días'} en ${labelFor(palette, lastColor)}.`,
+        () => setData(snapshot),
+      );
       // El rango deja su ancla en el extremo recién tocado, para encadenar otro.
       setAnchorKey(to);
     },
-    [data, palette, lastColor],
+    [data, setData, palette, lastColor, announce],
   );
 
   const handleSelectDay = useCallback(
@@ -291,126 +249,6 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
    * por hacer, y lo que deja que un color afinado en el código llegue a quien
    * nunca lo tocó.
    */
-  const changeColor = useCallback(
-    (id: ColorId, change: { name?: string; hex?: string }) => {
-      updatePalette((current) => {
-        const next = { ...current };
-        const merged = { ...next[id], ...change };
-        // Sin texto vuelve a mandar el nombre de fábrica del color.
-        if (!merged.name?.trim()) delete merged.name;
-        // Y el tono de fábrica, escrito a mano, tampoco es un retoque.
-        if (!merged.hex || merged.hex === colorHex(id)) delete merged.hex;
-
-        if (merged.name || merged.hex) next[id] = merged;
-        else delete next[id];
-        return next;
-      });
-    },
-    [updatePalette],
-  );
-
-  const handleRenameColor = useCallback(
-    (id: ColorId, label: string) => changeColor(id, { name: label.slice(0, MAX_LABEL_LENGTH) }),
-    [changeColor],
-  );
-
-  const handleRecolor = useCallback(
-    (id: ColorId, hex: string) => changeColor(id, { hex: hex.toLowerCase() }),
-    [changeColor],
-  );
-
-  /** Devuelve los ocho colores a como vinieron: nombres y tonos de una vez. */
-  const handleResetPalette = useCallback(() => updatePalette(() => ({})), [updatePalette]);
-
-  const handleAddTag = useCallback(
-    (label: string) => updateTags((current) => addTag(current, label)),
-    [updateTags],
-  );
-
-  /**
-   * Borra una etiqueta del catálogo **y de todos los días que la llevaban**.
-   *
-   * La alternativa era dejarlas puestas y que siguieran viéndose sin poder
-   * elegirse. Es defendible —no se pierde nada— pero deja la única forma de
-   * quitarlas en abrir uno a uno los días, y eso no es una salida. Así que se
-   * quitan de golpe y el aviso del pie ofrece deshacerlo, catálogo incluido.
-   */
-  const handleDeleteTag = useCallback(
-    (slug: string) => {
-      const snapshot = data;
-      const tags = catalogue;
-      const label = catalogue.find((tag) => tag.slug === slug)?.label ?? slug;
-
-      let touched = 0;
-      setData((current) => {
-        const next = { ...current };
-        for (const [key, entry] of Object.entries(current)) {
-          if (!entry.tags?.includes(slug)) continue;
-          const left = entry.tags.filter((tag) => tag !== slug);
-          const { tags: _quitadas, ...rest } = entry;
-          next[key] = { ...rest, ...(left.length ? { tags: left } : {}) };
-          touched++;
-        }
-        return next;
-      });
-
-      updateTags((current) => removeTag(current, slug));
-      setNotice({
-        message: touched
-          ? `Se borró «${label}» y se quitó de ${touched} ${touched === 1 ? 'día' : 'días'}.`
-          : `Se borró la etiqueta «${label}».`,
-        snapshot,
-        tags,
-      });
-    },
-    [data, catalogue, updateTags],
-  );
-
-  /** En cuántos días está puesta cada etiqueta. Lo enseña Ajustes antes de borrar. */
-  const tagUsage = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const entry of Object.values(data)) {
-      for (const slug of entry.tags ?? []) counts[slug] = (counts[slug] ?? 0) + 1;
-    }
-    return counts;
-  }, [data]);
-
-  const handleExportJson = useCallback(() => {
-    downloadFile(toJson(data, palette, catalogue), exportFilename('json', today), 'application/json');
-  }, [data, palette, catalogue, today]);
-
-  const handleExportIcs = useCallback(() => {
-    downloadFile(toIcs(data, palette, catalogue), exportFilename('ics', today), 'text/calendar');
-  }, [data, palette, catalogue, today]);
-
-  const handleImport = useCallback(
-    async (file: File) => {
-      let text: string;
-      try {
-        text = await file.text();
-      } catch {
-        setNotice({ message: 'No se pudo leer el archivo.' });
-        return;
-      }
-
-      const result = parseImport(text);
-      if (!result.ok) {
-        setNotice({ message: result.reason });
-        return;
-      }
-
-      // Fusiona en vez de reemplazar: lo importado pisa el mismo día, el resto
-      // del año sigue donde estaba. La instantánea deshace las dos cosas.
-      const snapshot = data;
-      setData((current) => ({ ...current, ...result.data }));
-      setNotice({
-        message: `Se importaron ${result.days} ${result.days === 1 ? 'día' : 'días'}.`,
-        snapshot,
-      });
-    },
-    [data],
-  );
-
   const toggleMonth = useCallback((key: string) => {
     setExpansion((current) => ({ ...current, [key]: !current[key] }));
   }, []);
@@ -444,15 +282,7 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
 
   return (
     <>
-      <NavBar
-        current="calendar"
-        user={user}
-        settings={{
-          buttonRef: settingsButtonRef,
-          open: settingsOpen,
-          onOpen: () => setSettingsOpen(true),
-        }}
-      />
+      <NavBar current="calendar" user={user} settings={settings} />
 
       <main className="mx-auto w-full max-w-5xl px-4 pt-8 pb-10 sm:px-6">
         {/* Lo que queda arriba: ir a hoy, el estado de la sincronía y el
@@ -550,61 +380,7 @@ export default function CalendarDashboard({ user }: { user: NavUser }) {
         </footer>
       </main>
 
-      {notice && (
-        // Bajo el modal (z-50) y sin capturar el cursor salvo en la tarjeta:
-        // la banda ocupa todo el ancho y bloquearía el pie de página.
-        <div
-          role="status"
-          className="animate-panel-in print-hidden pointer-events-none fixed inset-x-0 bottom-6 z-40 flex justify-center px-4"
-        >
-          <div className="pointer-events-auto flex flex-wrap items-center gap-3 rounded-xl bg-ink px-4 py-3 text-sm text-canvas shadow-2xl">
-            <span>{notice.message}</span>
-            {notice.snapshot && (
-              <button
-                type="button"
-                onClick={handleUndo}
-                className="rounded-lg bg-canvas/15 px-3 py-1 text-sm font-semibold transition-colors hover:bg-canvas/25 focus-visible:ring-2 focus-visible:ring-canvas focus-visible:outline-none"
-              >
-                Deshacer
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setNotice(null)}
-              aria-label="Descartar aviso"
-              className="rounded-lg p-1 text-canvas/70 transition-colors hover:text-canvas focus-visible:ring-2 focus-visible:ring-canvas focus-visible:outline-none"
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path
-                  d="M4 4l8 8M12 4l-8 8"
-                  stroke="currentColor"
-                  strokeWidth="1.75"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </button>
-          </div>
-        </div>
-      )}
-
-      {settingsOpen && (
-        <SettingsModal
-          triggerRef={settingsButtonRef}
-          onClose={() => setSettingsOpen(false)}
-          palette={palette}
-          hasData={Object.keys(data).length > 0}
-          onRenameColor={handleRenameColor}
-          onRecolor={handleRecolor}
-          onResetPalette={handleResetPalette}
-          catalogue={catalogue}
-          tagUsage={tagUsage}
-          onAddTag={handleAddTag}
-          onDeleteTag={handleDeleteTag}
-          onExportJson={handleExportJson}
-          onExportIcs={handleExportIcs}
-          onImport={handleImport}
-        />
-      )}
+      <NoticeBar notice={notice} onDismiss={dismiss} />
 
       {selectedKey && (
         <DayModal

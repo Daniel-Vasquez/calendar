@@ -128,6 +128,9 @@ MongoDB es la fuente de verdad, pero **no** el camino crítico.
 - Diseño **responsive** pensado desde el teléfono.
 - Modales accesibles: foco atrapado, `Escape` para cerrar y el foco devuelto a
   donde estaba.
+- **Ajustes desde cualquier página**: el engrane vive en la barra de navegación,
+  así que las categorías, las etiquetas, Telegram y la copia de seguridad están a
+  un clic desde el calendario, la agenda, los recordatorios o la galería.
 
 ### 🔄 Sincronización y cuentas
 
@@ -334,6 +337,8 @@ src/
 │   ├── RemindersView.tsx       # La lista de recordatorios
 │   ├── GalleryView.tsx         # La galería y su visor
 │   ├── useCalendarStore.ts     # El calendario y su sincronía, para toda página que escriba
+│   ├── useSettings.ts          # Los ajustes enteros, para la barra de cualquier página
+│   ├── NoticeBar.tsx           # El aviso del pie, con su deshacer
 │   └── …
 ├── lib/                 # Lógica sin React: se prueba y se comparte
 │   ├── storage.ts              # localStorage, saneado, forma de `DayEntry`

@@ -2,21 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import AgendaList from './AgendaList';
 import DayModal from './DayModal';
 import NavBar, { type NavUser } from './NavBar';
+import NoticeBar, { useNotice } from './NoticeBar';
 import SyncBadge from './SyncBadge';
 import { useCalendarStore } from './useCalendarStore';
-import { usePalette } from './usePalette';
-import { useTags } from './useTags';
+import { useSettings } from './useSettings';
 import { formatLongDate, msUntilNextMidnight, todayKey } from '../lib/calendar';
 import { fetchImages, storeImages } from '../lib/sync';
-import { hasContent, hasImages, moveDay, type CalendarData, type DayEntry } from '../lib/storage';
-
-/**
- * Aviso efímero del pie. Con `snapshot` ofrece deshacer —guarda el calendario
- * entero anterior al cambio—; sin él es solo un mensaje. El mismo trato que en
- * el calendario y en los recordatorios, y por el mismo motivo: desde aquí se
- * borra y se mueven días, y las dos cosas son irreversibles sin esto.
- */
-type Notice = { message: string; snapshot?: CalendarData };
+import { hasContent, hasImages, moveDay, type DayEntry } from '../lib/storage';
 
 /**
  * La agenda del año, con las cuentas del calendario encima.
@@ -36,15 +28,10 @@ type Notice = { message: string; snapshot?: CalendarData };
  * la lista —con su búsqueda y sus filtros intactos— lo enseña en el acto.
  */
 export default function AgendaView({ user }: { user: NavUser }) {
-  const [notice, setNotice] = useState<Notice | null>(null);
-  /**
-   * Lo que cuente la sincronía se enseña en la misma banda del pie que el resto
-   * de avisos. Estable a propósito: el almacén la guarda para el `pull` inicial.
-   */
-  const announce = useCallback((message: string) => setNotice({ message }), []);
+  // Lo que cuente la sincronía comparte banda con el resto de avisos.
+  const { notice, announce, dismiss } = useNotice();
   const { data, setData, hydrated, sync, pending, retry, adopt } = useCalendarStore(announce);
-  const { palette } = usePalette();
-  const { catalogue } = useTags();
+  const { palette, catalogue, settings } = useSettings({ data, setData, announce });
   const [today, setToday] = useState('');
   /** Día abierto en el modal, o `null` si no hay ninguno. */
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -77,14 +64,6 @@ export default function AgendaView({ user }: { user: NavUser }) {
     };
   }, []);
 
-  // El aviso caduca solo. Cada cambio crea un objeto nuevo, así que el
-  // temporizador se reinicia con él en lugar de heredar la cuenta anterior.
-  useEffect(() => {
-    if (!notice) return;
-    const timer = window.setTimeout(() => setNotice(null), 8000);
-    return () => window.clearTimeout(timer);
-  }, [notice]);
-
   // Si el día abierto desaparece desde otra pestaña, el modal se cierra solo en
   // vez de quedarse editando algo que ya no existe.
   const openEntry = selectedKey ? data[selectedKey] : undefined;
@@ -109,12 +88,14 @@ export default function AgendaView({ user }: { user: NavUser }) {
         return next;
       });
 
-      setNotice(
-        removes && snapshot[key] ? { message: `Se borró ${formatLongDate(key)}.`, snapshot } : null,
-      );
+      if (removes && snapshot[key]) {
+        announce(`Se borró ${formatLongDate(key)}.`, () => setData(snapshot));
+      } else {
+        dismiss();
+      }
       setSelectedKey(null);
     },
-    [data, setData],
+    [data, setData, announce, dismiss],
   );
 
   const handleClear = useCallback(
@@ -125,10 +106,10 @@ export default function AgendaView({ user }: { user: NavUser }) {
         delete next[key];
         return next;
       });
-      if (snapshot[key]) setNotice({ message: `Se borró ${formatLongDate(key)}.`, snapshot });
+      if (snapshot[key]) announce(`Se borró ${formatLongDate(key)}.`, () => setData(snapshot));
       setSelectedKey(null);
     },
-    [data, setData],
+    [data, setData, announce],
   );
 
   /**
@@ -151,21 +132,15 @@ export default function AgendaView({ user }: { user: NavUser }) {
       const replaces = Boolean(data[to]);
       setData((current) => moveDay(current, from, to, entry));
       setSelectedKey(null);
-      setNotice({
-        message: replaces
+      announce(
+        replaces
           ? `El día se movió al ${formatLongDate(to)} y sustituyó lo que había.`
           : `El día se movió al ${formatLongDate(to)}.`,
-        snapshot,
-      });
+        () => setData(snapshot),
+      );
     },
-    [data, setData, handleSave],
+    [data, setData, handleSave, announce],
   );
-
-  const handleUndo = useCallback(() => {
-    if (!notice?.snapshot) return;
-    setData(notice.snapshot);
-    setNotice(null);
-  }, [notice, setData]);
 
   /**
    * Pide los adjuntos de un día al servidor, igual que en el calendario: no
@@ -200,7 +175,7 @@ export default function AgendaView({ user }: { user: NavUser }) {
 
   return (
     <>
-      <NavBar current="agenda" user={user} />
+      <NavBar current="agenda" user={user} settings={settings} />
 
       <main className="mx-auto w-full max-w-5xl px-4 pt-8 pb-10 sm:px-6">
         <header className="mb-8">
@@ -259,42 +234,7 @@ export default function AgendaView({ user }: { user: NavUser }) {
         )}
       </main>
 
-      {notice && (
-        // Bajo el modal (z-50) y sin capturar el cursor salvo en la tarjeta: la
-        // banda ocupa todo el ancho y bloquearía lo que haya debajo.
-        <div
-          role="status"
-          className="animate-panel-in print-hidden pointer-events-none fixed inset-x-0 bottom-6 z-40 flex justify-center px-4"
-        >
-          <div className="pointer-events-auto flex flex-wrap items-center gap-3 rounded-xl bg-ink px-4 py-3 text-sm text-canvas shadow-2xl">
-            <span>{notice.message}</span>
-            {notice.snapshot && (
-              <button
-                type="button"
-                onClick={handleUndo}
-                className="rounded-lg bg-canvas/15 px-3 py-1 text-sm font-semibold transition-colors hover:bg-canvas/25 focus-visible:ring-2 focus-visible:ring-canvas focus-visible:outline-none"
-              >
-                Deshacer
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setNotice(null)}
-              aria-label="Descartar aviso"
-              className="rounded-lg p-1 text-canvas/70 transition-colors hover:text-canvas focus-visible:ring-2 focus-visible:ring-canvas focus-visible:outline-none"
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path
-                  d="M4 4l8 8M12 4l-8 8"
-                  stroke="currentColor"
-                  strokeWidth="1.75"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </button>
-          </div>
-        </div>
-      )}
+      <NoticeBar notice={notice} onDismiss={dismiss} />
 
       {/* El modal del día, el mismo de la rejilla. Aquí se le encienden dos
           cosas que allí no tendrían sentido: el campo de fecha —en una lista la

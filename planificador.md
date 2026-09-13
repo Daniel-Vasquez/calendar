@@ -55,6 +55,8 @@ middleware ───────────────────────
 | `src/lib/palette.ts` | Los ocho colores, la paleta propia de cada persona y su variable CSS |
 | `src/lib/tags.ts` | El catálogo de etiquetas, el `slug` y lo que lleva puesto un día |
 | `src/components/usePalette.ts` | Lee, guarda, aplica y vigila la paleta; lo usa toda página que pinte |
+| `src/components/useSettings.ts` | Los ajustes enteros —paleta, etiquetas, entrada y salida— para la barra |
+| `src/components/NoticeBar.tsx` | El aviso del pie y su deshacer, uno para las cuatro páginas |
 | `src/components/ThemeToggle.tsx` | El sol y la luna de la barra |
 | `src/lib/telegram.ts` | El bot: enviar, leer `getUpdates`, clasificar fallos |
 | `src/pages/api/telegram.ts` | Vincular, comprobar, probar y desvincular |
@@ -803,6 +805,49 @@ resuelve, qué sabe hacer, sobre qué está construido y los pasos de `git clone
 un servidor de desarrollo que contesta. Los límites que cita —seis imágenes por
 día, doce megas por archivo, la ventana de gracia— están leídos del código, no
 recordados.
+
+### Los ajustes salen del calendario — septiembre de 2026
+
+El engrane vivía en `CalendarDashboard`, que era la única página con los datos y
+los manejadores que el panel necesita. El precio lo pagaba quien estuviera en
+otra: para renombrar una categoría o exportar había que volver a la portada,
+perdiendo de paso lo que se estuviera mirando. Ahora está en la barra, que es la
+única pieza que se dibuja en todas, y lo que le falta para funcionar sale de
+`useSettings`.
+
+**La barra pinta el botón y el diálogo.** No están repartidos porque son la misma
+cosa: el modal nace del engrane —de ahí saca su `transform-origin`— y a él
+devuelve el foco al cerrarse.
+
+`useSettings` **devuelve también la paleta y el catálogo**, y eso no es
+comodidad. Son estado con dueño único: si la página llamara a `usePalette` por su
+cuenta y el hook llamara a otra, renombrar una categoría escribiría en un
+ejemplar y la lista seguiría leyendo del otro —el evento `storage` no llega a la
+pestaña que escribe—, así que el nombre nuevo no aparecería hasta recargar. Un
+ejemplar por página, y sale de ahí.
+
+De paso cayeron dos duplicados. El aviso del pie —el estado, el temporizador de
+ocho segundos y treinta líneas de JSX— estaba copiado en tres páginas y hacía
+falta una cuarta en la galería; ahora es `useNotice` y `NoticeBar`. Y lo que se
+deshace pasó de ser **una instantánea del calendario a una función**: desde que
+hay cosas que deshacer fuera del calendario —borrar una etiqueta cambia los días
+*y* el catálogo— una instantánea de los días solo sabía devolver la mitad.
+
+**La galería dejó de leer `localStorage` por su cuenta** y usa el mismo almacén
+que el resto. Tenía que hacerlo: desde sus ajustes ahora se importa y se borran
+etiquetas, y su `setData` de antes escribía en el estado sin guardar, sin encolar
+y sin subir. Gana el `pull` inicial, que no tenía —un dispositivo recién
+estrenado enseñaba la galería vacía hasta pasar por otra página—, y las imágenes
+que baja entran por `adopt` y no como edición: lo que acaba de llegar no tiene
+que volver a subir.
+
+Eso obligó a rehacer su barrido de descargas. Antes miraba una vez, al hidratar;
+con el `pull` los días llegan después, así que ahora **relee el calendario en
+cada vuelta** y recoge lo que aparezca a media faena. Y no se cancela cuando
+cambian sus dependencias, solo al desmontar: cada imagen que entra cambia la
+lista de pendientes, y cortar por eso abandonaría la descarga en vuelo dejando
+días sin pedir. Mientras hay un barrido en marcha, los disparos siguientes se van
+de vacío.
 
 ## Lo que falta
 

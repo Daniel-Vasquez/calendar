@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import NavBar, { type NavUser } from './NavBar';
+import NoticeBar, { useNotice } from './NoticeBar';
 import ReminderChip, { BellIcon } from './ReminderChip';
 import ReminderModal from './ReminderModal';
 import SyncBadge from './SyncBadge';
 import { useCalendarStore } from './useCalendarStore';
-import { usePalette } from './usePalette';
-import { useTags } from './useTags';
+import { useSettings } from './useSettings';
 import { TagBadges } from './TagChips';
 import {
   dayHref,
@@ -30,16 +30,8 @@ import {
   type ReminderFilter,
   type ReminderItem,
 } from '../lib/reminders';
-import { withTags, type CalendarData } from '../lib/storage';
+import { withTags } from '../lib/storage';
 import type { Tag } from '../lib/tags';
-
-/**
- * Aviso efímero del pie. Con `snapshot` ofrece deshacer —guarda el calendario
- * entero anterior al cambio—; sin él es solo un mensaje. Igual que el del
- * calendario, y por el mismo motivo: borrar un recordatorio es irreversible y
- * aquí se borra de un clic.
- */
-type Notice = { message: string; snapshot?: CalendarData };
 
 const TABS: { id: ReminderFilter; label: string }[] = [
   { id: 'pending', label: 'Pendientes' },
@@ -69,14 +61,12 @@ const ROW_ACTION =
  * cuenta por la misma vía que una edición hecha en la rejilla.
  */
 export default function RemindersView({ user }: { user: NavUser }) {
-  const [notice, setNotice] = useState<Notice | null>(null);
-  const announce = useCallback((message: string) => setNotice({ message }), []);
+  const { notice, announce, dismiss } = useNotice();
   const { data, setData, hydrated, sync, pending, retry } = useCalendarStore(announce);
-  // Esta página no nombra categorías, solo pinta el punto del día: de la paleta
-  // le basta con que sus variables queden puestas y sigan a lo que se retoque
-  // en otra pestaña. Por eso se llama y no se mira lo que devuelve.
-  usePalette();
-  const { catalogue } = useTags();
+  // De la paleta esta página no usa los nombres, solo el punto de color de cada
+  // tarjeta, que sale de una variable CSS. Aun así el ejemplar tiene que ser
+  // este y no otro: ver `useSettings`.
+  const { catalogue, settings } = useSettings({ data, setData, announce });
 
   const [filter, setFilter] = useState<ReminderFilter>('pending');
   /**
@@ -128,14 +118,6 @@ export default function RemindersView({ user }: { user: NavUser }) {
     [visible, clock.now],
   );
 
-  // El aviso caduca solo. Cada cambio crea un objeto nuevo, así que el
-  // temporizador se reinicia con él en lugar de heredar la cuenta anterior.
-  useEffect(() => {
-    if (!notice) return;
-    const timer = window.setTimeout(() => setNotice(null), 8000);
-    return () => window.clearTimeout(timer);
-  }, [notice]);
-
   // Si el día que se está editando se va desde otra pestaña, el modal se
   // cierra solo en vez de quedarse editando algo que ya no existe. Creando no
   // hay nada que vigilar: todavía no existe por definición.
@@ -148,9 +130,9 @@ export default function RemindersView({ user }: { user: NavUser }) {
   const handleToggle = useCallback(
     (key: string, done: boolean) => {
       setData((current) => withDone(current, key, done));
-      setNotice(null);
+      dismiss();
     },
-    [setData],
+    [setData, dismiss],
   );
 
   const handleDelete = useCallback(
@@ -158,9 +140,9 @@ export default function RemindersView({ user }: { user: NavUser }) {
       const snapshot = data;
       setData((current) => withReminder(current, key, undefined));
       setEditor(null);
-      setNotice({ message: `Se borró el recordatorio del ${formatLongDate(key)}.`, snapshot });
+      announce(`Se borró el recordatorio del ${formatLongDate(key)}.`, () => setData(snapshot));
     },
-    [data, setData],
+    [data, setData, announce],
   );
 
   /**
@@ -185,25 +167,19 @@ export default function RemindersView({ user }: { user: NavUser }) {
       setEditor(null);
 
       const cuando = formatLongDate(to);
-      setNotice({
-        message: pisa
+      announce(
+        pisa
           ? `Se sustituyó el recordatorio del ${cuando}.`
           : from === null
             ? `Se creó el recordatorio del ${cuando}.`
             : from === to
               ? `Se guardó el recordatorio del ${cuando}.`
               : `El recordatorio se movió al ${cuando}.`,
-        snapshot,
-      });
+        () => setData(snapshot),
+      );
     },
-    [data, setData],
+    [data, setData, announce],
   );
-
-  const handleUndo = useCallback(() => {
-    if (!notice?.snapshot) return;
-    setData(notice.snapshot);
-    setNotice(null);
-  }, [notice, setData]);
 
   const hasReminder = useCallback((key: string) => Boolean(data[key]?.reminder), [data]);
   const noteOf = useCallback((key: string) => data[key]?.note ?? '', [data]);
@@ -232,7 +208,7 @@ export default function RemindersView({ user }: { user: NavUser }) {
 
   return (
     <>
-      <NavBar current="reminders" user={user} />
+      <NavBar current="reminders" user={user} settings={settings} />
 
       <main className="mx-auto w-full max-w-5xl px-4 pt-8 pb-10 sm:px-6">
         <header className="mb-8">
@@ -342,37 +318,7 @@ export default function RemindersView({ user }: { user: NavUser }) {
         )}
       </main>
 
-      {notice && (
-        // Bajo el modal (z-50) y sin capturar el cursor salvo en la tarjeta:
-        // la banda ocupa todo el ancho y bloquearía lo que haya debajo.
-        <div
-          role="status"
-          className="animate-panel-in pointer-events-none fixed inset-x-0 bottom-6 z-40 flex justify-center px-4"
-        >
-          <div className="pointer-events-auto flex flex-wrap items-center gap-3 rounded-xl bg-ink px-4 py-3 text-sm text-canvas shadow-2xl">
-            <span>{notice.message}</span>
-            {notice.snapshot && (
-              <button
-                type="button"
-                onClick={handleUndo}
-                className="rounded-lg bg-canvas/15 px-3 py-1 text-sm font-semibold transition-colors hover:bg-canvas/25 focus-visible:ring-2 focus-visible:ring-canvas focus-visible:outline-none"
-              >
-                Deshacer
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setNotice(null)}
-              aria-label="Descartar aviso"
-              className="rounded-lg p-1 text-canvas/70 transition-colors hover:text-canvas focus-visible:ring-2 focus-visible:ring-canvas focus-visible:outline-none"
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
-              </svg>
-            </button>
-          </div>
-        </div>
-      )}
+      <NoticeBar notice={notice} onDismiss={dismiss} />
 
       {editor && (editor.key === null || editingEntry?.reminder) && (
         <ReminderModal

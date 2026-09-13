@@ -1,6 +1,8 @@
 import { signOut } from '../auth-client';
 import { BellIcon } from './ReminderChip';
+import SettingsModal from './SettingsModal';
 import ThemeToggle from './ThemeToggle';
+import type { SettingsControls } from './useSettings';
 
 export type NavUser = { name: string; email: string };
 
@@ -10,15 +12,20 @@ type Props = {
   /** Quién ha entrado. Lo resuelve el servidor y baja como prop. */
   user: NavUser;
   /**
-   * Engrane de ajustes. Solo el calendario lo ofrece: el modal necesita los
-   * datos y sus manejadores, que viven en CalendarDashboard. En las demás
-   * páginas la barra se queda sin acciones.
+   * Los ajustes: el engrane **y su modal**, que la barra pinta ella misma.
+   *
+   * Vivían en el calendario, que era la única página que tenía a mano los datos
+   * y los manejadores que el panel necesita. El precio era que abrir los
+   * ajustes desde cualquier otra parte obligaba a volver a la portada. Ahora
+   * eso sale de `useSettings`, que cualquier página puede llamar, y el engrane
+   * está donde tenía que estar desde el principio: en la única pieza que se
+   * dibuja en todas.
+   *
+   * El botón y el diálogo van juntos aquí y no repartidos porque son la misma
+   * cosa: el modal nace del engrane —de ahí saca su `transform-origin`— y a él
+   * devuelve el foco al cerrarse.
    */
-  settings?: {
-    buttonRef: React.RefObject<HTMLButtonElement | null>;
-    open: boolean;
-    onOpen: () => void;
-  };
+  settings: SettingsControls;
 };
 
 /**
@@ -72,64 +79,67 @@ const ICON_BUTTON =
  */
 export default function NavBar({ current, user, settings }: Props) {
   return (
-    <nav
-      aria-label="Principal"
-      className="print-hidden sticky top-0 z-40 border-b border-edge/80 bg-canvas/80 backdrop-blur-md"
-    >
-      <div className="mx-auto flex h-14 max-w-5xl items-center gap-1 px-2 sm:gap-4 sm:px-6">
-        {/* La marca es el enlace a la portada, y por eso lleva `aria-current`
-            cuando se está en ella: es el único elemento que la representa. */}
-        <a
-          href="/"
-          aria-label="Planificador 2026 · Ir al calendario"
-          title="Planificador 2026"
-          aria-current={current === 'calendar' ? 'page' : undefined}
-          className="flex shrink-0 items-center rounded-lg p-1.5 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none"
-        >
-          <img src="/calendar.svg" alt="" width="24" height="24" className="h-6 w-6" />
-        </a>
+    <>
+      <nav
+        aria-label="Principal"
+        className="print-hidden sticky top-0 z-40 border-b border-edge/80 bg-canvas/80 backdrop-blur-md"
+      >
+        <div className="mx-auto flex h-14 max-w-5xl items-center gap-1 px-2 sm:gap-4 sm:px-6">
+          {/* La marca es el enlace a la portada, y por eso lleva `aria-current`
+              cuando se está en ella: es el único elemento que la representa. */}
+          <a
+            href="/"
+            aria-label="Planificador 2026 · Ir al calendario"
+            title="Planificador 2026"
+            aria-current={current === 'calendar' ? 'page' : undefined}
+            className="flex shrink-0 items-center rounded-lg p-1.5 focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none"
+          >
+            <img src="/calendar.svg" alt="" width="24" height="24" className="h-6 w-6" />
+          </a>
 
-        <ul className="flex flex-1 items-center gap-0.5 sm:gap-1">
-          {LINKS.map(({ id, href, label, Icon, showLabel }) => {
-            const active = id === current;
-            return (
-              <li key={id}>
-                <a
-                  href={href}
-                  aria-label={label}
-                  title={label}
-                  aria-current={active ? 'page' : undefined}
-                  className={
-                    'flex items-center gap-2 rounded-lg p-2 text-sm font-medium transition-colors ' +
-                    'focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ' +
-                    (showLabel ? 'sm:px-3 sm:py-1.5 ' : '') +
-                    (active ? 'bg-edge text-ink' : 'text-ink-soft hover:bg-edge/60 hover:text-ink')
-                  }
-                >
-                  <Icon />
-                  {showLabel && <span className="hidden sm:inline">{label}</span>}
-                </a>
-              </li>
-            );
-          })}
-        </ul>
+          <ul className="flex flex-1 items-center gap-0.5 sm:gap-1">
+            {LINKS.map(({ id, href, label, Icon, showLabel }) => {
+              const active = id === current;
+              return (
+                <li key={id}>
+                  <a
+                    href={href}
+                    aria-label={label}
+                    title={label}
+                    aria-current={active ? 'page' : undefined}
+                    className={
+                      'flex items-center gap-2 rounded-lg p-2 text-sm font-medium transition-colors ' +
+                      'focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none ' +
+                      (showLabel ? 'sm:px-3 sm:py-1.5 ' : '') +
+                      (active ? 'bg-edge text-ink' : 'text-ink-soft hover:bg-edge/60 hover:text-ink')
+                    }
+                  >
+                    <Icon />
+                    {showLabel && <span className="hidden sm:inline">{label}</span>}
+                  </a>
+                </li>
+              );
+            })}
+          </ul>
 
-        {/* Quién ha entrado. El nombre no cabe en un teléfono, así que ahí lo
-            representa la silueta y el nombre se queda para quien lea la página
-            con un lector; el correo va en el `title` para distinguir dos
-            cuentas que se llamen igual. No es un botón: no hace nada. */}
-        <span
-          title={`${user.name} · ${user.email}`}
-          className="flex min-w-0 shrink-0 items-center gap-2 p-2 text-sm font-medium text-ink-soft"
-        >
-          <UserIcon />
-          <span className="hidden max-w-32 truncate sm:inline">{user.name}</span>
-          <span className="sr-only sm:hidden">{user.name}</span>
-        </span>
+          {/* Quién ha entrado. El nombre no cabe en un teléfono, así que ahí lo
+              representa la silueta y el nombre se queda para quien lea la página
+              con un lector; el correo va en el `title` para distinguir dos
+              cuentas que se llamen igual. No es un botón: no hace nada. */}
+          <span
+            title={`${user.name} · ${user.email}`}
+            className="flex min-w-0 shrink-0 items-center gap-2 p-2 text-sm font-medium text-ink-soft"
+          >
+            <UserIcon />
+            <span className="hidden max-w-32 truncate sm:inline">{user.name}</span>
+            <span className="sr-only sm:hidden">{user.name}</span>
+          </span>
 
-        <ThemeToggle />
+          <ThemeToggle />
 
-        {settings && (
+          {/* El engrane, en todas las páginas. En un teléfono es solo el icono,
+              como el resto de la barra; el nombre sigue en `aria-label` y en el
+              `title`, que es de donde lo sacan un lector y el cursor. */}
           <button
             ref={settings.buttonRef}
             type="button"
@@ -142,19 +152,27 @@ export default function NavBar({ current, user, settings }: Props) {
           >
             <GearIcon />
           </button>
-        )}
 
-        <button
-          type="button"
-          onClick={handleSignOut}
-          aria-label={`Cerrar la sesión de ${user.name}`}
-          title="Cerrar sesión"
-          className={ICON_BUTTON}
-        >
-          <SignOutIcon />
-        </button>
-      </div>
-    </nav>
+          <button
+            type="button"
+            onClick={handleSignOut}
+            aria-label={`Cerrar la sesión de ${user.name}`}
+            title="Cerrar sesión"
+            className={ICON_BUTTON}
+          >
+            <SignOutIcon />
+          </button>
+        </div>
+      </nav>
+
+      {settings.open && (
+        <SettingsModal
+          triggerRef={settings.buttonRef}
+          onClose={settings.onClose}
+          {...settings.panel}
+        />
+      )}
+    </>
   );
 }
 

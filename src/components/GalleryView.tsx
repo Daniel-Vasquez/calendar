@@ -1,19 +1,30 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Lightbox from './Lightbox';
 import NavBar, { type NavUser } from './NavBar';
+import NoticeBar, { useNotice } from './NoticeBar';
+import { useCalendarStore } from './useCalendarStore';
+import { useSettings } from './useSettings';
 import { formatLongDate } from '../lib/calendar';
 import { collectImages } from '../lib/gallery';
 import { fetchImages, storeImages } from '../lib/sync';
-import { imagesReady, loadData, STORAGE_KEY, type CalendarData } from '../lib/storage';
+import { imagesReady } from '../lib/storage';
 
 /**
  * Todas las imágenes adjuntas a las notas del año, en una rejilla de
  * miniaturas. Es una vista de solo lectura sobre el mismo almacenamiento que
  * el calendario: para editar se vuelve al día con "Ver nota".
+ *
+ * Leía `localStorage` por su cuenta, que bastaba mientras no hubiera nada que
+ * escribir desde aquí. Ahora el engrane de la barra abre los ajustes también en
+ * esta página —y desde ellos se importa y se borran etiquetas—, así que usa el
+ * mismo almacén que el resto: uno que guarda, encola y sube. De paso gana el
+ * `pull` inicial, que no tenía: un dispositivo recién estrenado enseñaba una
+ * galería vacía hasta pasar por otra página.
  */
 export default function GalleryView({ user }: { user: NavUser }) {
-  const [data, setData] = useState<CalendarData>({});
-  const [hydrated, setHydrated] = useState(false);
+  const { notice, announce, dismiss } = useNotice();
+  const { data, setData, hydrated, adopt } = useCalendarStore(announce);
+  const { settings } = useSettings({ data, setData, announce });
   /** Id de la imagen ampliada; `null` con el visor cerrado. */
   const [openId, setOpenId] = useState<string | null>(null);
   /** Miniatura que abrió el visor, para devolverle el foco al cerrar. */
@@ -21,12 +32,22 @@ export default function GalleryView({ user }: { user: NavUser }) {
   /** Días cuyas imágenes aún se están trayendo de la cuenta. */
   const [missing, setMissing] = useState(0);
 
-  // El primer render debe coincidir con el HTML del servidor, así que
-  // localStorage se lee después de montar.
-  useEffect(() => {
-    setData(loadData());
-    setHydrated(true);
-  }, []);
+  /** Días a los que ya se les ha pedido los adjuntos, salieran o no. */
+  const asked = useRef(new Set<string>());
+  /** ¿Hay un barrido en marcha? Dos a la vez pedirían lo mismo dos veces. */
+  const sweeping = useRef(false);
+  /** El calendario más reciente, para que el barrido no dependa del render. */
+  const dataRef = useRef(data);
+  dataRef.current = data;
+  /** Se apaga al desmontar: es lo único que corta el barrido a media descarga. */
+  const mounted = useRef(true);
+  useEffect(() => () => { mounted.current = false; }, []);
+
+  /** Qué días dicen tener imágenes que este navegador todavía no tiene. */
+  const pending = useMemo(
+    () => Object.keys(data).filter((key) => !imagesReady(data[key])),
+    [data],
+  );
 
   /**
    * Trae de la cuenta las imágenes que este navegador no tenga.
@@ -35,46 +56,55 @@ export default function GalleryView({ user }: { user: NavUser }) {
    * necesita todas, así que aquí sí se descargan en bloque. Van en serie y no
    * en paralelo a propósito: son megas, y una ráfaga de peticiones simultáneas
    * castigaría una conexión mala justo cuando menos conviene.
+   *
+   * El bucle **relee el calendario en cada vuelta** en lugar de trabajar sobre
+   * la lista con la que empezó. Eso es lo que le permite recoger los días que
+   * llegan del servidor a media faena: con el almacén compartido hay una
+   * descarga nada más entrar, y antes de tenerla esta página no sabía todavía
+   * de ningún día. Un dispositivo recién estrenado enseñaba la galería vacía
+   * hasta recargar.
+   *
+   * Y no se cancela cuando cambian las dependencias, solo al desmontar: cada
+   * imagen que entra cambia la lista de pendientes, y cortar por eso abandonaría
+   * la descarga en vuelo. Mientras hay uno en marcha, los disparos siguientes se
+   * van de vacío.
    */
-  useEffect(() => {
-    if (!hydrated) return;
+  const sweep = useCallback(async () => {
+    if (sweeping.current) return;
+    sweeping.current = true;
 
-    const pendientes = Object.keys(data).filter((key) => !imagesReady(data[key]));
-    if (pendientes.length === 0) {
-      setMissing(0);
-      return;
-    }
+    try {
+      for (;;) {
+        const current = dataRef.current;
+        const next = Object.keys(current)
+          .sort()
+          .find((key) => !imagesReady(current[key]) && !asked.current.has(key));
+        if (!next || !mounted.current) return;
 
-    let alive = true;
-    setMissing(pendientes.length);
-
-    void (async () => {
-      for (const key of pendientes) {
-        const images = await fetchImages(key);
-        if (!alive) return;
+        asked.current.add(next);
+        setMissing((count) => count + 1);
+        const images = await fetchImages(next);
+        if (!mounted.current) return;
         // Si falla, se sigue con el resto: mejor una galería incompleta que
-        // ninguna, y al recargar se vuelve a intentar.
-        if (images) setData(storeImages(key, images));
+        // ninguna, y al recargar se vuelve a intentar. Entra por `adopt` y no
+        // por una edición: lo que acaba de bajar no tiene que volver a subir.
+        if (images) adopt(storeImages(next, images));
         setMissing((count) => count - 1);
       }
-    })();
-
-    return () => {
-      alive = false;
-    };
-    // Se dispara al hidratar y cuando otra pestaña cambia el calendario; no en
-    // cada descarga, o la lista se recalcularía a mitad del propio bucle.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hydrated]);
-
-  // Mantiene la galería en sincronía con el calendario abierto en otra pestaña.
-  useEffect(() => {
-    function onStorage(event: StorageEvent) {
-      if (event.key === null || event.key === STORAGE_KEY) setData(loadData());
+    } finally {
+      sweeping.current = false;
     }
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
-  }, []);
+  }, [adopt]);
+
+  useEffect(() => {
+    if (hydrated) void sweep();
+    // Por el contenido de la lista y no por su identidad: se recalcula con cada
+    // imagen que entra, y lo que importa es si ha aparecido algún día nuevo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, pending.join(','), sweep]);
+
+  // El almacén ya mantiene la galería en sincronía con lo que pase en otra
+  // pestaña, así que aquí no hace falta vigilar `localStorage`.
 
   const images = useMemo(() => collectImages(data), [data]);
   const open = openId ? images.find((image) => image.id === openId) : undefined;
@@ -86,7 +116,7 @@ export default function GalleryView({ user }: { user: NavUser }) {
 
   return (
     <>
-      <NavBar current="gallery" user={user} />
+      <NavBar current="gallery" user={user} settings={settings} />
 
       <main className="mx-auto w-full max-w-5xl px-4 pt-8 pb-10 sm:px-6">
         <header className="mb-8">
@@ -167,6 +197,8 @@ export default function GalleryView({ user }: { user: NavUser }) {
 
         {open && <Lightbox image={open} triggerRef={triggerRef} onClose={() => setOpenId(null)} />}
       </main>
+
+      <NoticeBar notice={notice} onDismiss={dismiss} />
     </>
   );
 }
