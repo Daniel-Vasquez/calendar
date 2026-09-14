@@ -1321,27 +1321,35 @@ Ya resuelto, y anotado para cuando haya que montarlo otra vez:
 
 - [x] Las tres variables en el panel de Vercel. `BETTER_AUTH_SECRET` conviene
       que sea **distinta** de la local; hoy es la misma.
-- [ ] `BETTER_AUTH_URL` **con `https://` delante**. Sin esquema lanza por dos
+- [x] `BETTER_AUTH_URL` **con `https://` delante**. Sin esquema lanza por dos
       sitios distintos —el servidor y el cliente— y ambos están cubiertos por
       código, pero la variable debe estar bien puesta igualmente.
 
-      **Sigue mal puesta en Vercel**, comprobado el 14 de septiembre de 2026.
-      Estaba marcada como resuelta y no lo estaba: los registros traen
-      `[auth] BETTER_AUTH_URL no traía esquema; se asume
-      https://planificador.danielvasquez.lat`. No rompe nada —para eso está la red de
-      seguridad de `943751b`— pero es depender de ella en vez de tener la
-      variable bien.
+      **Resuelto el 14 de septiembre de 2026**, al tercer intento y esta vez
+      con prueba. Antes estuvo marcada como resuelta sin estarlo, así que cómo
+      se comprueba vale más que el resultado — y las dos formas obvias fallan:
 
-      **`/api/health` no sirve para comprobarlo, y es lo que la dio por buena
-      la primera vez.** Lo que enseña en `auth` no es la variable: es
-      `baseURL`, o sea el valor que ya ha pasado por `publicOrigin()`, que es
-      quien añade el esquema cuando falta. Con la variable mal puesta devuelve
-      exactamente la misma cadena. La red de seguridad tapa la señal.
+      - **`/api/health` no sirve.** Lo que enseña en `auth` no es la variable:
+        es `baseURL`, el valor que ya pasó por `publicOrigin()`, que es quien
+        añade el esquema cuando falta. Con la variable mal puesta devuelve
+        exactamente la misma cadena. La red de seguridad de `943751b` tapa la
+        señal que se estaba buscando, y por ahí se coló el primer tick.
+      - **Recargar la página tampoco.** El aviso `[auth] BETTER_AUTH_URL no
+        traía esquema` sale de un `console.warn` en el cuerpo del módulo
+        (`auth.ts`), así que se imprime **una vez por arranque en frío**, no
+        por petición. Con la instancia caliente no aparece esté la variable
+        como esté, y leer esa ausencia como «arreglado» sería el siguiente
+        tick falso.
 
-      Solo hay dos formas de saberlo: buscar `[auth]` en los registros de
-      Vercel tras cualquier invocación —si aparece la línea, sigue mal— o
-      mirar el valor en *Settings → Environment Variables*. Y tras corregirla,
-      **redesplegar**: editarla no la mete en la función que ya corre.
+      Lo que sí vale: **redesplegar y cargar una página**, que garantiza
+      instancia nueva — si el esquema faltara, la línea tendría que salir y no
+      sale. O más simple, revelar el valor en *Settings → Environment
+      Variables*, recordando que Production, Preview y Development son tres
+      casillas distintas. Tras corregirla hay que **redesplegar**: editarla no
+      la mete en la función que ya corre.
+
+      El arranque en frío se reconoce por el `latencyMs` de `/api/health`:
+      unos 60 ms en caliente, cientos o más de mil recién levantada.
 - [x] *Network Access* de Atlas en `0.0.0.0/0`. Con la IP propia en lista
       blanca las funciones de Vercel no entran, y el síntoma despista: Atlas
       corta el saludo TLS y el driver lo reporta como `tlsv1 alert internal
