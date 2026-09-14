@@ -152,6 +152,33 @@ día en el móvil y abrir el portátil —que aún lo tiene— lo resucitaría.
 | `BETTER_AUTH_SECRET` | `openssl rand -base64 32`. **Distinta en producción** |
 | `BETTER_AUTH_URL` | Origen público **con esquema** y sin barra final |
 
+#### Si algún día cambia el dominio
+
+`BETTER_AUTH_URL` es la única variable atada al dominio, y no se toca nunca
+salvo por esto. Pero no va sola: el dominio está escrito en dos sitios más que
+**dejan de funcionar** si se queda el viejo, y en ninguno de los dos se nota
+enseguida.
+
+1. **`BETTER_AUTH_URL` en Vercel, y redesplegar.** Editar la variable no la
+   mete en la función que ya corre. Con el origen viejo, Better Auth construye
+   sus rutas contra un dominio que ya no es el del sitio y el login empieza a
+   devolver `403`.
+2. **El dominio nuevo en Vercel**, evidentemente, y con el viejo redirigiendo
+   mientras haya enlaces por ahí.
+3. **El programador del cron.** `.github/workflows/recordatorios.yml` cae en
+   `https://planificador.danielvasquez.lat` cuando no hay nada configurado, así
+   que seguiría llamando al dominio viejo y **dejarían de salir los avisos**.
+   No hace falta tocar el archivo: basta una variable de repositorio
+   `PLANIFICADOR_URL` en *Settings → Secrets and variables → Actions*. El fallo
+   aparece en la pestaña Actions, no en el sitio, así que es el que más tarda
+   en descubrirse.
+
+Lo demás que menciona el dominio —las cabeceras de este archivo y del `README`,
+los ejemplos de `curl`— es documentación: queda desfasada, no rota.
+
+Y si además se usan despliegues de vista previa, su URL tampoco coincidirá con
+`BETTER_AUTH_URL`: eso es `trustedOrigins`, anotado en *Lo que falta*.
+
 Las de los recordatorios son **opcionales**, al revés que las de arriba: sin
 ellas el calendario funciona entero y solo deja de haber avisos. Obligatorias
 tumbarían el sitio por una función accesoria.
