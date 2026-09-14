@@ -1335,6 +1335,36 @@ que el índice se usa.
 
 ---
 
+## Tanda 10: Fusionar por `id` dentro del día
+
+**Estado: anotada, sin planificar.** Es la idea, no el plan: cuando se aborde
+hay que escribirlo entero como se hizo con la tanda 9.
+
+La unidad de fusión es el **día**. Entre dos versiones del mismo día gana la del
+`updatedAt` más reciente, y la otra se pierde entera — con sus avisos dentro.
+Eso significa que dos dispositivos que editan **avisos distintos de la misma
+fecha** sin sincronizar entre medias no se combinan: uno de los dos trabajos
+desaparece.
+
+No es una regresión de la tanda 9. La unidad de fusión siempre fue el día, y ya
+pasaba entre la nota y el recordatorio. Lo que cambió es la **probabilidad**: un
+día tenía un aviso y ahora puede tener diez, así que hay diez veces más
+ocasiones de que dos personas —o la misma en dos dispositivos— toquen cosas
+distintas de la misma fecha.
+
+El arreglo es **fusionar por `id` dentro del día**, y de ahí que sea una tanda
+propia: el `id` ya existe desde la tanda 9 y es justo lo que hace posible
+emparejar aviso con aviso, pero el mecanismo que hay hoy no da para ello. Haría
+falta al menos marca de tiempo **por aviso** en vez de una sola por día, decidir
+qué hacer cuando uno lo borra y el otro lo edita —un borrado no es un campo
+vacío, necesita su lápida— y que el servidor sepa combinar en lugar de elegir,
+que hoy no hace: `days.ts` escribe el día entero o no escribe nada.
+
+Mientras no se haga, el comportamiento es el de siempre y está documentado: gana
+el más reciente.
+
+---
+
 ## Lo que falta
 
 ### Despliegue
@@ -1480,19 +1510,19 @@ Pendiente:
       sesiones: solo impide que ese correo vuelva a registrarse. Para echar a
       alguien de verdad haría falta borrar su usuario y sus sesiones, y hoy eso
       es un trabajo a mano contra Mongo.
-- [ ] **`LEGACY_FIELDS` en `days.ts` borra el `reminder` viejo en cada
-      escritura.** Está ahí porque el mecanismo normal no puede cubrirlo: los
-      opcionales que se borran salen de `WireDay`, y un campo retirado del tipo
-      desaparece también de esa lista. Se puede retirar cuando no quede ningún
-      documento con el campo singular —que es lo que vacía la migración—, y
-      conviene hacerlo: si no, se queda ahí por inercia y dentro de un año nadie
-      sabrá para qué era.
+- [x] **`LEGACY_FIELDS` en `days.ts`**, que borraba el `reminder` viejo en cada
+      escritura. Retirado el 14 de septiembre de 2026, el mismo día que entró:
+      la base ya no tenía ni un documento con el campo singular —0 de 63— y no
+      puede volver a tenerlo, porque `sanitizeWireDay` construye el día desde
+      cero en el servidor y nunca emite ese nombre. Ni un navegador con el
+      paquete viejo en caché lo reintroduciría. El porqué de que existiera queda
+      en el historial de la tanda 9, que es donde toca.
 - [ ] **La fusión es por día, no por aviso.** Dos dispositivos editando avisos
       distintos del mismo día sin sincronizar, y gana el `updatedAt` más
       reciente: el otro pierde el suyo. Ya pasaba con la nota y el recordatorio
       —la unidad de fusión siempre fue el día—, pero desde que un día puede
       llevar diez es mucho más fácil de encontrar. El arreglo es fusionar por
-      `id` dentro del día.
+      `id` dentro del día, y es una tanda en sí misma: ver *Tanda 10*.
 
 ---
 
