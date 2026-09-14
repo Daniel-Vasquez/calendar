@@ -1330,6 +1330,17 @@ Ya resuelto, y anotado para cuando haya que montarlo otra vez:
       esquema; se asume https://…`. No rompe nada —para eso está la red de
       seguridad de `943751b`— pero es depender de ella en vez de tener la
       variable bien.
+
+      **`/api/health` no sirve para comprobarlo, y es lo que la dio por buena
+      la primera vez.** Lo que enseña en `auth` no es la variable: es
+      `baseURL`, o sea el valor que ya ha pasado por `publicOrigin()`, que es
+      quien añade el esquema cuando falta. Con la variable mal puesta devuelve
+      exactamente la misma cadena. La red de seguridad tapa la señal.
+
+      Solo hay dos formas de saberlo: buscar `[auth]` en los registros de
+      Vercel tras cualquier invocación —si aparece la línea, sigue mal— o
+      mirar el valor en *Settings → Environment Variables*. Y tras corregirla,
+      **redesplegar**: editarla no la mete en la función que ya corre.
 - [x] *Network Access* de Atlas en `0.0.0.0/0`. Con la IP propia en lista
       blanca las funciones de Vercel no entran, y el síntoma despista: Atlas
       corta el saludo TLS y el driver lo reporta como `tlsv1 alert internal
