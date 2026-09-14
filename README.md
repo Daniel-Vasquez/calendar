@@ -52,7 +52,7 @@ MongoDB es la fuente de verdad, pero **no** el camino crítico.
 |---|---|
 | 🗓️ **Planificar el año de un vistazo** | Los doce meses en una rejilla; marcar días con ocho colores y convertir cada uno en una categoría propia con su nombre y su tono («Entrega», «Guardia», «Viaje») |
 | 🔍 **Recuperar algo que apuntaste** | La agenda busca por texto, fecha, categoría o etiqueta —sin tildes y combinando palabras— y deja editar el día sin salir de los resultados |
-| 🔔 **No olvidar una cita** | Un recordatorio con hora que llega por Telegram al teléfono, con su lista de pendientes y completados |
+| 🔔 **No olvidar una cita** | Recordatorios con hora que llegan por Telegram al teléfono —varios el mismo día, cada uno a su hora— con su lista de pendientes y completados |
 | 🖼️ **Guardar el justificante, la receta, el ticket** | Hasta seis imágenes por día, redimensionadas en el navegador, y una galería cronológica de todo el año |
 | 🏖️ **Marcar tramos largos** | Shift + clic pinta de golpe todas las vacaciones, la baja o el proyecto entre dos fechas |
 | 💾 **No quedar atrapado** | Exportación a JSON (copia completa) y a `.ics` (para llevarlo a cualquier otro calendario), e importación de vuelta |
@@ -115,9 +115,12 @@ MongoDB es la fuente de verdad, pero **no** el camino crítico.
 
 ### 🔔 Recordatorios por Telegram
 
-- Hora y texto por día; sin texto propio se manda la primera línea de la nota.
+- **Hasta diez avisos por día**, cada uno con su hora y su texto; sin texto
+  propio se manda la primera línea de la nota. Se añaden, se editan, se tachan y
+  se borran uno a uno, desde el día o desde la lista.
 - Lista aparte con pestañas **pendientes / completados / todos**, separando lo
-  próximo de lo que ya pasó.
+  próximo de lo que ya pasó. Ordena por hora, así que los varios de un mismo día
+  salen seguidos y en el orden en que van a sonar.
 - El envío lo dispara un **programador externo** (GitHub Actions, cada 5 minutos)
   contra `POST /api/cron/reminders`, protegido por un secreto en cabecera.
 - **Ventana de gracia de 2 horas**: una ejecución que se retrase no pierde el
