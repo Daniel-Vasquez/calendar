@@ -1112,6 +1112,53 @@ especial, la limpieza de `localStorage`.
 
 ---
 
+### El calendario se abre en hoy — septiembre de 2026
+
+Doce meses no caben en una pantalla, así que entrar era aterrizar en enero y
+buscarse la vida: bajar a mano o acordarse de «Ir a hoy». Pero lo que se viene a
+ver es hoy —esa es la razón de que exista el botón—, y pedirlo cada vez era pedir
+lo mismo siempre. Ahora la rejilla **llega ya puesta en el día actual**.
+
+Es el mismo viaje que hace el botón, y por eso ahora lo hacen los dos con la
+misma función: `revealDay` en `CalendarDashboard`. Con el mes abierto centra la
+casilla; con el mes plegado se para en la cabecera de la tarjeta, porque el
+cuerpo cerrado vale `0fr` y **la casilla mide cero**: desplazarse a ella dejaría
+la vista en cualquier sitio. El `scroll-mt` de la sección es el que deja hueco
+para la barra. El movimiento se anima salvo que el sistema pida lo contrario,
+como el resto de la interfaz.
+
+**Espera a tres cosas y no a que monte el componente**, que es lo que lo hace
+aterrizar donde debe. A `today`, porque la fecha se resuelve en el cliente y
+hasta entonces está vacía. A `hydrated`, porque los días vienen del almacén. Y
+sobre todo a `expansionLoaded`: el HTML baja con los doce meses **abiertos** y el
+plegado guardado se aplica al hidratar, así que medir antes sería medir un
+calendario que está a punto de encoger. El `requestAnimationFrame` final da el
+cuadro en el que ese plegado ya está pintado.
+
+#### Lo que le gana
+
+Que se mueva sola la pantalla es una cortesía, y la cortesía cede:
+
+- **`?day=` manda.** El enlace «Ver nota» de la galería trae su propio día; si
+  además saltara a hoy, se taparía justo lo que se venía a ver.
+- **Una página que nace desplazada ya está donde quería estar**, sea porque el
+  navegador restauró la posición al recargar o por un `#ancla`. Basta mirar
+  `window.scrollY` antes de tocar nada.
+- **El plegado guardado no se toca.** Podría desplegar el mes de hoy para
+  centrar el día, pero sería deshacer una decisión del usuario en su nombre —y
+  un salto de layout de regalo—. Se queda en la cabecera y quien quiera ver el
+  mes lo abre. «Ir a hoy» sí lo despliega: ahí ha habido un clic que lo pide.
+
+Tampoco roba el foco, a diferencia del botón: nadie ha pulsado nada, y mover el
+foco al entrar le quitaría el suyo a quien venga tabulando desde la barra. Y va
+**una sola vez**, guardado por una referencia: ni al cambiar de año —eso es
+mirar otro año a propósito— ni en la medianoche que reescribe `today`.
+
+Si hoy no está en la rejilla que se pinta —se entró con `?year=` al otro año— no
+pasa nada: no hay casilla, y no moverse es exactamente lo correcto.
+
+---
+
 ## Tanda 9: Soporte para múltiples recordatorios por día
 
 **Estado: planificada, sin implementar.** Lo de abajo es el plan, no el

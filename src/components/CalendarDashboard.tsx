@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import MonthCard from './MonthCard';
 import YearTabs, { yearTabId } from './YearTabs';
@@ -65,6 +65,11 @@ export default function CalendarDashboard({ user, initialYear }: Props) {
   /** Qué meses están desplegados. El servidor los dibuja todos abiertos. */
   const [expansion, setExpansion] = useState<MonthExpansion>(DEFAULT_EXPANSION);
   const [expansionLoaded, setExpansionLoaded] = useState(false);
+
+  /** `?day=` abrió un día: ese enlace manda sobre el salto a hoy del arranque. */
+  const openedFromLink = useRef(false);
+  /** El desplazamiento de bienvenida es de una sola vez, al montar. */
+  const welcomed = useRef(false);
 
   // Los meses plegados se leen en un efecto de layout: el cambio de estado se
   // pinta en el mismo cuadro que la hidratación. Hasta entonces la hoja de
@@ -234,12 +239,46 @@ export default function CalendarDashboard({ user, initialYear }: Props) {
       ...current,
       [monthKey(yearOf(key), monthIndexOf(key))]: true,
     }));
+    openedFromLink.current = true;
     openDay(key);
     if (!isInYear(key, year)) return;
     document
       .querySelector<HTMLElement>(`[data-date="${key}"]`)
       ?.scrollIntoView({ behavior: 'auto', block: 'center' });
   }, [hydrated, expansionLoaded, openDay, year]);
+
+  // Doce meses no caben en pantalla y lo que se viene a ver es hoy, así que al
+  // entrar la página se desplaza sola hasta el día actual. Es el mismo viaje
+  // que hace «Ir a hoy», pero sin tocar el foco —nadie ha pulsado nada— y sin
+  // desplegar el mes: si estaba plegado se para en su cabecera y respeta lo que
+  // el usuario dejó guardado.
+  //
+  // Espera a `hydrated` y a `expansionLoaded` porque hasta entonces la altura
+  // de la rejilla no es la definitiva —el HTML baja con los doce meses
+  // abiertos— y el `requestAnimationFrame` da el cuadro en el que ese plegado
+  // ya está pintado: medir antes dejaría el calendario a la altura equivocada.
+  useEffect(() => {
+    if (welcomed.current) return;
+    if (!hydrated || !expansionLoaded || !today) return;
+
+    // De aquí en adelante la bienvenida está dada, salga o no el viaje: lo que
+    // no se pueda desplazar ahora tampoco debe intentarse al cambiar de año.
+    welcomed.current = true;
+
+    // El enlace profundo ya llevó la vista a su día; y si la página nace
+    // desplazada —el navegador restaura la posición al recargar, o hay un
+    // `#ancla`— es que ya hay un sitio al que se quería ir. En ninguno de los
+    // dos casos se roba la vista.
+    if (openedFromLink.current || window.scrollY > 4) return;
+    if (!isInYear(today, year)) return;
+
+    const cell = document.querySelector<HTMLElement>(`[data-date="${today}"]`);
+    if (!cell) return;
+
+    const collapsed = !expansion[monthKey(yearOf(today), monthIndexOf(today))];
+    const frame = requestAnimationFrame(() => revealDay(cell, collapsed));
+    return () => cancelAnimationFrame(frame);
+  }, [hydrated, expansionLoaded, today, year, expansion]);
 
   /** Marca de golpe todo lo que hay entre el último día abierto y este. */
   const markRange = useCallback(
@@ -334,14 +373,7 @@ export default function CalendarDashboard({ user, initialYear }: Props) {
     const cell = document.querySelector<HTMLElement>(`[data-date="${today}"]`);
     if (!cell) return;
 
-    // Mientras el mes se despliega su altura cambia, así que en ese caso se
-    // desplaza a la cabecera del mes y no al día, que aún se está moviendo.
-    const target = wasCollapsed ? (cell.closest('section') ?? cell) : cell;
-    const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    target.scrollIntoView({
-      behavior: still ? 'auto' : 'smooth',
-      block: wasCollapsed ? 'start' : 'center',
-    });
+    revealDay(cell, wasCollapsed);
     cell.focus({ preventScroll: true });
   }, [today, year, expansion, canJumpToToday, changeYear]);
 
@@ -465,6 +497,26 @@ export default function CalendarDashboard({ user, initialYear }: Props) {
       )}
     </>
   );
+}
+
+/**
+ * Trae a la vista la casilla de un día.
+ *
+ * Con el mes plegado la casilla mide cero —el cuerpo se cierra a `0fr`— y, si
+ * se acaba de desplegar, su altura aún está cambiando: en ambos casos el
+ * destino es la cabecera de la tarjeta, que no se mueve y cuyo `scroll-mt`
+ * deja sitio a la barra. Con el mes abierto se centra el día.
+ *
+ * El movimiento se anima salvo que el sistema pida lo contrario, que es la
+ * misma regla que sigue el resto de la interfaz en `global.css`.
+ */
+function revealDay(cell: HTMLElement, collapsed: boolean) {
+  const target = collapsed ? (cell.closest('section') ?? cell) : cell;
+  const still = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  target.scrollIntoView({
+    behavior: still ? 'auto' : 'smooth',
+    block: collapsed ? 'start' : 'center',
+  });
 }
 
 /** Botón cuadrado de la cabecera; el icono es su único contenido visible. */
