@@ -1112,6 +1112,498 @@ especial, la limpieza de `localStorage`.
 
 ---
 
+## Tanda 9: Soporte para múltiples recordatorios por día
+
+**Estado: planificada, sin implementar.** Lo de abajo es el plan, no el
+historial; cuando se haga, se resume en *Historial* como las anteriores.
+
+**Veredicto del análisis previo: viable.** No hay bloqueo de arquitectura. El
+índice único de `days` es `{userId, key}` —un documento por día, no por aviso—,
+así que no estorba: lo que hoy limita a uno es el **tipo**, `reminder?: Reminder`
+dentro del `DayEntry`, y no la base. Lo que sí hay son dos trampas que, sin
+tenerlas delante, se descubren en producción; van marcadas abajo.
+
+### Objetivo y Alcance
+
+Que un día pueda tener **varios avisos** —«9:00 analítica», «18:30 recoger el
+informe»— en vez de uno solo, y que cada uno se edite, se tache y se borre por
+separado, en las tres superficies donde hoy vive un recordatorio: el modal del
+día, la lista de `/recordatorios` y la agenda.
+
+**Dentro del alcance:**
+
+- El aviso pasa de ser un campo del día a ser un elemento de una lista del día.
+  **Sigue viviendo dentro del `DayEntry`**, como la nota o las etiquetas: no se
+  crea una colección de recordatorios, y borrar el día se los sigue llevando por
+  delante. Ver la nota de cabecera de `reminder.ts`, que hay que reescribir.
+- Cada aviso gana una **identidad estable** (`id`). Es el cambio de fondo de toda
+  la tanda; el porqué está en la sección siguiente.
+- Cron, sincronía, búsqueda, exportación ICS y JSON, y las cuatro vistas.
+- Migración de lo que ya hay, en Mongo y en cada navegador.
+
+**Fuera del alcance:**
+
+- Repetición (cada semana, cada mes). Es otra tanda entera y otro modelo
+  —una regla más sus excepciones—, y meterla aquí convertiría un refactor
+  acotado en un rediseño.
+- Que el aviso tenga etiquetas o color propios. Siguen siendo **del día**: es la
+  misma razón que documenta hoy `ReminderModal`, y con varios avisos se refuerza
+  en vez de debilitarse.
+- Granularidad de fusión por aviso. El árbitro sigue siendo `updatedAt` **del
+  día**; ver *Casos borde*.
+
+### Cambios en el Modelo de Datos / Estado
+
+#### El aviso necesita un `id`, y ese es el cambio de verdad
+
+Hoy la identidad de un recordatorio **es la clave de su día**: hay uno, así que
+`2026-03-14` lo nombra sin ambigüedad. De eso viven cuatro cosas repartidas por
+el proyecto, y las cuatro se rompen a la vez en cuanto hay dos:
+
+1. El cron reclama con `{ userId, key, 'reminder.sent': { $exists: false } }`.
+   Con una lista hace falta decir **cuál** de los avisos se reclama.
+2. `pull()` en `sync.ts:218-226` adopta el `sent` que escribe el servidor
+   emparejando por `at`. Dos avisos de la misma hora en el mismo día —que es
+   legítimo— serían indistinguibles.
+3. `withDone`, `withReminder` y `moveReminder` en `reminders.ts` reciben una
+   clave de día y no pueden apuntar a un aviso concreto.
+4. React necesita una `key` por fila, y el índice del array no vale: reordenar
+   por hora al editar reasignaría el estado de las filas.
+
+Así que:
+
+```ts
+export type Reminder = {
+  /**
+   * Identidad del aviso dentro de su día. Doce caracteres de
+   * `crypto.randomUUID()`, como el código de vinculación de `telegram.ts:36`.
+   * No es global: solo tiene que ser único dentro de la lista de su día.
+   */
+  id: string;
+  time: string;   // igual que hoy
+  at: number;     // igual que hoy
+  text?: string;
+  sent?: number;
+  done?: number;
+};
+```
+
+El `id` lo pone `makeReminder`, que ya es —y sigue siendo— **el único sitio donde
+se crea un recordatorio**. Al editar se conserva el que había; al crear se genera.
+
+#### El día lleva una lista
+
+En `storage.ts`, `wire.ts` y `mongo.ts` (`DayDoc` hereda de `WireDay`):
+
+```ts
+// Antes
+reminder?: Reminder;
+// Después
+reminders?: Reminder[];   // ausente cuando no hay ninguno; nunca `[]`
+```
+
+**Campo nuevo, no el mismo con otro tipo.** Es deliberado y cuesta poco: durante
+la transición conviven documentos con `reminder` (objeto) y con `reminders`
+(lista), y con nombres distintos la consulta del cron no tiene que adivinar cuál
+está mirando. Además el `$unset` del viejo es explícito —ver la trampa nº 1.
+
+La invariante «ausente, nunca vacío» es la misma que ya aplican `images` y `tags`
+en `sanitizeData`: un array vacío viajaría en cada subida sin decir nada.
+
+**Orden dentro de la lista: por `at`, y a igualdad por `id`.** Se ordena al
+**escribir**, no al pintar, para que `sameReminders` pueda comparar posición a
+posición y no se encole un cambio falso solo porque dos avisos cambiaron de sitio.
+
+#### Tope por día
+
+```ts
+export const MAX_REMINDERS_PER_DAY = 10;
+```
+
+Diez y no seis ni infinito: seis es el tope de imágenes y viene de que pesan;
+esto pesa unos cientos de bytes y el límite es de **interfaz** —una lista de
+treinta filas en el modal de un día no se lee— y de **Telegram**, que empieza a
+pedir espera por encima de unos pocos mensajes por segundo al mismo chat. El
+tope lo aplica `sanitizeReminders` recortando, igual que `sanitizeImages`.
+
+#### Estado de React
+
+- `DayModal`: `useState<Reminder | undefined>` → `useState<Reminder[]>`, y el
+  efecto de resincronización (`DayModal.tsx:129-146`) pasa a depender de
+  `entry?.reminders`. Hereda la deuda ya anotada del borrador que se reinicia
+  cuando el día cambia de identidad.
+- `RemindersView`: el estado del editor `{ key: string | null }` pasa a
+  `{ key: string | null; id: string | null }` — `id: null` es «creando uno
+  nuevo en ese día».
+- `collectReminders` deja de devolver como mucho una fila por día, así que la
+  `key` de cada tarjeta pasa de `item.key` a `` `${item.key}:${item.reminder.id}` ``.
+
+### Ajustes en API / Helpers de Lógica
+
+#### `lib/reminder.ts`
+
+| Hoy | Después |
+| --- | --- |
+| `sanitizeReminder(raw, key)` | se queda (sanea **un** elemento) y gana el `id`: si falta o se repite dentro del día, se genera uno |
+| — | `sanitizeReminders(raw, key): Reminder[]` — **acepta las dos formas**: el objeto de antes (se envuelve en lista de uno) y la lista de ahora. Ordena, quita `id` duplicados y recorta al tope |
+| `makeReminder(key, time, text, previous?)` | igual, más el `id`: el de `previous` o uno nuevo |
+| `sameReminder(a?, b?)` | se queda para comparar dos sueltos |
+| — | `sameReminders(a?, b?): boolean` — longitud y luego posición a posición |
+| `dueReminders(data, now)` | **hoy no lo llama nadie** (el cron consulta Mongo directamente). O se borra, o se reescribe para listas. Borrarlo es lo honesto |
+
+`reminderState`, `reminderText`, `reminderMessage`, `defaultReminderText`,
+`toEpoch`, `isTime`, `GRACE_MS`: **sin cambios**. Operan sobre un aviso suelto y
+eso no se ha movido.
+
+#### `lib/reminders.ts`
+
+Las tres funciones de escritura pasan a apuntar a un aviso concreto:
+
+```ts
+// Añade o sustituye por `id`, reordena por `at` y respeta el tope.
+// Sigue creando el día si no existía: un día que solo tiene un aviso es legítimo.
+upsertReminder(data, key, reminder): CalendarData
+
+// Quita uno. Si era el último de su día y el día se queda sin nada, el día se borra
+// — la misma regla que hoy documenta `withReminder`.
+removeReminder(data, key, id): CalendarData
+
+withDone(data, key, id, done): CalendarData
+
+// Mueve **un** aviso a otro día. Ya no pisa lo que hubiera allí: se añade a su lista.
+moveReminder(data, from, to, reminder): CalendarData
+```
+
+`collectReminders` pasa de `flatMap` con cero-o-un elemento a uno de verdad, y su
+comentario —«dentro del mismo día no hay nada que ordenar, porque un día tiene
+como mucho un aviso»— deja de ser cierto: ahora hay que ordenar por `at` dentro
+del día. `splitReminders`, `matchesFilter` y `countReminders` trabajan sobre
+`ReminderItem[]` y **no se tocan**; lo único es que `ReminderItem` deja de ser
+uno por día.
+
+#### `lib/storage.ts`
+
+- `hasContent`: `Boolean(entry.reminder)` → `Boolean(entry.reminders?.length)`.
+- `sanitizeData`: `sanitizeReminder` → `sanitizeReminders`, y la condición de
+  descarte de la línea 174 con `reminders.length === 0`. **Las dos reglas tienen
+  que seguir diciendo lo mismo**, que es lo que ya avisa el comentario de ahí.
+- `moveDay`: rehace el aviso con la fecha nueva → ahora rehace **todos**, cada
+  uno con su `makeReminder(to, …)`. Y aquí hay una decisión: al mover un día,
+  ¿los avisos conservan su `id`? **Sí**, aunque suelten `sent` y `done`: no hay
+  nada que ganar cambiándolo y conservarlo hace la mudanza idempotente.
+
+#### `lib/wire.ts`
+
+- `WireDay.reminder` → `reminders?: Reminder[]`, saneado con
+  `sanitizeReminders`.
+- `toWire` y `fromWire`: el campo por el nuevo.
+- `OptionalWireKey` se deriva del tipo, así que se actualiza solo — y ese es el
+  mecanismo que hace fallar el build si alguien se olvida de `days.ts`. Está
+  puesto justamente porque el descuido ya costó dos veces.
+
+#### `lib/sync.ts`
+
+- `sameDay` usa `sameReminders`.
+- **La adopción de `sent`** (`sync.ts:204-226`) es el punto delicado. Pasa de
+  comparar un aviso a recorrer la lista del servidor emparejando por `id`:
+
+  ```ts
+  const here = merged[day.key];
+  if (here?.reminders?.length && day.reminders?.length) {
+    const remoto = new Map(day.reminders.map((r) => [r.id, r]));
+    const fusionados = here.reminders.map((mine) => {
+      const suyo = remoto.get(mine.id);
+      // El mismo aviso y el mismo instante: un aviso movido de hora es otro
+      // aviso, y el `sent` del anterior no le corresponde.
+      return suyo?.sent && !mine.sent && suyo.at === mine.at
+        ? { ...mine, sent: suyo.sent }
+        : mine;
+    });
+    if (fusionados.some((r, i) => r !== here.reminders![i])) {
+      merged[day.key] = { ...here, reminders: fusionados };
+    }
+  }
+  ```
+
+  Se empareja por `id` **y** por `at` —los dos—: el `id` dice cuál es y el `at`
+  dice que no lo han movido mientras tanto.
+
+#### `pages/api/days.ts`
+
+`OPTIONAL_FIELDS` gana `reminders`. **Y aquí está la trampa nº 1:**
+
+> **El `reminder` viejo no se borra solo.** `OPTIONAL_KEYS` se recorre para
+> `$unset` de los campos que el cliente no manda, y sale de `OptionalWireKey`,
+> que a su vez sale de `WireDay`. Al quitar `reminder` del tipo, deja de estar en
+> esa lista y **nadie lo borra jamás del documento**: un día ya subido conservaría
+> su `reminder` de siempre en Mongo, y bastaría con que la consulta del cron lo
+> siguiera mirando para que un aviso borrado hace meses volviera a sonar. Se
+> resuelve por dos vías, y se hacen las dos: la migración (paso 1) y un `$unset`
+> incondicional del campo legado en la escritura, con comentario que diga por qué
+> está ahí y que se puede quitar cuando no queden documentos viejos.
+
+#### `pages/api/cron/reminders.ts` — la pieza más delicada
+
+**Trampa nº 2, y es silenciosa:** sobre un array, tres condiciones en notación de
+punto se satisfacen con elementos **distintos**. El filtro de hoy, traducido a
+pelo —`'reminders.at': {…}`, `'reminders.sent': {$exists:false}`— encontraría un
+día cuyo aviso A vence y cuyo aviso B, de dentro de tres meses, no se ha enviado,
+y daría el día por debido. Hace falta `$elemMatch`, que exige que sea **el mismo**
+elemento el que cumple todo:
+
+```js
+const pendientes = await days
+  .find({
+    reminders: {
+      $elemMatch: {
+        at: { $lte: started, $gt: started - GRACE_MS },
+        sent: { $exists: false },
+        done: { $exists: false },
+      },
+    },
+    deleted: { $ne: true },
+  })
+  .sort({ 'reminders.at': 1 })
+  .limit(200)
+  .toArray();
+```
+
+Y como la consulta devuelve **días**, dentro se recorre la lista y se filtra otra
+vez en JavaScript —el mismo `$elemMatch`, escrito como condición— para quedarse
+con los avisos que tocan de verdad. De ahí sale la lista plana `{ day, reminder }`
+que se ordena por `at` y se envía.
+
+La reclamación pasa a apuntar a un elemento con `arrayFilters`:
+
+```js
+const claimed = await days.updateOne(
+  { userId: day.userId, key: day.key,
+    reminders: { $elemMatch: { id: r.id, sent: { $exists: false } } } },
+  { $set: { 'reminders.$[aviso].sent': started } },
+  { arrayFilters: [{ 'aviso.id': r.id, 'aviso.sent': { $exists: false } }] },
+);
+```
+
+Y la liberación tras un envío fallido, igual con `$unset`. Se conserva entero el
+razonamiento de hoy: **se reclama antes de enviar** —dos pasadas solapadas no
+pueden reclamar el mismo aviso—, y **`updatedAt` no se toca nunca**, que es lo
+que impide que el servidor le gane a una edición local sin subir.
+
+Lo demás del cron no cambia de forma, solo de unidad de cuenta: `summary.due`
+pasa a contar avisos y no días, y `BUDGET_MS` y el corte por `retryAfter` operan
+sobre la lista plana. Un día con tres avisos a la misma hora manda **tres
+mensajes**; ver *Casos borde*.
+
+#### `lib/mongo.ts`
+
+El índice parcial pasa a `{ 'reminders.at': 1 }` con
+`partialFilterExpression: { 'reminders.at': { $exists: true } }` — multiclave,
+que es lo correcto para un array. El viejo `reminder.at_1` **se borra a mano tras
+la migración**; dejarlo solo cuesta escrituras, pero cuesta.
+
+#### `lib/search.ts` y `lib/transfer.ts`
+
+- `hasReminder(entry)`: `Boolean(entry.reminders?.length)`.
+- `searchableText`: hoy mete `reminder?.text` y `reminder?.time`; pasa a meter
+  los de todos. Buscar «18:30» tiene que encontrar el día aunque el aviso de las
+  18:30 sea el tercero.
+- ICS: hoy monta como mucho un `VALARM` por `VEVENT`; pasa a montar uno por
+  aviso. **Varios `VALARM` en el mismo `VEVENT` son válidos según el RFC 5545** y
+  los tres calendarios de destino los respetan, así que no hace falta partir el
+  evento.
+- JSON: sube a **v8**. El importador solo lee `days` y pasa por `sanitizeData`,
+  que acepta las dos formas, así que **un archivo v7 se importa sin tocar nada**.
+
+### Ajustes en Componentes de UI / UX
+
+#### `ReminderField.tsx` — el cambio grande
+
+Hoy es un interruptor con una hora y un texto. Pasa a ser **una lista de avisos
+más un botón de añadir**, y con eso el interruptor desaparece: encender era la
+forma de decir «quiero uno», y ahora eso lo dice «Añadir recordatorio». Apagar
+era quitarlo, y ahora lo quita la papelera de su fila.
+
+```
+┌ Recordatorios ────────────────────────────┐
+│  [09:00]  Analítica en ayunas      ☑ ▢ 🗑 │
+│  [18:30]  Recoger el informe       ☐ ▢ 🗑 │
+│  + Añadir recordatorio            (2/10)  │
+└───────────────────────────────────────────┘
+```
+
+Cada fila lleva su hora, su texto, su casilla de «dado por hecho» y su borrado;
+el aviso de «no tienes Telegram conectado» y la línea de estado (`stateLine`) se
+quedan, la primera **una sola vez** para el bloque —es de la cuenta, no del
+aviso— y la segunda por fila, porque «enviado el…» es de cada uno.
+
+El estado interno sigue siendo de cadenas a medias, como hoy: una fila con la
+hora borrada no es un aviso y no sube al modal, pero conserva lo tecleado por si
+se termina. Con varias filas eso pasa de dos variables a un array de borradores
+con su propio `id` de fila.
+
+**Filas vacías al guardar: se descartan en silencio.** Es lo que ya hace el campo
+de hoy cuando la hora no vale.
+
+#### `ReminderModal.tsx` — alta y edición rápida
+
+- `hasReminder(key)` pasa a `countReminders(key)`, y los dos mensajes cambian de
+  sentido: el de «ya tiene un recordatorio y solo cabe uno: si guardas, se
+  sustituye» **desaparece** —ahora se añade—, y en su lugar va uno informativo
+  («el 14 de marzo ya tiene 2 recordatorios») y otro de bloqueo cuando el destino
+  está en el tope.
+- La `prop` `dateKey: string | null` se acompaña de `reminderId: string | null`.
+- `onSave(from, to, reminder, tags)`: la firma aguanta tal cual, porque el
+  `reminder` ya lleva su `id` dentro.
+- El texto de la sección de etiquetas explica hoy que son del día «porque el día
+  no tiene más que un recordatorio». El **argumento cambia y la conclusión no**:
+  siguen siendo del día precisamente porque ahora hay varios y no habría forma de
+  decidir cuál manda.
+
+#### `RemindersView.tsx`
+
+Casi no cambia de forma, y eso es buena señal: ya era una lista plana ordenada
+por instante. Lo que cambia:
+
+- La `key` de cada tarjeta: `` `${key}:${id}` ``.
+- `handleDelete(key)` → `handleDelete(key, id)`; lo mismo `handleToggle`.
+- El efecto que cierra el modal cuando el día se queda sin aviso
+  (`RemindersView.tsx:134-136`) pasa a mirar **ese** `id`.
+- Dos tarjetas del mismo día salen seguidas y repiten la fecha entera. Se
+  resuelve al pintar —la segunda y siguientes enseñan solo la hora, con la fecha
+  en el `sr-only`— sin tocar `collectReminders`, que ordena bien de por sí.
+
+#### `DayCell.tsx` (rejilla)
+
+Una campana por casilla, no tres: se enseña **la del aviso más próximo** y, con
+más de uno, un `+N` discreto junto a ella. El `sr-only` sí los dice todos
+(«, 2 avisos: a las 9:00 y a las 18:30»), y el popover lista hasta tres líneas y
+resume el resto. La casilla mide 40 px: es la superficie donde el desbordamiento
+duele, y por eso aquí se resume en vez de listar.
+
+#### `AgendaList.tsx`
+
+La fila ya es ancha y se permite más: hasta **tres** `ReminderChip` en línea y un
+`+N` si sobran, que envuelven solos porque el contenedor ya es `flex-wrap`. El
+texto «Solo recordatorio» del día sin nada más pasa a «Solo recordatorios» en
+plural cuando toque. El recuento de la pestaña «Recordatorios» sigue contando
+**días** y no avisos —responde a «cuántos días de los que miro llevan aviso»—, y
+conviene dejarlo escrito para que nadie lo «arregle» después.
+
+`ReminderChip` no se toca: pinta un aviso y eso no ha cambiado.
+
+### Paso a Paso de Implementación
+
+El orden importa por una razón concreta: **el servidor tiene que saber leer la
+forma nueva antes de que ningún navegador la escriba**, y la migración va después
+del despliegue, no antes. Es el mismo orden que la tanda 8.
+
+1. **`lib/reminder.ts`**: `id` en el tipo, `sanitizeReminders`, `sameReminders`,
+   `makeReminder` con `id`, `MAX_REMINDERS_PER_DAY`. Borrar `dueReminders`.
+   Reescribir la nota de cabecera, que hoy dice «un día tiene como mucho un
+   aviso». Sin esto, la explicación del archivo miente.
+2. **`lib/storage.ts` y `lib/wire.ts`**: el campo `reminders`, `hasContent`,
+   `sanitizeData`, `moveDay`, `toWire`/`fromWire`. Aquí el build empieza a
+   quejarse por todas partes, y esa lista de errores *es* la lista de tareas.
+3. **`lib/reminders.ts`**: `upsertReminder`, `removeReminder`, `withDone` con
+   `id`, `moveReminder` sin pisar, `collectReminders` ordenando dentro del día.
+4. **`lib/sync.ts`**: `sameDay` y la adopción de `sent` por `id`.
+5. **`pages/api/days.ts`**: `OPTIONAL_FIELDS` y el `$unset` del campo legado.
+6. **`lib/mongo.ts`**: el índice nuevo.
+7. **`pages/api/cron/reminders.ts`**: `$elemMatch`, la lista plana y
+   `arrayFilters`. **Probar contra datos de verdad antes de seguir** — es lo
+   único de esta tanda que falla en silencio y a las 9:00 de la mañana.
+8. **UI**, de dentro afuera: `ReminderField`, `DayModal`, `ReminderModal`,
+   `RemindersView`, `AgendaList`, `DayCell`.
+9. **`lib/search.ts` y `lib/transfer.ts`**: búsqueda, ICS con varios `VALARM`,
+   JSON v8.
+10. **Desplegar.** El código nuevo lee las dos formas; el viejo no lee la nueva.
+11. **`scripts/migrate-reminders.mjs`**, con `scripts/migrate-images.mjs` como
+    molde: idempotente, reanudable, en dos escrituras por documento —primero
+    `$set` de `reminders`, y **solo entonces** `$unset` de `reminder`—, y **sin
+    tocar `updatedAt`**, por lo de siempre. Cuenta avisos por usuario antes y
+    después y compara: es la única comprobación que importa. Cortado a la mitad
+    deja un documento con las dos cosas, que es recuperable.
+12. **Borrar el índice `reminder.at_1`** a mano, ya sin documentos que lo usen.
+13. Del lado del navegador **no hace falta script**: `sanitizeData` acepta la
+    forma vieja al leer `localStorage`, así que el primer arranque la convierte,
+    y la primera edición la sube. Igual que la tanda 8 con las imágenes.
+14. **Documentación**: resumen en *Historial*, la nota del `README` sobre
+    recordatorios, y el `$unset` legado del paso 5 anotado en *Deuda conocida*
+    para poder retirarlo.
+
+### Casos Borde y Pruebas
+
+**Tope y orden**
+
+- 10 avisos en un día: el botón de añadir se deshabilita y lo dice. El nº 11 que
+  llegue por importación o por fusión se recorta en `sanitizeReminders`, no en la
+  interfaz.
+- Dos avisos **a la misma hora exacta** en el mismo día: legítimo y hay que
+  probarlo. El desempate por `id` es lo que mantiene el orden estable entre
+  renders; sin él, dos elementos con el mismo `at` bailan.
+- Editar la hora del segundo aviso para que quede antes del primero: la lista se
+  reordena al guardar y **la fila sigue siendo la misma** —de ahí que la `key` de
+  React sea el `id` y no el índice—.
+
+**Borrado y edición individual**
+
+- Borrar uno de tres: los otros dos siguen, con su `sent` y su `done` intactos.
+- Borrar el **último** de un día que no tenía nada más: el día desaparece, que es
+  la regla que ya documenta `withReminder`.
+- Tachar uno no toca a los demás, y el día sigue apareciendo en la agenda.
+- Mover un aviso a un día que ya tiene otros: **se añade**, no sustituye. Es el
+  cambio de comportamiento más visible de la tanda, y el aviso de la interfaz
+  tiene que decirlo.
+- Mover un día entero (`moveDay`) con tres avisos: llegan los tres, todos sin
+  `sent` y sin `done`, todos recalculados a la fecha nueva.
+
+**Cron**
+
+- Un día con un aviso vencido y otro de dentro de tres meses: **sale solo el
+  primero**. Es la prueba que detecta la trampa nº 2, y sin `$elemMatch` pasa
+  desapercibida hasta que alguien recibe un aviso de marzo en enero.
+- Un día con tres avisos vencidos a la vez: **tres mensajes**. Se acepta —son
+  tres cosas distintas y juntarlas obligaría a inventar un formato de resumen—
+  pero se prueba que el manejo de `retryAfter` los aplaza bien si Telegram pide
+  esperar a mitad.
+- Reclamación concurrente: dos pasadas solapadas sobre el mismo día con dos
+  avisos vencidos. Cada aviso sale **una sola vez**, y una pasada no puede
+  pisarle a la otra la marca de un aviso distinto del mismo documento.
+- Un envío que falla libera **solo su** `sent`, no el de sus vecinos.
+- `updatedAt` sin tocar, comprobado leyendo el documento después.
+
+**Fusión y compatibilidad**
+
+- Documento viejo con `reminder` objeto, leído por el código nuevo: aparece como
+  lista de uno, con `id` generado. **El `id` generado será distinto en cada
+  dispositivo** hasta que uno de ellos suba; no rompe nada —el emparejamiento de
+  `sent` exige `id` *y* `at`, así que en el peor caso no se adopta una marca y se
+  adopta en la vuelta siguiente— pero conviene saberlo antes de verlo.
+- Archivo exportado v7 (y v6, y v4) importado en el código nuevo: entra bien.
+- Dos dispositivos editando **avisos distintos del mismo día** sin sincronizar:
+  gana el `updatedAt` más reciente y el otro pierde su aviso. **Es lo que ya pasa
+  hoy** con la nota y el recordatorio de un mismo día —la unidad de fusión es el
+  día—, así que no es una regresión, pero con varios avisos se vuelve mucho más
+  fácil de encontrar. Si molesta, la salida es fusionar por `id` dentro del día,
+  y eso es otra tanda.
+- Apagar todos los avisos de un día en un dispositivo: el campo desaparece, el
+  `$unset` lo borra en Mongo y el otro dispositivo no se los baja de vuelta. Es
+  exactamente el fallo que ya costó dos veces y por eso `OptionalWireKey` se
+  deriva del tipo.
+
+**Interfaz**
+
+- Un día con 10 avisos: la casilla de la rejilla no se deforma, la fila de la
+  agenda no desborda a lo ancho y el modal del día hace scroll dentro de su
+  panel.
+- `/recordatorios` con varios del mismo día seguidos: se lee cuál es cuál sin
+  repetir la fecha cuatro veces.
+- Teclado y lector de pantalla: cada fila del editor es alcanzable y su borrado
+  dice de qué aviso es —«Eliminar recordatorio de las 18:30»—, no solo
+  «Eliminar».
+
+---
+
 ## Lo que falta
 
 ### Despliegue
@@ -1551,4 +2043,4 @@ Hay que sustituir también el `import`, no solo la llamada. Y la variable va
 **delante** del comando: `--env-file` no pisa lo que ya venga del shell, que es
 justo lo que aquí interesa.
 
-claude --resume 2133f376-4327-490d-a161-88961ec6eef8
+claude --resume fc11cb31-643a-473d-a8ab-6088e0fe5180
