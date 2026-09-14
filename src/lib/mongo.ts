@@ -133,9 +133,17 @@ export async function getDays(): Promise<Collection<DayDoc>> {
   // todo lo demás: sin este índice recorrería todos los días de todo el mundo
   // en cada pasada. Parcial porque la inmensa mayoría no llevan recordatorio,
   // y el índice solo tiene que conocer a los que sí.
+  //
+  // Desde la tanda 9 `reminders` es una lista, así que este índice es
+  // **multiclave**: un día con tres avisos aporta tres entradas. Sigue siendo
+  // parcial, y por serlo el cron tiene que pedir la ventana **también** en
+  // notación de punto para que el planificador lo dé por elegible; está
+  // explicado donde se consulta, en `api/cron/reminders.ts`. El de antes,
+  // `reminder.at_1`, lo borra la migración: ya no lo usa nadie y solo cuesta
+  // escrituras.
   cache.remindersIndex ??= days.createIndex(
-    { 'reminder.at': 1 },
-    { partialFilterExpression: { 'reminder.at': { $exists: true } } },
+    { 'reminders.at': 1 },
+    { partialFilterExpression: { 'reminders.at': { $exists: true } } },
   );
 
   try {

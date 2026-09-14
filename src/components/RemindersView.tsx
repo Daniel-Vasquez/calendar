@@ -24,9 +24,11 @@ import {
   matchesFilter,
   moveReminder,
   REMINDER_LABEL,
+  removeReminder,
+  remindersOf,
   splitReminders,
+  upsertReminder,
   withDone,
-  withReminder,
   type ReminderFilter,
   type ReminderItem,
 } from '../lib/reminders';
@@ -78,12 +80,16 @@ export default function RemindersView({ user }: { user: NavUser }) {
   /** Se entra viéndolo todo; los dos recortes están a un clic. Ver `TABS`. */
   const [filter, setFilter] = useState<ReminderFilter>('all');
   /**
-   * Qué hace el modal ahora mismo. Tres estados en uno:
-   * `null` cerrado, `{ key: null }` creando y `{ key: '2026-…' }` editando ese
-   * día. Van juntos porque es un único modal con dos modos, y tenerlos en dos
-   * banderas permitiría el estado imposible de crear y editar a la vez.
+   * Qué hace el modal ahora mismo. Tres estados en uno: `null` cerrado,
+   * `{ key: null, id: null }` creando y `{ key: '2026-…', id: '…' }` editando
+   * **ese aviso de ese día**. Van juntos porque es un único modal con dos
+   * modos, y tenerlos en dos banderas permitiría el estado imposible de crear y
+   * editar a la vez.
+   *
+   * El `id` entra en la tanda 9: la clave del día ya no nombra un recordatorio,
+   * porque puede haber cuatro.
    */
-  const [editor, setEditor] = useState<{ key: string | null } | null>(null);
+  const [editor, setEditor] = useState<{ key: string | null; id: string | null } | null>(null);
   /** Botón que abrió el modal: a él vuelve el foco al cerrarse. */
   const triggerRef = useRef<HTMLElement | null>(null);
 
@@ -126,47 +132,61 @@ export default function RemindersView({ user }: { user: NavUser }) {
     [visible, clock.now],
   );
 
-  // Si el día que se está editando se va desde otra pestaña, el modal se
-  // cierra solo en vez de quedarse editando algo que ya no existe. Creando no
-  // hay nada que vigilar: todavía no existe por definición.
+  // Si el aviso que se está editando se va desde otra pestaña, el modal se
+  // cierra solo en vez de quedarse editando algo que ya no existe. Se vigila
+  // **ese** aviso y no su día: el día puede seguir ahí con los otros tres.
+  // Creando no hay nada que vigilar: todavía no existe por definición.
   const editingKey = editor?.key ?? null;
-  const editingEntry = editingKey ? data[editingKey] : undefined;
+  const editingId = editor?.id ?? null;
+  const editingReminder =
+    editingKey && editingId
+      ? data[editingKey]?.reminders?.find((reminder) => reminder.id === editingId)
+      : undefined;
   useEffect(() => {
-    if (editingKey && !editingEntry?.reminder) setEditor(null);
-  }, [editingKey, editingEntry]);
+    if (editingKey && !editingReminder) setEditor(null);
+  }, [editingKey, editingReminder]);
 
   const handleToggle = useCallback(
-    (key: string, done: boolean) => {
-      setData((current) => withDone(current, key, done));
+    (key: string, id: string, done: boolean) => {
+      setData((current) => withDone(current, key, id, done));
       dismiss();
     },
     [setData, dismiss],
   );
 
   const handleDelete = useCallback(
-    (key: string) => {
+    (key: string, id: string) => {
       const snapshot = data;
-      setData((current) => withReminder(current, key, undefined));
+      // La hora se lee antes de borrar, que es la única forma de poder nombrar
+      // en el aviso cuál de los del día se ha ido.
+      const hora = data[key]?.reminders?.find((reminder) => reminder.id === id)?.time;
+      setData((current) => removeReminder(current, key, id));
       setEditor(null);
-      announce(`Se borró el recordatorio del ${formatLongDate(key)}.`, () => setData(snapshot));
+      announce(
+        hora
+          ? `Se borró el recordatorio de las ${hora} del ${formatLongDate(key)}.`
+          : `Se borró el recordatorio del ${formatLongDate(key)}.`,
+        () => setData(snapshot),
+      );
     },
     [data, setData, announce],
   );
 
   /**
-   * Guarda lo que salga del modal, venga de crear o de editar. La instantánea
-   * va siempre: crear puede pisar el aviso que ya tuviera ese día, y editar
-   * sustituye el texto y la hora anteriores. En los tres casos hay algo que
-   * deshacer.
+   * Guarda lo que salga del modal, venga de crear o de editar. La instantánea va
+   * siempre: editar sustituye el texto y la hora anteriores, y mover saca el
+   * aviso de un día para meterlo en otro. En los dos casos hay algo que deshacer.
+   *
+   * Lo que **ya no** puede pasar es pisar el aviso del día de destino: desde la
+   * tanda 9 se suma a su lista, así que sobra el caso que había para avisarlo.
    */
   const handleSaveEditor = useCallback(
     (from: string | null, to: string, reminder: Reminder, tags: string[]) => {
       const snapshot = data;
-      const pisa = from !== to && Boolean(data[to]?.reminder);
       setData((current) => {
         const next =
           from === null
-            ? withReminder(current, to, reminder)
+            ? upsertReminder(current, to, reminder)
             : moveReminder(current, from, to, reminder);
         // Las etiquetas son del día de destino, así que se escriben después de
         // mover: antes, `moveReminder` las dejaría en el día que se abandona.
@@ -176,34 +196,38 @@ export default function RemindersView({ user }: { user: NavUser }) {
 
       const cuando = formatLongDate(to);
       announce(
-        pisa
-          ? `Se sustituyó el recordatorio del ${cuando}.`
-          : from === null
-            ? `Se creó el recordatorio del ${cuando}.`
-            : from === to
-              ? `Se guardó el recordatorio del ${cuando}.`
-              : `El recordatorio se movió al ${cuando}.`,
+        from === null
+          ? `Se creó el recordatorio del ${cuando}.`
+          : from === to
+            ? `Se guardó el recordatorio del ${cuando}.`
+            : `El recordatorio se movió al ${cuando}.`,
         () => setData(snapshot),
       );
     },
     [data, setData, announce],
   );
 
-  const hasReminder = useCallback((key: string) => Boolean(data[key]?.reminder), [data]);
+  const countOf = useCallback((key: string) => remindersOf(data, key).length, [data]);
   const noteOf = useCallback((key: string) => data[key]?.note ?? '', [data]);
   const tagsOf = useCallback((key: string) => data[key]?.tags ?? [], [data]);
 
   /** Día que se propone al crear: hoy, o el primero que cubre el calendario. */
   const defaultKey = clock.today && isCovered(clock.today) ? clock.today : MIN_DATE;
 
-  function openEditor(key: string | null, event: React.MouseEvent<HTMLElement>) {
+  function openEditor(
+    key: string | null,
+    id: string | null,
+    event: React.MouseEvent<HTMLElement>,
+  ) {
     triggerRef.current = event.currentTarget;
-    setEditor({ key });
+    setEditor({ key, id });
   }
 
   const row = (item: ReminderItem) => (
+    // La clave es el día **y** el aviso: un día puede poner cuatro tarjetas en
+    // esta lista, y con la fecha sola React las vería como una sola repetida.
     <ReminderCard
-      key={item.key}
+      key={`${item.key}:${item.reminder.id}`}
       item={item}
       catalogue={catalogue}
       now={clock.now}
@@ -245,7 +269,7 @@ export default function RemindersView({ user }: { user: NavUser }) {
               <SyncBadge state={sync} pending={pending} onRetry={retry} />
               <button
                 type="button"
-                onClick={(event) => openEditor(null, event)}
+                onClick={(event) => openEditor(null, null, event)}
                 className="rounded-xl bg-accent px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-strong focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none sm:px-4 sm:py-2.5"
               >
                 Nuevo<span className="hidden sm:inline"> recordatorio</span>
@@ -334,13 +358,13 @@ export default function RemindersView({ user }: { user: NavUser }) {
 
       <NoticeBar notice={notice} onDismiss={dismiss} />
 
-      {editor && (editor.key === null || editingEntry?.reminder) && (
+      {editor && (editor.key === null || editingReminder) && (
         <ReminderModal
           dateKey={editor.key}
-          reminder={editingEntry?.reminder}
+          reminder={editingReminder}
           defaultKey={defaultKey}
           noteOf={noteOf}
-          hasReminder={hasReminder}
+          countOf={countOf}
           catalogue={catalogue}
           tagsOf={tagsOf}
           triggerRef={triggerRef}
@@ -374,6 +398,12 @@ function SectionTitle({
  * Una tarjeta por recordatorio: cuándo, qué, en qué punto está y qué se puede
  * hacer con él. La casilla no abre nada —marcar algo como hecho es un clic y
  * no debería costar dos—, y el resto son acciones explícitas.
+ *
+ * **Solo la primera tarjeta de cada día enseña la fecha.** Desde la tanda 9 un
+ * día puede poner cuatro seguidas, y repetir «miércoles 14 de marzo» cuatro
+ * veces convierte la lista en ruido: lo que distingue a esas cuatro es la hora,
+ * que ya va en el chip. Quien lee con lector de pantalla la recibe igual, en el
+ * texto oculto — ahí no hay nada que ahorrar.
  */
 function ReminderCard({
   item,
@@ -388,11 +418,11 @@ function ReminderCard({
   catalogue: Tag[];
   now: number;
   today: string;
-  onToggle: (key: string, done: boolean) => void;
-  onEdit: (key: string, event: React.MouseEvent<HTMLElement>) => void;
-  onDelete: (key: string) => void;
+  onToggle: (key: string, id: string, done: boolean) => void;
+  onEdit: (key: string, id: string, event: React.MouseEvent<HTMLElement>) => void;
+  onDelete: (key: string, id: string) => void;
 }) {
-  const { key, reminder, note, done, state } = item;
+  const { key, reminder, note, done, state, first } = item;
   const text = reminderText(reminder, note);
   /** Sin texto propio, lo que se manda es la nota: conviene decirlo. */
   const fromNote = !reminder.text?.trim();
@@ -410,7 +440,7 @@ function ReminderCard({
           <input
             type="checkbox"
             checked={done}
-            onChange={(event) => onToggle(key, event.target.checked)}
+            onChange={(event) => onToggle(key, reminder.id, event.target.checked)}
             aria-label={`Dar por hecho: ${text}`}
             className="peer sr-only"
           />
@@ -434,10 +464,19 @@ function ReminderCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <ReminderChip reminder={reminder} now={now} />
-            <span className="text-sm font-semibold text-ink">
-              {formatWeekday(key)} {formatLongDate(key)}
-            </span>
-            {timeState === 'today' && (
+            {first ? (
+              <span className="text-sm font-semibold text-ink">
+                {formatWeekday(key)} {formatLongDate(key)}
+              </span>
+            ) : (
+              <span className="text-sm font-medium text-ink-muted">
+                <span className="sr-only">
+                  {formatWeekday(key)} {formatLongDate(key)},{' '}
+                </span>
+                el mismo día
+              </span>
+            )}
+            {first && timeState === 'today' && (
               <span className="rounded-full bg-today/10 px-2 py-0.5 text-[11px] font-semibold text-today-ink">
                 Hoy
               </span>
@@ -472,7 +511,11 @@ function ReminderCard({
           <TagBadges catalogue={catalogue} tags={item.tags} className="mt-2" />
 
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button type="button" onClick={(event) => onEdit(key, event)} className={ROW_ACTION}>
+            <button
+              type="button"
+              onClick={(event) => onEdit(key, reminder.id, event)}
+              className={ROW_ACTION}
+            >
               Editar
             </button>
             <a href={dayHref(key)} className={ROW_ACTION + ' inline-block'}>
@@ -480,7 +523,7 @@ function ReminderCard({
             </a>
             <button
               type="button"
-              onClick={() => onDelete(key)}
+              onClick={() => onDelete(key, reminder.id)}
               className={ROW_ACTION + ' hover:bg-highlight-soft hover:text-highlight'}
             >
               Eliminar
@@ -496,7 +539,7 @@ function ReminderCard({
 function EmptyState({
   onCreate,
 }: {
-  onCreate: (key: null, event: React.MouseEvent<HTMLElement>) => void;
+  onCreate: (key: null, id: null, event: React.MouseEvent<HTMLElement>) => void;
 }) {
   return (
     <div className="flex flex-col items-center rounded-2xl border border-dashed border-edge bg-surface px-6 py-16 text-center">
@@ -505,14 +548,15 @@ function EmptyState({
       </span>
       <h2 className="mt-5 text-lg font-semibold text-ink">Todavía no hay recordatorios</h2>
       <p className="mt-2 max-w-sm text-sm text-ink-soft">
-        Un recordatorio es una hora de un día y un aviso que llega por Telegram. Puedes crear uno
-        aquí mismo, o encender «Recordarme este día» en cualquier día del calendario: acaben donde
-        acaben, se reúnen todos en esta lista para repasarlos y tacharlos.
+        Un recordatorio es una hora de un día y un aviso que llega por Telegram. Un mismo día puede
+        llevar varios, cada uno a su hora. Puedes crear uno aquí mismo, o añadirlo desde cualquier
+        día del calendario: acaben donde acaben, se reúnen todos en esta lista para repasarlos y
+        tacharlos.
       </p>
       <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
         <button
           type="button"
-          onClick={(event) => onCreate(null, event)}
+          onClick={(event) => onCreate(null, null, event)}
           className="rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-accent-strong focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:outline-none"
         >
           Crear el primero

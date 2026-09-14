@@ -103,7 +103,7 @@ export default function DayModal({
   const [color, setColor] = useState<ColorId>(entry?.color ?? DEFAULT_COLOR);
   /** Data URL de cada imagen adjunta, en el orden en que se añadieron. */
   const [images, setImages] = useState<string[]>(entry?.images ?? []);
-  const [reminder, setReminder] = useState<Reminder | undefined>(entry?.reminder);
+  const [reminders, setReminders] = useState<Reminder[]>(entry?.reminders ?? []);
   const [tags, setTags] = useState<string[]>(entry?.tags ?? []);
   /** Fecha elegida. Mientras nadie la toque es la del día que se abrió. */
   const [day, setDay] = useState(dateKey);
@@ -131,7 +131,7 @@ export default function DayModal({
     setNote(entry?.note ?? '');
     setColor(entry?.color ?? DEFAULT_COLOR);
     setImages(entry?.images ?? []);
-    setReminder(entry?.reminder);
+    setReminders(entry?.reminders ?? []);
     setTags(entry?.tags ?? []);
     setDay(dateKey);
     setImageError('');
@@ -141,7 +141,7 @@ export default function DayModal({
     entry?.note,
     entry?.color,
     entry?.images,
-    entry?.reminder,
+    entry?.reminders,
     entry?.tags,
   ]);
 
@@ -247,16 +247,16 @@ export default function DayModal({
    */
   function draft(): DayEntry {
     if (!ready) {
-      // `entry` puede traer un recordatorio o unas etiquetas que aquí se acaban
-      // de quitar, así que los campos se sueltan primero y se vuelven a poner
+      // `entry` puede traer recordatorios o etiquetas que aquí se acaban de
+      // quitar, así que los campos se sueltan primero y se vuelven a poner
       // solo si siguen vivos.
-      const { reminder: _previous, tags: _dropped, ...rest } = entry ?? ({} as DayEntry);
+      const { reminders: _previous, tags: _dropped, ...rest } = entry ?? ({} as DayEntry);
       return {
         ...rest,
         marked,
         note: note.trim(),
         color,
-        ...(reminder ? { reminder } : {}),
+        ...(reminders.length ? { reminders } : {}),
         ...(tags.length ? { tags: sanitizeTags(tags) } : {}),
       };
     }
@@ -271,7 +271,7 @@ export default function DayModal({
       color,
       ...(images.length ? { images, imageCount: images.length } : {}),
       ...(keepThumb ? { thumb: keepThumb } : {}),
-      ...(reminder ? { reminder } : {}),
+      ...(reminders.length ? { reminders } : {}),
       ...(tags.length ? { tags: sanitizeTags(tags) } : {}),
     };
   }
@@ -482,7 +482,7 @@ export default function DayModal({
           />
         </div>
 
-        <ReminderField dateKey={dateKey} note={note} value={reminder} onChange={setReminder} />
+        <ReminderField dateKey={dateKey} note={note} value={reminders} onChange={setReminders} />
 
         <div className="mt-4">
           <div className="mb-2 flex items-baseline justify-between">

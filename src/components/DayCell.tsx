@@ -111,10 +111,13 @@ export default function DayCell({
   // La cuenta llega con el día; las imágenes en sí puede que aún no estén
   // descargadas en este navegador, así que no sirven para contar.
   const total = imageCount(entry);
-  const reminder = entry?.reminder;
+  // Ya vienen ordenados por hora: el primero es el más próximo del día, y es el
+  // único cuya hora cabe en una casilla de 40 píxeles.
+  const reminders = entry?.reminders ?? [];
+  const next = reminders[0];
   // Una imagen sin texto también es una nota, y una hora sola también:
   // cualquiera de las tres enciende el punto y el popover.
-  const hasNote = Boolean(note || total || reminder);
+  const hasNote = Boolean(note || total || reminders.length);
   // La vista previa sale siempre del mismo sitio: el adjunto de aquí si lo
   // hay, y si no la miniatura que viaja con el día. Ver `previewSrc`.
   const preview = previewSrc(entry, dateKey);
@@ -151,31 +154,50 @@ export default function DayCell({
         {/* La campana vive arriba a la derecha, lejos del punto del día
             marcado: las dos cosas pueden coincidir en la misma casilla.
 
-            El icono es decorativo, así que la hora se dice aparte: el
-            `aria-label` lo pone MonthCard y no sabe nada del recordatorio. */}
-        {reminder && <span className="sr-only">, aviso a las {reminder.time}</span>}
-        {reminder && (
-          <svg
+            Aquí **se resume**, y es el único sitio de la aplicación donde se
+            hace: la casilla mide cuarenta píxeles, así que se enseña una
+            campana y, con más de un aviso, cuántos hay. Las horas se leen en el
+            popover o en el modal.
+
+            El icono es decorativo, así que lo que hay se dice aparte: el
+            `aria-label` lo pone MonthCard y no sabe nada de los recordatorios.
+            Ahí sí van todas las horas — en el texto oculto no hay sitio que
+            ahorrar. */}
+        {next && (
+          <span className="sr-only">
+            {reminders.length === 1
+              ? `, aviso a las ${next.time}`
+              : `, ${reminders.length} avisos: a las ${reminders.map((item) => item.time).join(', ')}`}
+          </span>
+        )}
+        {next && (
+          <span
             aria-hidden="true"
-            width="9"
-            height="9"
-            viewBox="0 0 16 16"
-            fill="none"
-            className={'absolute top-1 right-1 ' + (solid ? 'text-white' : 'text-ink-muted')}
+            className={
+              'absolute top-1 right-1 flex items-center gap-px ' +
+              (solid ? 'text-white' : 'text-ink-muted')
+            }
           >
-            <path
-              d="M8 2a4 4 0 00-4 4v2.6L2.8 11h10.4L12 8.6V6a4 4 0 00-4-4z"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinejoin="round"
-            />
-            <path
-              d="M6.4 13a1.7 1.7 0 003.2 0"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-            />
-          </svg>
+            <svg width="9" height="9" viewBox="0 0 16 16" fill="none">
+              <path
+                d="M8 2a4 4 0 00-4 4v2.6L2.8 11h10.4L12 8.6V6a4 4 0 00-4-4z"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M6.4 13a1.7 1.7 0 003.2 0"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
+            </svg>
+            {reminders.length > 1 && (
+              <span className="text-[8px] leading-none font-bold tabular-nums">
+                {reminders.length}
+              </span>
+            )}
+          </span>
         )}
 
         {hasNote && (
@@ -203,9 +225,16 @@ export default function DayCell({
               <p className="text-[11px] font-semibold tracking-wide text-ink-muted uppercase">
                 {dateLabel}
               </p>
-              {reminder && (
+              {next && (
                 <p className="mt-1 text-[11px] font-semibold text-accent-ink-strong">
-                  Aviso a las {reminder.time}
+                  {reminders.length === 1
+                    ? `Aviso a las ${next.time}`
+                    : // Tres horas caben en el ancho del popover; lo que pase de
+                      // ahí se cuenta, que para eso está el modal del día.
+                      `Avisos: ${reminders
+                        .slice(0, 3)
+                        .map((item) => item.time)
+                        .join(' · ')}${reminders.length > 3 ? ` +${reminders.length - 3}` : ''}`}
                 </p>
               )}
               {/* Solo asoma la primera imagen; el resto se cuenta encima. */}

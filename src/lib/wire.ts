@@ -1,6 +1,6 @@
 import { DEFAULT_COLOR, isColorId, type ColorId } from './palette';
 import { isThumb } from './image';
-import { sanitizeReminder, type Reminder } from './reminder';
+import { sanitizeReminders, type Reminder } from './reminder';
 import { sanitizeTags } from './tags';
 import { imageCount, type DayEntry } from './storage';
 
@@ -46,10 +46,17 @@ export type WireDay = {
    */
   updatedAt: number;
   /**
-   * Aviso del día. Sí viaja, al revés que las imágenes: son cuatro campos y el
-   * cron los necesita en el servidor para saber qué mandar y cuándo.
+   * Avisos del día, ordenados por hora. Sí viajan, al revés que las imágenes:
+   * son cuatro campos cada uno y el cron los necesita en el servidor para saber
+   * qué mandar y cuándo.
+   *
+   * **Es un campo nuevo, no el de antes con otro tipo.** Hasta la tanda 9 se
+   * llamaba `reminder` y era un objeto. Cambiarle el nombre cuesta lo mismo y
+   * evita que, mientras queden documentos sin migrar, la consulta del cron
+   * tenga que adivinar cuál de las dos formas está mirando. Ver `days.ts`, que
+   * además borra el campo viejo a conciencia.
    */
-  reminder?: Reminder;
+  reminders?: Reminder[];
   /**
    * Etiquetas del día, por su `slug`. Viajan, al revés que el catálogo: son
    * del día, y sin ellas etiquetar en el portátil no se vería en el móvil.
@@ -110,7 +117,9 @@ export function sanitizeWireDay(raw: unknown): WireDay | null {
 
   const count = typeof value.imageCount === 'number' ? Math.floor(value.imageCount) : 0;
   const thumb = isThumb(value.thumb) ? value.thumb : undefined;
-  const reminder = sanitizeReminder(value.reminder, value.key);
+  // Las dos formas valen: la lista de ahora y el objeto de antes de la tanda 9,
+  // que es lo que sigue habiendo en los documentos aún sin migrar.
+  const reminders = sanitizeReminders(value.reminders ?? value.reminder, value.key);
   const tags = sanitizeTags(value.tags);
 
   return {
@@ -120,7 +129,7 @@ export function sanitizeWireDay(raw: unknown): WireDay | null {
     color: isColorId(value.color) ? value.color : DEFAULT_COLOR,
     imageCount: Math.max(0, Math.min(count, 99)),
     ...(thumb ? { thumb } : {}),
-    ...(reminder ? { reminder } : {}),
+    ...(reminders.length ? { reminders } : {}),
     ...(tags.length ? { tags } : {}),
     updatedAt,
   };
@@ -135,7 +144,7 @@ export function toWire(key: string, entry: DayEntry, updatedAt: number): WireDay
     color: entry.color ?? DEFAULT_COLOR,
     imageCount: imageCount(entry),
     ...(entry.thumb ? { thumb: entry.thumb } : {}),
-    ...(entry.reminder ? { reminder: entry.reminder } : {}),
+    ...(entry.reminders?.length ? { reminders: entry.reminders } : {}),
     ...(entry.tags?.length ? { tags: entry.tags } : {}),
     updatedAt,
   };
@@ -162,7 +171,7 @@ export function fromWire(day: WireDay, local?: DayEntry): DayEntry {
     ...(images?.length ? { images } : {}),
     ...(day.imageCount ? { imageCount: day.imageCount } : {}),
     ...(day.thumb ? { thumb: day.thumb } : {}),
-    ...(day.reminder ? { reminder: day.reminder } : {}),
+    ...(day.reminders?.length ? { reminders: day.reminders } : {}),
     ...(day.tags?.length ? { tags: day.tags } : {}),
   };
 }

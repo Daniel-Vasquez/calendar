@@ -1,6 +1,6 @@
 import { isImageRef, tokenOf } from './image';
 import { DEFAULT_COLOR } from './palette';
-import { sameReminder } from './reminder';
+import { sameReminders } from './reminder';
 import { sameTags } from './tags';
 import { imageCount, loadData, saveData, type CalendarData, type DayEntry } from './storage';
 import { fromWire, MAX_DAYS_PER_REQUEST, sanitizeWireDay, toWire, type WireDay } from './wire';
@@ -101,7 +101,7 @@ function sameDay(a: DayEntry | undefined, b: DayEntry | undefined): boolean {
     (a.thumb ?? '') === (b.thumb ?? '') &&
     // Sin esto, poner una hora y no tocar nada más no encolaría nada: el día
     // se guardaría aquí y el servidor no se enteraría jamás.
-    sameReminder(a.reminder, b.reminder) &&
+    sameReminders(a.reminders, b.reminders) &&
     // Lo mismo con las etiquetas: son el único cambio que puede llevar un día
     // cuya nota, color y adjuntos no se han tocado.
     sameTags(a.tags, b.tags)
@@ -212,17 +212,23 @@ export async function pull(): Promise<PullResult> {
      * sin subir, borrándola—, de modo que el día vuelve con la misma marca de
      * siempre y el filtro de abajo lo saltaría con el `sent` dentro.
      *
-     * Se compara `at` porque un aviso movido de hora es otro aviso: el `sent`
-     * del anterior no le corresponde.
+     * Desde la tanda 9 hay que emparejar aviso con aviso, y se exigen **las dos
+     * cosas**: el `id` dice cuál es, y el `at` dice que no lo han movido de hora
+     * mientras tanto — un aviso movido es otro aviso, y el `sent` del anterior
+     * no le corresponde. Antes bastaba `at` porque solo había uno; con varios,
+     * dos avisos a la misma hora del mismo día serían indistinguibles.
      */
     const here = merged[day.key];
-    if (
-      here?.reminder &&
-      day.reminder?.sent &&
-      !here.reminder.sent &&
-      here.reminder.at === day.reminder.at
-    ) {
-      merged[day.key] = { ...here, reminder: { ...here.reminder, sent: day.reminder.sent } };
+    if (here?.reminders?.length && day.reminders?.length) {
+      const remotos = new Map(day.reminders.map((reminder) => [reminder.id, reminder]));
+      let adoptado = false;
+      const fusionados = here.reminders.map((mine) => {
+        const suyo = remotos.get(mine.id);
+        if (!suyo?.sent || mine.sent || suyo.at !== mine.at) return mine;
+        adoptado = true;
+        return { ...mine, sent: suyo.sent };
+      });
+      if (adoptado) merged[day.key] = { ...here, reminders: fusionados };
     }
 
     // Lo de aquí manda mientras sea igual de reciente o más.

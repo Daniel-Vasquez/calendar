@@ -1,6 +1,6 @@
 import { DEFAULT_COLOR, isColorId, type ColorId } from './palette';
 import { isImageDataUrl, isImageRef, isThumb, MAX_IMAGES_PER_DAY } from './image';
-import { makeReminder, sanitizeReminder, type Reminder } from './reminder';
+import { makeReminder, sanitizeReminders, type Reminder } from './reminder';
 import { sanitizeTags } from './tags';
 
 export const STORAGE_KEY = 'calendar_2026_q4_data';
@@ -32,8 +32,12 @@ export type DayEntry = {
    * `wire.ts`.
    */
   thumb?: string;
-  /** Aviso a una hora del día. Ver `reminder.ts`. */
-  reminder?: Reminder;
+  /**
+   * Avisos del día, **ordenados por hora**. Ausente cuando no hay ninguno;
+   * nunca una lista vacía, por lo mismo que `images` y `tags`: un array vacío
+   * viajaría en cada subida sin decir nada. Ver `reminder.ts`.
+   */
+  reminders?: Reminder[];
   /**
    * Etiquetas del día, por su `slug`. Van dentro del día y no en una lista
    * aparte porque son suyas: se mudan con él, se borran con él y suben a la
@@ -46,9 +50,9 @@ export type DayEntry = {
 /**
  * ¿Hay algo que guardar? Una imagen sola ya es contenido, igual que una nota.
  *
- * **El recordatorio cuenta.** Sin esta línea, poner una hora y guardar deja un
- * día que no tiene marca, ni nota, ni imagen: `handleSave` lo lee como vacío y
- * lo borra en el acto, con el aviso dentro.
+ * **Los recordatorios cuentan.** Sin esta línea, poner una hora y guardar deja
+ * un día que no tiene marca, ni nota, ni imagen: `handleSave` lo lee como vacío
+ * y lo borra en el acto, con los avisos dentro.
  *
  * **Y las etiquetas también.** Es discutible —una etiqueta clasifica algo, y
  * sola no clasifica nada—, pero la alternativa es peor: elegir «Descanso» en un
@@ -59,7 +63,7 @@ export function hasContent(entry: DayEntry): boolean {
     entry.marked ||
     Boolean(entry.note) ||
     hasImages(entry) ||
-    Boolean(entry.reminder) ||
+    Boolean(entry.reminders?.length) ||
     Boolean(entry.tags?.length)
   );
 }
@@ -74,11 +78,13 @@ export function hasContent(entry: DayEntry): boolean {
  *
  * Dos reglas que no se pueden olvidar:
  *
- * 1. **El aviso se rehace con la fecha nueva.** Un recordatorio guarda el
+ * 1. **Los avisos se rehacen con la fecha nueva.** Un recordatorio guarda el
  *    instante absoluto de su día (ver `reminder.ts`); arrastrarlo tal cual
  *    dejaría el aviso sonando en la fecha de la que se acaba de salir.
  *    `makeReminder` recalcula ese instante y de paso suelta `sent` y `done`,
- *    que es lo correcto: en el día nuevo está por sonar y por hacer.
+ *    que es lo correcto: en el día nuevo está por sonar y por hacer. El `id`
+ *    **sí se conserva** —lo conserva `makeReminder` al recibir el previo—: no
+ *    hay nada que ganar cambiándolo, y mantenerlo hace la mudanza repetible.
  * 2. **Si el destino ya tenía algo, lo pierde.** Un día es una clave y solo
  *    cabe uno; quien llama avisa antes y ofrece deshacer. Ver `AgendaView`.
  *
@@ -95,9 +101,17 @@ export function moveDay(
   delete next[from];
   if (!hasContent(entry)) return next;
 
-  const { reminder: previous, ...rest } = entry;
-  const reminder = previous ? makeReminder(to, previous.time, previous.text ?? '') : null;
-  next[to] = { ...rest, ...(reminder ? { reminder } : {}) };
+  const { reminders: previous, ...rest } = entry;
+  const reminders = (previous ?? []).flatMap((reminder) => {
+    const moved = makeReminder(to, reminder.time, reminder.text ?? '', reminder);
+    // `makeReminder` conserva `sent` y `done` solo si la hora y el texto no se
+    // tocan, y aquí no se tocan: se sueltan a mano, porque en el día nuevo el
+    // aviso está por sonar y por hacer aunque diga lo mismo.
+    if (!moved) return [];
+    const { sent: _salió, done: _hecho, ...limpio } = moved;
+    return [limpio];
+  });
+  next[to] = { ...rest, ...(reminders.length ? { reminders } : {}) };
   return next;
 }
 
@@ -165,13 +179,16 @@ export function sanitizeData(raw: unknown): CalendarData {
     const count = Math.max(images.length, Math.min(Math.max(declared, 0), MAX_IMAGES_PER_DAY));
 
     const thumb = isThumb(entry.thumb) ? entry.thumb : undefined;
-    const reminder = sanitizeReminder(entry.reminder, key);
+    // Acepta la lista de la tanda 9 y el objeto suelto de antes. De ahí sale,
+    // sin ningún caso especial, la migración de lo que este navegador ya tenía
+    // guardado: se lee en la forma vieja y se escribe en la nueva.
+    const reminders = sanitizeReminders(entry.reminders ?? entry.reminder, key);
     const tags = sanitizeTags(entry.tags);
 
     // La misma regla que `hasContent`, aplicada al leer: un día que solo lleva
-    // un recordatorio —o solo etiquetas— es un día con contenido y no puede
+    // recordatorios —o solo etiquetas— es un día con contenido y no puede
     // caerse aquí. Las dos reglas tienen que decir lo mismo.
-    if (!marked && !note && count === 0 && !reminder && tags.length === 0) continue;
+    if (!marked && !note && count === 0 && reminders.length === 0 && tags.length === 0) continue;
 
     // Datos anteriores a los colores no traen `color`: se asume el teal base.
     const color = isColorId(entry.color) ? entry.color : DEFAULT_COLOR;
@@ -183,7 +200,7 @@ export function sanitizeData(raw: unknown): CalendarData {
       ...(images.length ? { images } : {}),
       ...(count ? { imageCount: count } : {}),
       ...(thumb ? { thumb } : {}),
-      ...(reminder ? { reminder } : {}),
+      ...(reminders.length ? { reminders } : {}),
       ...(tags.length ? { tags } : {}),
     };
   }
@@ -192,8 +209,8 @@ export function sanitizeData(raw: unknown): CalendarData {
 
 /**
  * Pone las etiquetas de un día, creándolo si hacía falta y borrándolo si se
- * queda sin nada. Las mismas dos reglas que `withReminder` en `reminders.ts`,
- * por las que un día puede nacer de un aviso o morir al quitárselo.
+ * queda sin nada. Las mismas dos reglas que `upsertReminder` en `reminders.ts`,
+ * por las que un día puede nacer de un aviso o morir al quitarle el último.
  *
  * Lo usa la lista de recordatorios, que edita el día sin abrir su modal.
  */

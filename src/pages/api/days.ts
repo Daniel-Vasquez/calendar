@@ -30,12 +30,29 @@ function ownerOf(locals: App.Locals): ObjectId | null {
  */
 const OPTIONAL_FIELDS: Record<OptionalWireKey, true> = {
   thumb: true,
-  reminder: true,
+  reminders: true,
   tags: true,
   deleted: true,
 };
 
 const OPTIONAL_KEYS = Object.keys(OPTIONAL_FIELDS) as OptionalWireKey[];
+
+/**
+ * Campos que ya no existen en `WireDay` y que hay que borrar igualmente.
+ *
+ * `reminder` —en singular, el objeto de antes de la tanda 9— es el caso que da
+ * nombre a esta lista, y el mecanismo de arriba **no puede cubrirlo**: los
+ * opcionales que se borran salen de `OptionalWireKey`, que sale del propio
+ * tipo, así que un campo retirado del tipo desaparece también de la lista de
+ * borrado y **nadie lo quita nunca del documento**. Un día ya subido conservaría
+ * su `reminder` para siempre, y bastaría con que algo volviera a mirarlo para
+ * que un aviso borrado hace meses sonara otra vez.
+ *
+ * Se puede retirar cuando no queden documentos con el campo viejo; la migración
+ * (`scripts/migrate-reminders.mjs`) es la que los vacía. Está anotado en la
+ * deuda conocida del planificador para que no se quede aquí por inercia.
+ */
+const LEGACY_FIELDS = ['reminder'] as const;
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -102,10 +119,13 @@ export const POST: APIRoute = async ({ locals, request }) => {
     // *desaparecido* seguiría en el documento: apagar el recordatorio en el
     // portátil dejaría el suyo intacto en la base, y el móvil se lo bajaría de
     // vuelta en la siguiente lectura. Un campo ausente se borra a propósito.
-    const gone: Partial<Record<OptionalWireKey, ''>> = {};
+    const gone: Record<string, ''> = {};
     for (const field of OPTIONAL_KEYS) {
       if (day[field] === undefined) gone[field] = '';
     }
+    // Estos van siempre, vengan o no: no están en `WireDay` y por eso no pueden
+    // "faltar". Ver `LEGACY_FIELDS`.
+    for (const field of LEGACY_FIELDS) gone[field] = '';
 
     return {
       updateOne: {

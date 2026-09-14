@@ -58,9 +58,9 @@ export function hasNote(entry: DayEntry): boolean {
   return Boolean(entry.note) || hasImages(entry);
 }
 
-/** ¿Es un día "con recordatorio"? */
+/** ¿Es un día "con recordatorio"? Con uno basta; la pestaña cuenta días. */
 export function hasReminder(entry: DayEntry): boolean {
-  return Boolean(entry.reminder);
+  return Boolean(entry.reminders?.length);
 }
 
 /** ¿Encaja el día en la pestaña elegida? Un día puede caer en las dos. */
@@ -74,9 +74,12 @@ export function matchesType(entry: DayEntry, type: AgendaType): boolean {
  * Todo lo que de un día se puede buscar, en una sola cadena normalizada.
  *
  * Entra la fecha en las formas en que alguien la escribiría —"jueves",
- * "octubre", "15/10", la clave entera—, la nota, el texto propio del aviso con
- * su hora, el nombre de la categoría y las etiquetas. Lo que no entra son las
- * imágenes: no tienen texto que mirar.
+ * "octubre", "15/10", la clave entera—, la nota, el texto propio de **cada**
+ * aviso con su hora, el nombre de la categoría y las etiquetas. Lo que no entra
+ * son las imágenes: no tienen texto que mirar.
+ *
+ * Los avisos entran todos y no solo el primero: buscar «18:30» tiene que
+ * encontrar el día aunque el aviso de las 18:30 sea el tercero de cuatro.
  */
 export function searchableText(
   key: string,
@@ -93,8 +96,7 @@ export function searchableText(
     formatWeekday(key),
     formatLongDate(key),
     entry.note,
-    entry.reminder?.text ?? '',
-    entry.reminder?.time ?? '',
+    ...(entry.reminders ?? []).flatMap((reminder) => [reminder.text ?? '', reminder.time]),
     // El nombre de fábrica del color también vale: quien no ha renombrado nada
     // busca "rosa" igual que quien sí lo hizo busca "Entrega".
     entry.marked ? labelFor(palette, entry.color) : '',

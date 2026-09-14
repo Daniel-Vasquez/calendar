@@ -47,12 +47,14 @@ export function parseImport(text: string): ImportResult {
  */
 export function toJson(data: CalendarData, palette: ColorPalette, tags: Tag[]): string {
   return JSON.stringify(
-    // v7: los adjuntos son referencias. Antes, v6 metió `tags` en el día con su
-    // catálogo al lado, v5 dio tono a las categorías, v4 añadió `reminder` y
-    // v3, `imageCount` y `thumb`. El importador acepta todas las anteriores
-    // igual: solo lee `days`, y lo que falte de un día se deduce de lo que sí
-    // venga.
-    { app: FILE_STEM, version: 7, exportedAt: new Date().toISOString(), palette, tags, days: data },
+    // v8: el día lleva `reminders`, una lista, donde antes llevaba `reminder`,
+    // un objeto. Antes, v7 convirtió los adjuntos en referencias, v6 metió
+    // `tags` en el día con su catálogo al lado, v5 dio tono a las categorías,
+    // v4 añadió `reminder` y v3, `imageCount` y `thumb`. El importador acepta
+    // todas las anteriores igual: solo lee `days`, pasa por `sanitizeData` —que
+    // entiende las dos formas del recordatorio— y lo que falte de un día se
+    // deduce de lo que sí venga.
+    { app: FILE_STEM, version: 8, exportedAt: new Date().toISOString(), palette, tags, days: data },
     null,
     2,
   );
@@ -118,15 +120,18 @@ export function toIcs(
       // el comienzo del evento: `DTSTART` es una fecha sin hora, y cada
       // calendario decide por su cuenta a qué hora empieza un día completo.
       // Con `at` en UTC no queda nada que interpretar.
-      const alarm = entry.reminder
-        ? [
-            'BEGIN:VALARM',
-            'ACTION:DISPLAY',
-            `TRIGGER;VALUE=DATE-TIME:${icsUtc(new Date(entry.reminder.at))}`,
-            fold(`DESCRIPTION:${escapeText(reminderText(entry.reminder, entry.note))}`),
-            'END:VALARM',
-          ]
-        : [];
+      //
+      // Desde la tanda 9 salen **varias**, una por aviso, todas dentro del
+      // mismo `VEVENT`: el RFC 5545 lo permite y los tres calendarios de
+      // destino lo respetan, así que no hace falta partir el día en un evento
+      // por recordatorio — que además duplicaría la nota en la rejilla ajena.
+      const alarms = (entry.reminders ?? []).flatMap((reminder) => [
+        'BEGIN:VALARM',
+        'ACTION:DISPLAY',
+        `TRIGGER;VALUE=DATE-TIME:${icsUtc(new Date(reminder.at))}`,
+        fold(`DESCRIPTION:${escapeText(reminderText(reminder, entry.note))}`),
+        'END:VALARM',
+      ]);
 
       return [
         'BEGIN:VEVENT',
@@ -147,7 +152,7 @@ export function toIcs(
             ? [fold(`CATEGORIES:${categories.map(escapeText).join(',')}`)]
             : [];
         })(),
-        ...alarm,
+        ...alarms,
         'END:VEVENT',
       ];
     });

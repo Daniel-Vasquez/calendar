@@ -1,8 +1,8 @@
 import type { APIRoute } from 'astro';
 import { timingSafeEqual } from 'node:crypto';
 import { CRON_SECRET } from 'astro:env/server';
-import { getDays, getSettings } from '../../../lib/mongo';
-import { GRACE_MS, reminderMessage } from '../../../lib/reminder';
+import { getDays, getSettings, type DayDoc } from '../../../lib/mongo';
+import { GRACE_MS, isDue, reminderMessage, type Reminder } from '../../../lib/reminder';
 import { sendMessage, telegramConfig } from '../../../lib/telegram';
 
 export const prerender = false;
@@ -64,6 +64,17 @@ const SECRET_PARAM = 'secret';
  * con la mitad de los avisos reclamados y sin enviar.
  */
 const BUDGET_MS = 8000;
+
+/**
+ * Cuántos días se traen de una pasada, y cuántos avisos se atienden.
+ *
+ * Son dos números porque desde la tanda 9 son dos cosas: un día puede aportar
+ * hasta diez avisos, así que el tope de documentos ya no dice cuántos mensajes
+ * pueden salir. Lo que corte cualquiera de los dos sigue dentro de su ventana
+ * de gracia y se manda en el ping siguiente.
+ */
+const MAX_DAYS_PER_RUN = 200;
+const MAX_REMINDERS_PER_RUN = 200;
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -153,31 +164,84 @@ export const POST: APIRoute = async ({ request, url }) => {
   try {
     const days = await getDays();
 
-    // La ventana de gracia es la mitad del filtro. Sin ella, levantar el
-    // programador tras tres días caídos dispararía de golpe todos los avisos
-    // atrasados; lo que pase de aquí ya se enseña como perdido en la agenda.
-    const pendientes = await days
+    /*
+     * La ventana de gracia es la mitad del filtro. Sin ella, levantar el
+     * programador tras tres días caídos dispararía de golpe todos los avisos
+     * atrasados; lo que pase de aquí ya se enseña como perdido en la agenda.
+     *
+     * **`$elemMatch` no es un adorno.** Desde la tanda 9 `reminders` es una
+     * lista, y sobre una lista tres condiciones en notación de punto se
+     * satisfacen con elementos **distintos**: escritas sueltas, un día cuyo
+     * aviso de las 9:00 vence y cuyo aviso de dentro de tres meses sigue sin
+     * enviarse cumpliría las tres a la vez y se daría por debido. `$elemMatch`
+     * exige que sea el mismo elemento el que las cumple todas. Es el fallo más
+     * caro que podía tener esta tanda: no rompe nada, solo manda avisos que no
+     * tocan.
+     */
+    const ventana = { $lte: started, $gt: started - GRACE_MS };
+    const dueFilter = {
+      at: ventana,
+      sent: { $exists: false },
+      // Lo dado por hecho no suena. Es lo que hace útil la casilla de la
+      // lista de recordatorios: tachar algo por la mañana evita el aviso de
+      // por la tarde, en vez de solo pintarlo distinto.
+      done: { $exists: false },
+    };
+
+    /*
+     * **`'reminders.at'` va además suelto arriba, y no sobra aunque lo parezca.**
+     *
+     * Para la corrección es redundante: el `$elemMatch` ya exige la ventana, y
+     * suelto solo dice «algún aviso de este día cae ahí», que es más flojo.
+     * Está por el **índice**, y quitarlo no rompe nada visible — solo hace que
+     * cada pasada del cron recorra todos los días de todo el mundo.
+     *
+     * La razón es que el índice es *parcial*, y para usar uno así el
+     * planificador tiene que poder demostrar que la consulta implica su filtro
+     * (`reminders.at` existe). Un predicado metido dentro de `$elemMatch` no le
+     * vale para demostrarlo: medido contra el servidor, la consulta sin esta
+     * línea hace COLLSCAN de la colección entera y ni siquiera considera el
+     * índice — 3002 documentos examinados donde con ella son 2.
+     *
+     * Antes de la tanda 9 no hacía falta porque la consulta era
+     * `'reminder.at': {…}` en notación de punto, que sí lo implica sola.
+     */
+    const dias = await days
       .find({
-        'reminder.at': { $lte: started, $gt: started - GRACE_MS },
-        'reminder.sent': { $exists: false },
-        // Lo dado por hecho no suena. Es lo que hace útil la casilla de la
-        // lista de recordatorios: tachar algo por la mañana evita el aviso de
-        // por la tarde, en vez de solo pintarlo distinto.
-        'reminder.done': { $exists: false },
+        'reminders.at': ventana,
+        reminders: { $elemMatch: dueFilter },
         deleted: { $ne: true },
       })
-      .sort({ 'reminder.at': 1 })
-      .limit(200)
+      .sort({ 'reminders.at': 1 })
+      .limit(MAX_DAYS_PER_RUN)
       .toArray();
 
-    summary.due = pendientes.length;
-    if (pendientes.length === 0) return json(200, summary);
+    /*
+     * La consulta devuelve **días**, y de un día que tiene un aviso vencido
+     * pueden venir otros que no lo están. Se vuelve a filtrar aquí, con la
+     * misma regla escrita una sola vez (`isDue` en `reminder.ts`), y sale la
+     * lista plana de lo que hay que mandar de verdad.
+     */
+    const pendientes: { day: DayDoc; reminder: Reminder }[] = [];
+    for (const day of dias) {
+      for (const reminder of day.reminders ?? []) {
+        if (isDue(reminder, started)) pendientes.push({ day, reminder });
+      }
+    }
+    // El orden de la consulta es por día; dentro de un día y entre días, lo que
+    // vale es el instante. Lo más atrasado primero: es lo que lleva más tiempo
+    // esperando y lo que antes se saldría de la ventana de gracia.
+    pendientes.sort((a, b) => a.reminder.at - b.reminder.at);
+    const tanda = pendientes.slice(0, MAX_REMINDERS_PER_RUN);
+
+    summary.due = tanda.length;
+    if (tanda.length === 0) return json(200, summary);
 
     // Los destinos, de una vez: una consulta por aviso sería una por día.
     const settings = await getSettings();
     const destinos = new Map<string, { chatId?: number; blocked: boolean }>();
     for (const doc of await settings
-      .find({ userId: { $in: [...new Set(pendientes.map((day) => day.userId))] } })
+      .find({ userId: { $in: [...new Set(tanda.map(({ day }) => day.userId))] } })
       .toArray()) {
       destinos.set(doc.userId.toHexString(), {
         chatId: doc.telegram?.chatId,
@@ -185,7 +249,7 @@ export const POST: APIRoute = async ({ request, url }) => {
       });
     }
 
-    for (const day of pendientes) {
+    for (const { day, reminder } of tanda) {
       if (Date.now() - started > BUDGET_MS) {
         summary.aplazados = summary.due - summary.sent - summary.sinDestino - summary.fallidos;
         break;
@@ -196,7 +260,6 @@ export const POST: APIRoute = async ({ request, url }) => {
         summary.sinDestino++;
         continue;
       }
-      if (!day.reminder) continue;
 
       /*
        * Se reclama *antes* de enviar, no después.
@@ -206,18 +269,28 @@ export const POST: APIRoute = async ({ request, url }) => {
        * que actualizar y lo salta. Mandar primero y marcar después dejaría la
        * puerta abierta a que la misma persona reciba el aviso dos veces.
        *
+       * Desde la tanda 9 se reclama **un elemento**, no el documento: el
+       * `$elemMatch` del filtro y el `arrayFilters` del `$set` nombran el mismo
+       * `id`, así que dos avisos vencidos del mismo día se reclaman por
+       * separado y el fallo de uno no arrastra al otro.
+       *
        * `updatedAt` **no se toca**. Es el árbitro de la fusión, y subirlo aquí
        * haría que el servidor ganara a una edición local que aún no hubiera
        * subido — perdiéndola. El navegador se entera de `sent` por otra vía;
        * ver `pull()` en `sync.ts`.
        */
       const claimed = await days.updateOne(
-        { userId: day.userId, key: day.key, 'reminder.sent': { $exists: false } },
-        { $set: { 'reminder.sent': started } },
+        {
+          userId: day.userId,
+          key: day.key,
+          reminders: { $elemMatch: { id: reminder.id, sent: { $exists: false } } },
+        },
+        { $set: { 'reminders.$[aviso].sent': started } },
+        { arrayFilters: [{ 'aviso.id': reminder.id, 'aviso.sent': { $exists: false } }] },
       );
       if (claimed.modifiedCount === 0) continue;
 
-      const text = reminderMessage(day.key, day.note, day.reminder);
+      const text = reminderMessage(day.key, day.note, reminder);
       const result = await sendMessage(token, destino.chatId, text);
 
       if (result.ok) {
@@ -228,9 +301,12 @@ export const POST: APIRoute = async ({ request, url }) => {
       // No salió: se suelta la reclamación para que la próxima pasada lo
       // vuelva a intentar mientras siga dentro de la ventana. Sin esto, un
       // fallo de red dejaría el aviso marcado como enviado sin haberlo estado.
+      // El `arrayFilters` es lo que hace que se suelte **solo el suyo**: sin
+      // él, un envío fallido desmarcaría de paso al vecino que sí salió.
       await days.updateOne(
         { userId: day.userId, key: day.key },
-        { $unset: { 'reminder.sent': '' } },
+        { $unset: { 'reminders.$[aviso].sent': '' } },
+        { arrayFilters: [{ 'aviso.id': reminder.id }] },
       );
       summary.fallidos++;
 

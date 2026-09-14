@@ -13,6 +13,7 @@ import {
   isTime,
   makeReminder,
   MAX_REMINDER_TEXT,
+  MAX_REMINDERS_PER_DAY,
   type Reminder,
 } from '../lib/reminder';
 import { isDateKey } from '../lib/wire';
@@ -36,8 +37,12 @@ type Props = {
    * el aviso acabe, así que el marcador de posición tiene que seguir a la fecha.
    */
   noteOf: (key: string) => string;
-  /** ¿Tiene ya aviso este día? Se pregunta por el destino, para avisar antes. */
-  hasReminder: (key: string) => boolean;
+  /**
+   * Cuántos avisos tiene ya un día. Se pregunta por el **destino**, y sirve
+   * para dos cosas: decir que allí ya hay otros —desde la tanda 9 se suma, no
+   * se sustituye— y no dejar pasar del tope.
+   */
+  countOf: (key: string) => number;
   /** Las etiquetas que existen, y las que lleva el día que se está editando. */
   catalogue: Tag[];
   /**
@@ -49,7 +54,8 @@ type Props = {
   /** Botón desde el que se abrió: a él vuelve el foco al cerrarse. */
   triggerRef: React.RefObject<HTMLElement | null>;
   onSave: (from: string | null, to: string, reminder: Reminder, tags: string[]) => void;
-  onDelete: (key: string) => void;
+  /** Borra **ese** aviso de ese día, no el día: pueden quedarle otros. */
+  onDelete: (key: string, id: string) => void;
   onClose: () => void;
 };
 
@@ -72,13 +78,15 @@ const ACTION =
  * **La fecha se puede cambiar, y eso mueve el aviso de día.** No es un detalle:
  * el recordatorio vive dentro de su día, así que cambiar la fecha lo saca de
  * uno y lo mete en otro, con las consecuencias que documenta `moveReminder`.
+ * Desde la tanda 9 mover **ya no pisa** lo que hubiera en el destino: se suma a
+ * su lista, y lo único que puede impedirlo es que esa lista esté llena.
  */
 export default function ReminderModal({
   dateKey,
   reminder,
   defaultKey,
   noteOf,
-  hasReminder,
+  countOf,
   catalogue,
   tagsOf,
   triggerRef,
@@ -129,8 +137,15 @@ export default function ReminderModal({
   const validDay = isDateKey(day) && isCovered(day);
   const validTime = isTime(time);
   const moves = validDay && !creating && day !== dateKey;
-  /** El día elegido ya tenía aviso y solo cabe uno: se avisa antes de pisarlo. */
-  const overwrites = validDay && day !== dateKey && hasReminder(day);
+  /**
+   * ¿El aviso va a caer en un día que no es el suyo? Entonces suma uno allí, y
+   * las dos cuentas de abajo miran ese día.
+   */
+  const llega = validDay && day !== dateKey;
+  /** Cuántos hay ya en el destino. Desde la tanda 9 no se pisan: se suman. */
+  const acompañantes = llega ? countOf(day) : 0;
+  /** El destino está lleno. Es lo único que impide guardar por razón de cupo. */
+  const lleno = llega && acompañantes >= MAX_REMINDERS_PER_DAY;
   const placeholder = (validDay && defaultReminderText(noteOf(day))) || 'Recordatorio del día';
   /**
    * El día que encabeza la pantalla. Editando manda el de origen, que es de
@@ -140,12 +155,22 @@ export default function ReminderModal({
   const heading = dateKey ?? (validDay ? day : null);
 
   function save() {
-    if (!validDay || !validTime) return;
-    // Al mudarse de día no se hereda nada del anterior: el instante es otro, y
-    // con él la respuesta a «¿ya salió?» y a «¿ya está hecho?». Pasarle el
-    // previo dejaría un aviso nuevo marcado como enviado, que no sonaría nunca.
-    const next = makeReminder(day, time, text, moves ? undefined : reminder);
-    if (next) onSave(dateKey, day, next, sanitizeTags(tags));
+    if (!validDay || !validTime || lleno) return;
+
+    /*
+     * El previo se pasa **siempre**, incluso al mudarse de día, y eso es un
+     * cambio respecto a antes de la tanda 9: `makeReminder` conserva el `id`, y
+     * el `id` es ahora lo que `moveReminder` usa para sacar el aviso del día que
+     * abandona. Sin él se quedaría allí, duplicado.
+     */
+    const next = makeReminder(day, time, text, reminder);
+    if (!next) return;
+
+    // Lo que sí se suelta al mudarse es el rastro: el instante es otro, y con él
+    // la respuesta a «¿ya salió?» y a «¿ya está hecho?». Conservarlos dejaría un
+    // aviso nuevo marcado como enviado, que no sonaría nunca.
+    const { sent: _salió, done: _hecho, ...limpio } = next;
+    onSave(dateKey, day, moves ? limpio : next, sanitizeTags(tags));
   }
 
   return (
@@ -219,10 +244,11 @@ export default function ReminderModal({
 
         <fieldset className="mt-4">
           <legend className="mb-1.5 text-xs font-medium text-ink-muted">Etiquetas</legend>
-          {/* Son del **día**, no del aviso: el día no tiene más que un
-              recordatorio, así que separarlas daría dos juegos de etiquetas
-              para la misma fecha sin nada que los distinga. Lo que se ponga
-              aquí es lo que enseña su nota en el calendario. */}
+          {/* Son del **día**, no del aviso, y desde que un día puede tener
+              varios el argumento se refuerza en vez de debilitarse: si cada
+              aviso trajera las suyas, no habría forma de decidir cuáles son las
+              de la fecha. Lo que se ponga aquí es lo que enseña su nota en el
+              calendario. */}
           <TagPicker catalogue={catalogue} value={tags} onChange={setTags} />
         </fieldset>
 
@@ -258,27 +284,36 @@ export default function ReminderModal({
             Falta la hora: sin ella el aviso no se guarda.
           </p>
         )}
-        {overwrites && (
-          <p className="mt-3 text-xs font-medium text-highlight">
-            El {formatLongDate(day)} ya tiene un recordatorio y solo cabe uno: si guardas, se
-            sustituye por este.
+        {lleno && (
+          <p role="alert" className="mt-3 text-xs font-medium text-highlight">
+            El {formatLongDate(day)} ya tiene {MAX_REMINDERS_PER_DAY} recordatorios, que es el
+            máximo. Borra alguno para poder poner este ahí.
           </p>
         )}
-        {moves && !overwrites && (
+        {moves && !lleno && (
           <p className="mt-3 text-xs text-ink-soft">
             El aviso se moverá al {formatLongDate(day)}.
+          </p>
+        )}
+        {/* Informativo, no una advertencia: ya no se sustituye nada. Se dice
+            porque de otro modo el aviso parecería el único de su día. */}
+        {llega && !lleno && acompañantes > 0 && (
+          <p className="mt-3 text-xs text-ink-soft">
+            El {formatLongDate(day)} ya tiene{' '}
+            {acompañantes === 1 ? 'otro recordatorio' : `otros ${acompañantes} recordatorios`}: este
+            se añade.
           </p>
         )}
 
         <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
           {/* Al crear no hay nada que borrar: el hueco mantiene a Guardar en su
               sitio, a la derecha, en vez de moverlo entre las dos pantallas. */}
-          {dateKey === null ? (
+          {dateKey === null || !reminder ? (
             <span />
           ) : (
             <button
               type="button"
-              onClick={() => onDelete(dateKey)}
+              onClick={() => onDelete(dateKey, reminder.id)}
               className={
                 ACTION +
                 ' border border-edge bg-raised text-highlight hover:bg-highlight-soft focus-visible:ring-highlight'
@@ -301,7 +336,7 @@ export default function ReminderModal({
             <button
               type="button"
               onClick={save}
-              disabled={!validDay || !validTime}
+              disabled={!validDay || !validTime || lleno}
               className={
                 ACTION +
                 ' bg-accent text-white enabled:hover:bg-accent-strong focus-visible:ring-accent disabled:opacity-40'

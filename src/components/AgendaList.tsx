@@ -153,6 +153,15 @@ export default function AgendaList({ data, palette, catalogue, today, onSelect }
     return allKeys.filter((key) => matchesLens(key, data[key], lens, index[key], today));
   }, [allKeys, data, hidePast, today, colorFilter, tagFilter, index, tokens]);
 
+  /**
+   * Las tres pestañas cuentan **días**, no cosas. «Recordatorios 4» son cuatro
+   * días con algún aviso, no cuatro avisos — un día con tres suma uno.
+   *
+   * Desde la tanda 9 la distinción existe y conviene dejarla escrita: la lista
+   * que hay debajo es de días, así que un recuento de avisos no cuadraría con
+   * las filas que se ven al pulsar la pestaña. Para contar avisos está
+   * `/recordatorios`, que es una lista de avisos.
+   */
   const counts = useMemo(
     () => ({
       all: base.length,
@@ -373,7 +382,18 @@ export default function AgendaList({ data, palette, catalogue, today, onSelect }
                       {entry.marked && hasCustomLabel(palette, entry.color) && (
                         <span className="text-[11px] font-medium text-ink-muted">{category}</span>
                       )}
-                      {entry.reminder && <ReminderChip reminder={entry.reminder} now={now} />}
+                      {/* La fila es ancha y se permite más que la casilla de la
+                          rejilla: hasta tres chips en línea, que envuelven solos
+                          porque el contenedor ya es `flex-wrap`, y el resto
+                          contado. Cuatro horas seguidas dejarían de leerse. */}
+                      {entry.reminders?.slice(0, 3).map((reminder) => (
+                        <ReminderChip key={reminder.id} reminder={reminder} now={now} />
+                      ))}
+                      {(entry.reminders?.length ?? 0) > 3 && (
+                        <span className="text-[11px] font-semibold text-ink-muted">
+                          +{entry.reminders!.length - 3}
+                        </span>
+                      )}
                     </span>
 
                     {entry.note ? (
@@ -390,11 +410,11 @@ export default function AgendaList({ data, palette, catalogue, today, onSelect }
                       <span className="mt-0.5 block text-sm text-ink-muted italic">
                         Día marcado, sin nota
                       </span>
-                    ) : entry.reminder ? (
-                      // Queda el caso del día que solo existe por su aviso: ni
+                    ) : entry.reminders?.length ? (
+                      // Queda el caso del día que solo existe por sus avisos: ni
                       // marcado, ni con nota, ni con imágenes.
                       <span className="mt-0.5 block text-sm text-ink-muted italic">
-                        Solo recordatorio
+                        {entry.reminders.length === 1 ? 'Solo recordatorio' : 'Solo recordatorios'}
                       </span>
                     ) : (
                       // Y el del día que solo existe por sus etiquetas, que se
