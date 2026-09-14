@@ -1325,9 +1325,10 @@ Ya resuelto, y anotado para cuando haya que montarlo otra vez:
       sitios distintos —el servidor y el cliente— y ambos están cubiertos por
       código, pero la variable debe estar bien puesta igualmente.
 
-      **Sigue mal puesta en Vercel.** Estaba marcada como resuelta y no lo
-      estaba: los registros del cron traen `[auth] BETTER_AUTH_URL no traía
-      esquema; se asume https://…`. No rompe nada —para eso está la red de
+      **Sigue mal puesta en Vercel**, comprobado el 14 de septiembre de 2026.
+      Estaba marcada como resuelta y no lo estaba: los registros traen
+      `[auth] BETTER_AUTH_URL no traía esquema; se asume
+      https://planificador.danielvasquez.lat`. No rompe nada —para eso está la red de
       seguridad de `943751b`— pero es depender de ella en vez de tener la
       variable bien.
 
