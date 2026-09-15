@@ -3,6 +3,7 @@ import {
   CLOUDINARY_API_KEY,
   CLOUDINARY_API_SECRET,
   CLOUDINARY_CLOUD_NAME,
+  CLOUDINARY_FOLDER,
 } from 'astro:env/server';
 
 /**
@@ -44,17 +45,38 @@ const TRANSFORMS: Record<ImageSize, Record<string, unknown>> = {
 const AUTHENTICATED = { type: 'authenticated', resource_type: 'image' } as const;
 
 /**
+ * La carpeta raíz de todo lo que sube la aplicación. Se normaliza aquí —sin
+ * barras sueltas a los lados— porque va pegada con `/` a lo que viene detrás y
+ * un `planificador/` de más dejaría un `//` dentro del `public_id`, que
+ * Cloudinary acepta y luego nadie sabe volver a nombrar.
+ *
+ * El respaldo cubre el caso de que alguien la defina vacía: el valor por
+ * defecto de `astro.config.mjs` solo actúa cuando la variable **no está**.
+ */
+const FOLDER = CLOUDINARY_FOLDER.replace(/^\/+|\/+$/g, '') || 'planificador';
+
+/**
  * Dónde va cada imagen. Determinista a propósito: la posición del adjunto ya
  * dice su nombre, así que no hay que guardar «qué id me devolvió» para poder
  * volver a escribir encima.
  *
  * `userId` es siempre el de la sesión, nunca lo que venga en el cuerpo de la
- * petición. La carpeta no es la frontera de seguridad —eso lo hace la firma—,
- * pero deja el panel de Cloudinary legible y convierte «borrar todo lo de una
- * persona» en borrar un prefijo.
+ * petición. Y es el **identificador** que da Better Auth —el `ObjectId` en
+ * hexadecimal—, no el nombre ni el correo: es único, no cambia si la persona
+ * se renombra, y son treinta y dos caracteres de `[0-9a-f]` que no pueden
+ * llevar un espacio, un acento ni una barra dentro. Un nombre de usuario sí, y
+ * cualquiera de esas tres cosas parte el `public_id` en dos.
+ *
+ * La carpeta no es la frontera de seguridad —eso lo hace la firma—, pero deja
+ * el panel de Cloudinary legible y convierte «borrar todo lo de una persona»
+ * en borrar un prefijo.
+ *
+ * Quien cambie la forma de este nombre tiene que mover lo ya subido: los
+ * `publicId` guardados en `images` son absolutos y no se recalculan solos. Ver
+ * `scripts/migrate-image-folders.mjs`.
  */
 export function publicIdFor(userId: string, key: string, index: number): string {
-  return `uploads/users/${userId}/${key}/${index}`;
+  return `${FOLDER}/${userId}/${key}/${index}`;
 }
 
 /** Lo que se guarda en Mongo de una imagen ya subida. */

@@ -278,6 +278,7 @@ Sin estas tres el calendario funciona entero; solo deja de haber avisos.
 | Variable | Descripción |
 |---|---|
 | `MONGODB_DB` | Nombre de la base. Manda sobre el que traiga la URI; sin ninguno de los dos se usa `planificador` |
+| `CLOUDINARY_FOLDER` | Carpeta raíz de los adjuntos; sin ella, `planificador`. Cada imagen acaba en `{carpeta}/{userId}/{día}/{posición}`. Cambiarla **no mueve lo ya subido**: para eso está `scripts/migrate-image-folders.mjs` |
 
 Ejemplo de `.env` mínimo para desarrollo:
 
@@ -446,11 +447,27 @@ El proyecto está pensado para **Vercel** y se despliega desde `main`.
    que subas el código nuevo; al revés, el código nuevo convive con lo que
    quede sin migrar y solo falta lo que aún no ha subido. Es idempotente y
    reanudable: si se corta, se vuelve a lanzar.
-4. En Atlas, pon *Network Access* en `0.0.0.0/0`. Con solo tu IP en lista
+4. Si vienes de una versión que guardaba los adjuntos en `uploads/users/…`,
+   llévalos a la carpeta de ahora, `{CLOUDINARY_FOLDER}/{userId}/…`:
+
+   ```bash
+   node --env-file=.env scripts/migrate-image-folders.mjs          # solo mirar
+   node --env-file=.env scripts/migrate-image-folders.mjs migrar   # hacerlo
+   ```
+
+   Aquí el orden es el contrario que en el paso anterior: **primero despliega y
+   después mueve**. El código nuevo sirve cada imagen por el `publicId` que
+   tenga guardado, sea de la carpeta que sea, así que lo que aún no se haya
+   movido se sigue viendo; y mover con el código viejo delante daría igual, pero
+   con el nuevo cada imagen que suba después cae ya en su sitio y no hay que
+   volver a pasar. Renombrar cambia el `publicId` y la URL, así que el script
+   reescribe `images` en la misma operación; si Mongo falla después de mover,
+   deshace el renombrado. Idempotente y reanudable, como el otro.
+5. En Atlas, pon *Network Access* en `0.0.0.0/0`. Con solo tu IP en lista
    blanca, las funciones de Vercel no entran, y el síntoma despista: Atlas corta
    el saludo TLS y el driver lo reporta como `tlsv1 alert internal error`, que no
    se parece a un problema de permisos.
-5. Comprueba el despliegue con `GET /api/health`, que responde sin depender del
+6. Comprueba el despliegue con `GET /api/health`, que responde sin depender del
    middleware ni de que haya sesión válida:
 
 ```bash

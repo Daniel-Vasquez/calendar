@@ -169,7 +169,11 @@ export type ImageDoc = {
   key: string;
   /** Posición dentro de la nota, desde cero. Es también parte del `publicId`. */
   index: number;
-  /** `uploads/users/{userId}/{key}/{index}`. Ver `publicIdFor` en `cloudinary.ts`. */
+  /**
+   * `{CLOUDINARY_FOLDER}/{userId}/{key}/{index}`. Ver `publicIdFor` en
+   * `cloudinary.ts`. Se guarda entero y no se recalcula al leer: así una
+   * imagen subida bajo otra carpeta se sigue sirviendo mientras no se mueva.
+   */
   publicId: string;
   /** La versión que devolvió Cloudinary. Hace falta para firmar la URL. */
   version: number;

@@ -42,7 +42,11 @@ cloudinary.config({
 const THUMB = { width: 192, height: 192, crop: 'limit', quality: 'auto:eco' };
 const VIEW = { width: 1280, height: 1280, crop: 'limit', quality: 'auto:good' };
 const AUTH = { type: 'authenticated', resource_type: 'image' };
-const publicIdFor = (userId, key, index) => `uploads/users/${userId}/${key}/${index}`;
+/* La carpeta sale del entorno, como en el servidor, para que lo que suba esto
+   caiga donde caería una subida normal. Antes estaba fija en `uploads/users`;
+   lo que quedara allí lo mueve `migrate-image-folders.mjs`. */
+const FOLDER = (process.env.CLOUDINARY_FOLDER ?? 'planificador').replace(/^\/+|\/+$/g, '') || 'planificador';
+const publicIdFor = (userId, key, index) => `${FOLDER}/${userId}/${key}/${index}`;
 
 function databaseName() {
   if (process.env.MONGODB_DB) return process.env.MONGODB_DB;

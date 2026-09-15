@@ -71,6 +71,7 @@ middleware ───────────────────────
 | `src/pages/api/images.ts` | Una imagen por petición; recorte de cola |
 | `src/pages/api/images/raw.ts` | El proxy: valida la sesión, firma y sirve los bytes |
 | `scripts/migrate-images.mjs` | Llevó a Cloudinary los adjuntos que estaban en Mongo |
+| `scripts/migrate-image-folders.mjs` | Movió los adjuntos a `{CLOUDINARY_FOLDER}/{userId}/…` y reescribió sus `publicId` |
 | `scripts/migrate-reminders.mjs` | Convirtió el aviso único de cada día en la lista de la tanda 9 |
 | `src/pages/api/health.ts` | ¿Alcanza la función desplegada a Atlas? |
 | `src/components/SyncBadge.tsx` | «Al día» / «Guardando…» / «N sin subir» |
@@ -198,6 +199,7 @@ guardado. Todas de servidor y todas `secret`:
 | `CLOUDINARY_CLOUD_NAME` | El nombre de la nube, a secas |
 | `CLOUDINARY_API_KEY` | Pública en la práctica, pero no hace falta que salga del servidor |
 | `CLOUDINARY_API_SECRET` | Firma las URLs y las subidas. **Nunca al navegador** |
+| `CLOUDINARY_FOLDER` | Opcional. Carpeta raíz de los adjuntos; sin ella, `planificador` |
 
 La *API Environment Variable* de Cloudinary (`CLOUDINARY_URL`) **no se usa**: el
 SDK la lee de `process.env` por su cuenta y en `astro dev` las variables del
@@ -994,9 +996,20 @@ mandando una imagen por petición. Es un cambio de almacén, no de arquitectura.
 #### Dónde vive cada imagen
 
 ```
-uploads/users/{userId}/{key}/{index}
-        └── ObjectId de la sesión, nunca lo que venga en el cuerpo
+{CLOUDINARY_FOLDER}/{userId}/{key}/{index}
+ │                  └── ObjectId de la sesión, nunca lo que venga en el cuerpo
+ └── `planificador` salvo que se diga otra cosa
 ```
+
+Fue `uploads/users/{userId}/…` hasta que la carpeta raíz salió al entorno. El
+`userId` estaba ya desde el principio, y es el identificador y no el nombre a
+propósito: no cambia si la persona se renombra, y sus treinta y dos caracteres
+de `[0-9a-f]` no pueden traer dentro un espacio, un acento ni una barra, que es
+justo lo que partiría un `public_id` en dos.
+
+Lo ya subido **no se movió solo**: el `publicId` se guarda entero en `images` y
+no se recalcula al leer, así que cada imagen siguió sirviéndose desde donde
+estaba hasta que pasó `scripts/migrate-image-folders.mjs`.
 
 El `public_id` se compone en el servidor y es determinista: la posición del
 adjunto ya dice su nombre, así que no hay que guardar «qué id me devolvió» para
@@ -1333,6 +1346,52 @@ que el índice se usa.
   de `sent` exige `id` *y* `at`, así que en el peor caso una marca no se adopta y
   se adopta en la vuelta siguiente— pero conviene saberlo antes de verlo.
 
+### Una carpeta por persona en Cloudinary — septiembre de 2026
+
+Los adjuntos colgaban de `uploads/users/{userId}/…` desde la tanda 8. La parte
+que importaba —una subcarpeta por persona, nombrada por el `userId` de Better
+Auth— ya estaba; lo que no estaba era poder decidir la raíz sin tocar el código.
+Ahora sale del entorno, `CLOUDINARY_FOLDER`, y por defecto es `planificador`.
+
+El cambio en la aplicación es una línea de `publicIdFor`. Lo demás es la
+mudanza, y la mudanza tiene una trampa: **renombrar en Cloudinary cambia el
+`public_id` y con él la URL**, así que lo que estuviera guardado apuntando al
+nombre viejo deja de resolver. Mover los bytes sin reescribir la base sería
+perder las imágenes de vista con todas ellas intactas en la nube.
+
+En esta base eso es un campo, `images.publicId`, más la `version` —que también
+cambia y entra en la firma—, y conviene saber por qué no es más:
+
+- El `etag` **no** cambia: es el hash del contenido y los bytes son los mismos
+  en otro sitio. De ahí que `days.thumb`, que desde la tanda 8 guarda ese hash y
+  no una miniatura, no haya que tocarlo.
+- Las referencias `cld:{publicId}@{etag}` que los navegadores tienen guardadas
+  quedan viejas y no rompen nada: lo que se pinta se pide por `key`, `index` y
+  `etag` —el `publicId` no aparece en `rawSrc`—, y el único sitio que lo mira,
+  el `PUT` de `api/images.ts`, ya sabía no encontrar el documento de origen y
+  responder con la referencia que hay ahora.
+
+`scripts/migrate-image-folders.mjs` es quien lo hace, con la API Admin y desde
+el portátil. Renombra, apunta el documento, y cuenta antes y después. Lo
+interesante es el fallo a mitad, que tiene dos formas y no se parecen:
+
+- **Falla Cloudinary**: no se movió nada, el documento se queda como estaba y la
+  imagen se sigue viendo desde su sitio de siempre.
+- **Falla Mongo después de mover**: el documento nombra un sitio que ya no
+  existe, que es la única forma de perder una imagen de vista. Se deshace el
+  renombrado en el acto; y si tampoco se puede deshacer, la pasada siguiente lo
+  recoge sola —un origen que no está y un destino que sí es exactamente eso— y
+  escribe únicamente en Mongo.
+
+Ese mismo camino es el que lo hace reanudable, así que ante la duda se vuelve a
+lanzar. Y el orden del despliegue es el **contrario** al de la tanda 8: primero
+el código, después la mudanza. Allí el código viejo leía los bytes de Mongo y
+migrar antes dejaba todo sin verse; aquí cada imagen se sirve por el `publicId`
+que tenga guardado, sea de la carpeta que sea, así que lo que aún no se haya
+movido se sigue viendo igual.
+
+---
+
 ---
 
 ## Tanda 10: Fusionar por `id` dentro del día
@@ -1489,8 +1548,10 @@ Pendiente:
       invocación de la función la primera vez.
 - [ ] Un `destroy` que falle deja la imagen huérfana en Cloudinary: se traga el
       error a propósito, porque tumbar el borrado del día por eso sería peor.
-      Haría falta un repaso que liste el prefijo `uploads/users/{userId}` y
-      borre lo que no tenga documento en Mongo.
+      Haría falta un repaso que liste el prefijo de cada persona y borre lo
+      que no tenga documento en Mongo. `migrate-image-folders.mjs` ya hace la
+      mitad: al terminar lista lo que queda fuera de la carpeta nueva. Falta
+      que mire también dentro y que sepa borrar.
 - [ ] La exportación (v7) ha dejado de ser una copia completa: lleva
       referencias, no imágenes. Para que lo siga siendo hay que bajar los bytes
       por el proxy al exportar.

@@ -70,6 +70,23 @@ export default defineConfig({
       // Firma las subidas y las URLs. Nunca `access: 'public'`: con ella se
       // puede subir, borrar y firmar cualquier cosa de la nube.
       CLOUDINARY_API_SECRET: envField.string({ context: 'server', access: 'secret' }),
+      /*
+       * La carpeta raíz de todo lo que sube la aplicación; debajo cuelga una
+       * subcarpeta por persona. Opcional y con valor por defecto porque no es
+       * una credencial: sin ella el sitio funciona igual, y lo único que hace
+       * es dejar apuntar una nube compartida a otro sitio —una rama de
+       * pruebas, por ejemplo— sin tocar el código.
+       *
+       * Cambiarla **no mueve lo que ya está subido**: las imágenes anteriores
+       * siguen donde estaban y se sirven igual, porque cada documento de
+       * `images` guarda su `publicId` entero. Para llevarlas a la carpeta
+       * nueva está `scripts/migrate-image-folders.mjs`.
+       */
+      CLOUDINARY_FOLDER: envField.string({
+        context: 'server',
+        access: 'secret',
+        default: 'planificador',
+      }),
     },
   },
 
