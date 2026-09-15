@@ -79,6 +79,36 @@ export function publicIdFor(userId: string, key: string, index: number): string 
   return `${FOLDER}/${userId}/${key}/${index}`;
 }
 
+/**
+ * Dónde **enseña** la biblioteca de Cloudinary una imagen, que desde las
+ * *carpetas dinámicas* no es lo mismo que dónde se sirve.
+ *
+ * Esta cuenta está en `folder_mode: dynamic`, y ahí el `public_id` es solo el
+ * identificador con el que se pide el archivo: las barras que lleva dentro son
+ * caracteres, no carpetas. Lo que decide en qué carpeta sale en el panel es un
+ * campo aparte, `asset_folder`, y si no se manda queda vacío — y entonces la
+ * imagen aparece en *Home* aunque su `public_id` diga `planificador/…`. Eso es
+ * exactamente lo que pasó con las primeras siete.
+ *
+ * Las dos piezas se sacan del `public_id` por la cola y no por la cabeza, así
+ * que da igual cuántas barras traiga `CLOUDINARY_FOLDER`: los dos últimos
+ * tramos son siempre el día y la posición.
+ *
+ * - `asset_folder`: `{FOLDER}/{userId}`, que es la carpeta por persona.
+ * - `display_name`: `{día}-{posición}`, porque dentro de esa carpeta el nombre
+ *   que saca el panel es el último tramo del `public_id` y serían todas «0».
+ *
+ * En una cuenta de carpetas fijas los dos campos sobran y Cloudinary los
+ * ignora; allí la carpeta la da el `public_id`, que ya es la correcta.
+ */
+function placementOf(publicId: string): { asset_folder: string; display_name: string } {
+  const parts = publicId.split('/');
+  return {
+    asset_folder: parts.slice(0, -2).join('/'),
+    display_name: parts.slice(-2).join('-'),
+  };
+}
+
 /** Lo que se guarda en Mongo de una imagen ya subida. */
 export type StoredImage = {
   publicId: string;
@@ -122,6 +152,11 @@ export async function uploadImage(publicId: string, dataUrl: string): Promise<St
   const result = await cloudinary.uploader.upload(dataUrl, {
     ...AUTHENTICATED,
     public_id: publicId,
+    // Dónde sale en el panel. Ver `placementOf`: con carpetas dinámicas esto
+    // no se deduce del `public_id`, hay que decirlo. Va aquí y no en `folder`
+    // porque `folder` significa cosas distintas en cada modo de carpetas: en
+    // el fijo se antepone al `public_id` y dejaría `planificador/planificador/…`.
+    ...placementOf(publicId),
     overwrite: true,
     eager: [TRANSFORMS.thumb, TRANSFORMS.view],
     eager_async: false,
@@ -137,6 +172,15 @@ export async function uploadImage(publicId: string, dataUrl: string): Promise<St
  * navegador no puede volver a subirlo —hace rato que soltó los bytes y solo
  * guarda la referencia—, así que el arreglo es un cambio de nombre, que no
  * mueve bytes y cuesta una llamada.
+ *
+ * `rename` no admite `asset_folder` ni `display_name`, así que la carpeta del
+ * panel **no se toca aquí** — y no hace falta: reordenar mueve la imagen
+ * dentro del mismo día de la misma persona, y la carpeta es por persona. Lo
+ * que sí se queda atrás es el `display_name`, que seguirá diciendo la posición
+ * de antes. Es cosmética de la biblioteca, no afecta a lo que se sirve, y
+ * arreglarla costaría una llamada a la API Admin por reordenación cuando el
+ * plan da 500 a la hora. `migrate-image-folders.mjs` los vuelve a cuadrar cada
+ * vez que se pasa.
  */
 export async function renameImage(from: string, to: string, etag: string): Promise<StoredImage> {
   const result = await cloudinary.uploader.rename(from, to, {

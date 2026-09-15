@@ -79,6 +79,14 @@ const FOLDER = (process.env.CLOUDINARY_FOLDER ?? 'planificador').replace(/^\/+|\
 const AUTH = { type: 'authenticated', resource_type: 'image' };
 const publicIdFor = (userId, key, index) => `${FOLDER}/${userId}/${key}/${index}`;
 
+/* Dónde lo enseña el panel, que con carpetas dinámicas no es lo que dice el
+   `public_id`. Copiado de `placementOf` en `lib/cloudinary.ts`, y por el mismo
+   motivo que lo demás: aquello lee `astro:env`. */
+const placementOf = (publicId) => {
+  const parts = publicId.split('/');
+  return { asset_folder: parts.slice(0, -2).join('/'), display_name: parts.slice(-2).join('-') };
+};
+
 function databaseName() {
   if (process.env.MONGODB_DB) return process.env.MONGODB_DB;
   try {
@@ -139,17 +147,105 @@ const pendientes = await images
   .sort({ userId: 1, key: 1, index: 1 })
   .toArray();
 
+/* Un vistazo a lo que va a pasar, que en `ver` es todo lo que pasa. */
 if (pendientes.length === 0) {
-  console.log('\nNo hay nada que mover.\n');
-  await salir(0);
+  console.log('\nNo hay ningún `public_id` que mover.');
+} else {
+  console.log(`\n${pendientes.length} imágenes que mover:`);
+  for (const doc of pendientes.slice(0, 5)) {
+    console.log(`  ${doc.publicId}\n    → ${publicIdFor(String(doc.userId), doc.key, doc.index)}`);
+  }
+  if (pendientes.length > 5) console.log(`  …y ${pendientes.length - 5} más`);
 }
 
-/* Un vistazo a lo que va a pasar, que en `ver` es todo lo que pasa. */
-console.log(`\n${pendientes.length} imágenes que mover:`);
-for (const doc of pendientes.slice(0, 5)) {
-  console.log(`  ${doc.publicId}\n    → ${publicIdFor(String(doc.userId), doc.key, doc.index)}`);
+/* --- Y qué hay que recolocar en el panel --------------------------------- */
+
+/*
+ * Mover el `public_id` no es todo el trabajo, y esta es la parte que no se ve
+ * venir. Esta cuenta está en **carpetas dinámicas** (`folder_mode: dynamic`),
+ * y ahí el `public_id` es solo el identificador con el que se pide el archivo:
+ * las barras que lleva dentro son caracteres, no carpetas. En qué carpeta sale
+ * en el panel lo dice un campo aparte, `asset_folder`, que ni `upload` ni
+ * `rename` rellenan solos.
+ *
+ * De ahí el síntoma: siete imágenes con el `public_id` perfectamente puesto en
+ * `planificador/…` y las siete apareciendo en *Home*. Los bytes y las URLs
+ * estaban bien desde el primer momento; lo que estaba vacío era `asset_folder`.
+ *
+ * Se arregla con `api.update`, que **no toca el `public_id`, ni la `version`,
+ * ni los bytes** — así que aquí no hay nada que escribir en Mongo. Es sólo
+ * cómo se ordena la biblioteca.
+ *
+ * En una cuenta de carpetas fijas esto no aplica: la carpeta la da el
+ * `public_id` y ya está donde tiene que estar. Por eso se pregunta primero.
+ */
+let dinamico = false;
+try {
+  const cuenta = await cloudinary.api.config({ settings: true });
+  dinamico = cuenta?.settings?.folder_mode === 'dynamic';
+  console.log(`\nCarpetas de la cuenta: ${cuenta?.settings?.folder_mode ?? 'sin decir'}.`);
+} catch (error) {
+  console.error(`\nNo se pudo saber el modo de carpetas: ${error?.message ?? error}`);
+  console.error('  Se sigue sin recolocar: mover el `public_id` no depende de esto.');
 }
-if (pendientes.length > 5) console.log(`  …y ${pendientes.length - 5} más`);
+
+/**
+ * Lo que hay arriba, de una sola pasada. Se lista en vez de preguntar imagen a
+ * imagen porque la API Admin da 500 llamadas a la hora y un listado trae 500
+ * recursos por llamada: preguntar una por una gastaría la cuota en mirar.
+ */
+async function nubeEntera() {
+  const mapa = new Map();
+  let cursor;
+  let paginas = 0;
+  do {
+    const pagina = await cloudinary.api.resources({ ...AUTH, max_results: 500, next_cursor: cursor });
+    for (const r of pagina.resources ?? []) mapa.set(r.public_id, r);
+    cursor = pagina.next_cursor;
+  } while (cursor && ++paginas < 20);
+  return mapa;
+}
+
+/**
+ * Las que saldrían en el sitio equivocado del panel. Se calcula **después** de
+ * los renombrados cuando toca migrar, porque hasta entonces el `public_id` de
+ * arriba todavía es el viejo; en `ver` se calcula con lo que hay ahora, que
+ * para enseñar el plan es suficiente.
+ */
+async function descolocadas() {
+  const nube = await nubeEntera();
+  const fuera = [];
+  for (const [publicId, recurso] of nube) {
+    if (!publicId.startsWith(`${FOLDER}/`)) continue;
+    const quiere = placementOf(publicId);
+    if (recurso.asset_folder !== quiere.asset_folder || recurso.display_name !== quiere.display_name) {
+      fuera.push({ publicId, quiere, tiene: recurso.asset_folder });
+    }
+  }
+  return fuera;
+}
+
+if (dinamico) {
+  try {
+    const fuera = await descolocadas();
+    if (fuera.length === 0) {
+      console.log('Ninguna imagen descolocada en el panel.');
+    } else {
+      console.log(`\n${fuera.length} imágenes que recolocar en el panel:`);
+      for (const f of fuera.slice(0, 5)) {
+        console.log(`  ${f.publicId}\n    carpeta «${f.tiene ?? ''}» → «${f.quiere.asset_folder}»`);
+      }
+      if (fuera.length > 5) console.log(`  …y ${fuera.length - 5} más`);
+    }
+  } catch (error) {
+    console.error(`  no se pudo listar la nube: ${error?.message ?? error}`);
+  }
+}
+
+if (pendientes.length === 0 && !dinamico) {
+  console.log('\nNada que hacer.\n');
+  await salir(0);
+}
 
 if (accion !== 'migrar') {
   console.log('\n(nada escrito — repite con `migrar` para hacerlo de verdad)\n');
@@ -275,6 +371,50 @@ if (rotas.length) {
   for (const r of rotas) console.error(`    ${r.desde} → ${r.hasta}`);
 }
 
+/* --- El panel ------------------------------------------------------------ */
+
+/*
+ * Ahora sí, con los `public_id` ya en su sitio: se vuelve a mirar qué está
+ * descolocado y se recoloca. Va después de los renombrados a propósito — antes
+ * habría calculado la carpeta del nombre viejo.
+ *
+ * Cada arreglo es una llamada a la API Admin, que da 500 a la hora. Con un
+ * archivo de este tamaño sobra de largo; si algún día no sobrara, el fallo
+ * sería un 420 y bastaría con volver a lanzarlo a la hora siguiente, porque
+ * esto también se salta lo que ya está bien.
+ */
+let recolocadas = 0;
+let fallosPanel = 0;
+
+if (dinamico) {
+  let fuera = [];
+  try {
+    fuera = await descolocadas();
+  } catch (error) {
+    console.error(`\nNo se pudo listar la nube para recolocar: ${error?.message ?? error}`);
+  }
+
+  if (fuera.length) {
+    console.log(`\nRecolocando ${fuera.length} imágenes en el panel…`);
+    for (const f of fuera) {
+      try {
+        await cloudinary.api.update(f.publicId, { ...AUTH, ...f.quiere });
+        recolocadas++;
+        if (recolocadas % 25 === 0) console.log(`  …${recolocadas}/${fuera.length}`);
+      } catch (error) {
+        fallosPanel++;
+        console.error(`  no se pudo recolocar ${f.publicId}: ${error?.error?.message ?? error?.message ?? error}`);
+      }
+    }
+    console.log(
+      `Recolocadas: ${recolocadas}. Fallos: ${fallosPanel}` +
+        `${fallosPanel ? ' (vuelve a lanzarlo: se saltará lo ya puesto)' : ''}.`,
+    );
+  } else {
+    console.log('\nNada que recolocar en el panel.');
+  }
+}
+
 /* --- La comprobación ----------------------------------------------------- */
 
 const despues = await recuento('Después:');
@@ -325,4 +465,4 @@ try {
 }
 
 console.log('');
-await salir(fallos || rotas.length ? 1 : 0);
+await salir(fallos || rotas.length || fallosPanel ? 1 : 0);

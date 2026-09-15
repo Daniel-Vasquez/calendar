@@ -463,6 +463,15 @@ El proyecto está pensado para **Vercel** y se despliega desde `main`.
    volver a pasar. Renombrar cambia el `publicId` y la URL, así que el script
    reescribe `images` en la misma operación; si Mongo falla después de mover,
    deshace el renombrado. Idempotente y reanudable, como el otro.
+
+   > [!IMPORTANT]
+   > Si tu cuenta está en **carpetas dinámicas** (`folder_mode: dynamic`, que es
+   > lo normal en las cuentas nuevas), la carpeta que enseña el panel **no es el
+   > `public_id`**: la dice un campo aparte, `asset_folder`, que ni `upload` ni
+   > `rename` rellenan solos. Sin él verás las imágenes en *Home* aunque su
+   > `public_id` diga `planificador/…` y las URLs funcionen. El script lo
+   > detecta, lo dice en pantalla y las recoloca después de renombrar. Para
+   > saber en qué modo estás: `cloudinary.api.config({ settings: true })`.
 5. En Atlas, pon *Network Access* en `0.0.0.0/0`. Con solo tu IP en lista
    blanca, las funciones de Vercel no entran, y el síntoma despista: Atlas corta
    el saludo TLS y el driver lo reporta como `tlsv1 alert internal error`, que no

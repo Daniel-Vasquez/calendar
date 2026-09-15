@@ -1371,6 +1371,19 @@ cambia y entra en la firma—, y conviene saber por qué no es más:
   el `PUT` de `api/images.ts`, ya sabía no encontrar el documento de origen y
   responder con la referencia que hay ahora.
 
+Y aquí llegó la parte que no se veía venir. Con los `public_id` ya movidos y las
+URLs sirviendo, el panel seguía enseñando las siete imágenes en *Home* y la
+carpeta `planificador` vacía. La cuenta está en `folder_mode: dynamic`, y con
+carpetas dinámicas la carpeta del panel no la da el `public_id` sino un campo
+aparte, `asset_folder`, que ni `upload` ni `rename` rellenan. Los bytes y las
+URLs estaban bien desde el principio; lo que estaba vacío era ese campo. Se
+arregla con `api.update` —que no toca el `public_id`, ni la `version`, ni los
+bytes, así que esa mitad no escribe nada en Mongo— y en la subida mandando
+`asset_folder` junto al `public_id`. De paso se pone `display_name`, porque el
+panel lo saca del último tramo del `public_id` y sin él todas se llaman «0». El
+script hace las dos mitades, en ese orden: primero renombra, después recoloca —
+al revés calcularía la carpeta del nombre viejo.
+
 `scripts/migrate-image-folders.mjs` es quien lo hace, con la API Admin y desde
 el portátil. Renombra, apunta el documento, y cuenta antes y después. Lo
 interesante es el fallo a mitad, que tiene dos formas y no se parecen:
@@ -1764,6 +1777,24 @@ números, así que no hay nada que vigilar ahí.
 ---
 
 ## Trampas que ya nos han mordido
+
+**En Cloudinary, la carpeta no es el `public_id`.** Esta cuenta está en
+`folder_mode: dynamic`, y con carpetas dinámicas el `public_id` es solo el
+identificador con el que se pide el archivo: las barras que lleva dentro son
+caracteres, no carpetas. En qué carpeta sale en el panel lo dice un campo
+aparte, `asset_folder`, que **ni `upload` ni `rename` rellenan solos**. El
+síntoma es desconcertante porque todo lo que importa está bien: la mudanza dejó
+las siete imágenes con su `public_id` en `planificador/…`, las URLs firmaban y
+se veían — y las siete seguían apareciendo en *Home*, con la carpeta
+`planificador` creada y vacía al lado. Se arregla mandando `asset_folder` en la
+subida y, para lo ya subido, con `api.update`, que no toca el `public_id` ni la
+`version` ni los bytes: por eso recolocar no escribe nada en Mongo. Dos avisos
+más: el parámetro se llama `asset_folder` y no `folder`, porque `folder`
+significa cosas distintas en cada modo —en el fijo se antepone al `public_id` y
+dejaría `planificador/planificador/…`—; y el `display_name`, que es el nombre
+que saca el panel, sale del último tramo del `public_id`, así que sin ponerlo a
+mano todas las imágenes de una persona se llaman «0». Para saber en qué modo
+está una cuenta: `cloudinary.api.config({ settings: true })`.
 
 **Un índice parcial no se usa si la consulta no *demuestra* su filtro.** El
 índice sobre `reminders.at` es parcial (`$exists: true`), y el planificador solo
