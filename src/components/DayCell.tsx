@@ -2,6 +2,7 @@ import { colorVar } from '../lib/palette';
 import type { DayTimeState } from '../lib/calendar';
 import { imageCount, type DayEntry } from '../lib/storage';
 import { previewSrc } from '../lib/gallery';
+import { BellIcon } from './ReminderChip';
 
 type Props = {
   day: number;
@@ -20,6 +21,40 @@ type Props = {
   /** `extend` avisa de que el clic traía Shift: marcar rango, no abrir el día. */
   onSelect: (extend: boolean) => void;
 };
+
+/**
+ * Rótulo de cada apartado del popover: el icono, y al lado una palabra que
+ * dice de qué se está hablando.
+ *
+ * Existe porque el popover pasó a enseñar **dos cosas distintas**. Con una sola
+ * bastaba el contenido: una hora suelta arriba solo podía ser un aviso. Con las
+ * dos apiladas, «09:00» sobre un párrafo es ambiguo hasta que algo dice cuál es
+ * cuál, y el icono solo no basta — una campana de diez píxeles se reconoce si
+ * ya sabes lo que buscas.
+ */
+function SectionLabel({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <p className="flex items-center gap-1 text-[10px] font-semibold tracking-wide text-ink-muted uppercase">
+      <span className="shrink-0">{icon}</span>
+      {children}
+    </p>
+  );
+}
+
+/** Hoja con un renglón: el mismo trazo que el resto de iconos del proyecto. */
+function NoteIcon() {
+  return (
+    <svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path
+        d="M4 2h5l3 3v9H4V2z"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <path d="M9 2v3h3M6 9h4M6 11.5h2.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 const BASE =
   'relative flex aspect-square w-full items-center justify-center rounded-lg text-sm font-semibold ' +
@@ -118,6 +153,8 @@ export default function DayCell({
   // Una imagen sin texto también es una nota, y una hora sola también:
   // cualquiera de las tres enciende el punto y el popover.
   const hasNote = Boolean(note || total || reminders.length);
+  /** ¿Hay algo que enseñar bajo el rótulo «Nota»? El texto, o un adjunto. */
+  const hasNoteSection = Boolean(note) || total > 0;
   // La vista previa sale siempre del mismo sitio: el adjunto de aquí si lo
   // hay, y si no la miniatura que viaja con el día. Ver `previewSrc`.
   const preview = previewSrc(entry, dateKey);
@@ -214,44 +251,92 @@ export default function DayCell({
       </button>
 
       {/* La nota completa se lee en el modal; esta vista previa es decorativa
-          y el lector de pantalla ya recibe el día por el `aria-label`. */}
+          y el lector de pantalla ya recibe el día por el `aria-label`.
+
+          Enseña **lo que haya**: solo la nota, solo los avisos, o los dos
+          apilados y separados por una línea. Cada apartado va rotulado, porque
+          con los dos juntos el contenido ya no dice por sí solo cuál es cuál.
+
+          El ancho es fijo —una casilla mide cuarenta píxeles y esto mide
+          doscientos veinticuatro— con un tope de pantalla detrás: en un móvil
+          estrecho, la columna del lunes anclada a la izquierda se saldría. */}
       {hasNote && (
         <>
           <div
             aria-hidden="true"
-            className={`${REVEAL} absolute bottom-full z-30 mb-2 w-52 ${popoverAlign(weekday)}`}
+            className={`${REVEAL} absolute bottom-full z-30 mb-2 w-56 max-w-[calc(100vw-2rem)] ${popoverAlign(weekday)}`}
           >
-            <div className="rounded-xl border border-edge bg-raised p-3 text-left shadow-lg">
+            <div className="space-y-2 rounded-xl border border-edge bg-raised p-3 text-left shadow-lg">
               <p className="text-[11px] font-semibold tracking-wide text-ink-muted uppercase">
                 {dateLabel}
               </p>
+
+              {/* Los avisos van primero: tienen hora, y lo que tiene hora es lo
+                  que se mira con prisa. */}
               {next && (
-                <p className="mt-1 text-[11px] font-semibold text-accent-ink-strong">
-                  {reminders.length === 1
-                    ? `Aviso a las ${next.time}`
-                    : // Tres horas caben en el ancho del popover; lo que pase de
-                      // ahí se cuenta, que para eso está el modal del día.
-                      `Avisos: ${reminders
-                        .slice(0, 3)
-                        .map((item) => item.time)
-                        .join(' · ')}${reminders.length > 3 ? ` +${reminders.length - 3}` : ''}`}
-                </p>
+                <section>
+                  <SectionLabel icon={<BellIcon />}>
+                    {reminders.length === 1 ? 'Recordatorio' : `Recordatorios · ${reminders.length}`}
+                  </SectionLabel>
+                  <ul className="mt-1 space-y-0.5">
+                    {/* Tres caben en el ancho del popover; lo que pase de ahí se
+                        cuenta, que para eso está el modal del día. */}
+                    {reminders.slice(0, 3).map((item) => (
+                      <li key={item.id} className="flex items-baseline gap-1.5 text-xs">
+                        <span className="shrink-0 font-semibold text-accent-ink-strong tabular-nums">
+                          {item.time}
+                        </span>
+                        {/* El texto propio si lo hay. Si no, no se compone con
+                            la nota —que es lo que haría `reminderText`— porque
+                            la nota está aquí mismo, debajo, y repetirla sería
+                            gastar dos renglones en decir lo mismo. */}
+                        {item.text && (
+                          <span className="min-w-0 truncate text-ink-soft">{item.text}</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                  {reminders.length > 3 && (
+                    <p className="mt-0.5 text-[10px] font-medium text-ink-muted">
+                      +{reminders.length - 3} más
+                    </p>
+                  )}
+                </section>
               )}
-              {/* Solo asoma la primera imagen; el resto se cuenta encima. */}
-              {total > 0 && preview && (
-                <span className="relative mt-2 block">
-                  <img src={preview} alt="" className="h-24 w-full rounded-lg object-cover" />
-                  {total > 1 && (
-                    <span className="absolute right-1.5 bottom-1.5 rounded-md bg-scrim/70 px-1.5 py-0.5 text-[10px] font-semibold text-white">
-                      +{total - 1}
+
+              {/* Y la nota debajo, con su adjunto. La línea solo aparece cuando
+                  hay algo encima de lo que separarla. */}
+              {hasNoteSection && (
+                <section className={next ? 'border-t border-edge pt-2' : undefined}>
+                  <SectionLabel icon={<NoteIcon />}>Nota</SectionLabel>
+
+                  {/* Solo asoma la primera imagen; el resto se cuenta encima. */}
+                  {total > 0 && preview && (
+                    <span className="relative mt-1 block">
+                      <img src={preview} alt="" className="h-24 w-full rounded-lg object-cover" />
+                      {total > 1 && (
+                        <span className="absolute right-1.5 bottom-1.5 rounded-md bg-scrim/70 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                          +{total - 1}
+                        </span>
+                      )}
                     </span>
                   )}
-                </span>
-              )}
-              {note && (
-                <p className="mt-1 line-clamp-3 text-xs leading-relaxed whitespace-pre-line break-words text-ink-soft">
-                  {note}
-                </p>
+
+                  {note ? (
+                    <p className="mt-1 line-clamp-3 text-xs leading-relaxed whitespace-pre-line break-words text-ink-soft">
+                      {note}
+                    </p>
+                  ) : (
+                    // Queda el día que solo tiene adjuntos y este navegador aún
+                    // no los ha descargado: sin esto el apartado sería un rótulo
+                    // con nada debajo.
+                    !preview && (
+                      <p className="mt-1 text-xs text-ink-muted italic">
+                        {total === 1 ? 'Una imagen adjunta' : `${total} imágenes adjuntas`}
+                      </p>
+                    )
+                  )}
+                </section>
               )}
             </div>
           </div>
