@@ -87,10 +87,13 @@ export type ColorOverride = { name?: string; hex?: string };
 export type ColorPalette = Partial<Record<ColorId, ColorOverride>>;
 
 /**
- * Dónde vive. La clave es la de los nombres de siempre, y no una nueva, para
- * que quien ya tuviera sus categorías bautizadas no las pierda: el saneado de
- * abajo entiende el formato anterior —un texto suelto por color— y lo convierte
- * al de ahora sin que nadie tenga que migrar nada.
+ * Dónde vive **en este navegador**. La clave es la de los nombres de siempre, y
+ * no una nueva, para que quien ya tuviera sus categorías bautizadas no las
+ * pierda: el saneado de abajo entiende el formato anterior —un texto suelto por
+ * color— y lo convierte al de ahora sin que nadie tenga que migrar nada.
+ *
+ * Desde la tanda 11 esto es la copia local de algo que además vive en la
+ * cuenta: la paleta sube a `settings` y baja al abrir. Ver `prefs.ts`.
  */
 export const PALETTE_KEY = 'calendar_2026_q4_labels';
 

@@ -57,12 +57,15 @@ middleware ───────────────────────
 | `src/lib/theme.ts` | Claro u oscuro: dónde se guarda y quién manda |
 | `src/lib/palette.ts` | Los ocho colores, la paleta propia de cada persona y su variable CSS |
 | `src/lib/tags.ts` | El catálogo de etiquetas, el `slug` y lo que lleva puesto un día |
+| `src/lib/prefs.ts` | Lleva la paleta y el catálogo a la cuenta, y decide quién manda |
 | `src/components/usePalette.ts` | Lee, guarda, aplica y vigila la paleta; lo usa toda página que pinte |
+| `src/components/usePrefs.ts` | Compone la paleta y el catálogo, y los sincroniza con la cuenta |
 | `src/components/useSettings.ts` | Los ajustes enteros —paleta, etiquetas, entrada y salida— para la barra |
 | `src/components/NoticeBar.tsx` | El aviso del pie y su deshacer, uno para las cuatro páginas |
 | `src/components/ThemeToggle.tsx` | El sol y la luna de la barra |
 | `src/lib/telegram.ts` | El bot: enviar, leer `getUpdates`, clasificar fallos |
 | `src/pages/api/telegram.ts` | Vincular, comprobar, probar y desvincular |
+| `src/pages/api/settings.ts` | La paleta y el catálogo de etiquetas de la cuenta |
 | `src/pages/api/cron/reminders.ts` | Lo dispara el programador externo |
 | `src/lib/image.ts` | Redimensionado y compresión antes de subir; y de qué `src` sale cada imagen |
 | `src/lib/cloudinary.ts` | El almacén de los bytes: sube, renombra, borra y firma. Solo servidor |
@@ -84,16 +87,16 @@ middleware ───────────────────────
 |---|---|---|
 | `user` `session` `account` | Las crea Better Auth. Tu nombre vive en `user` | propios |
 | `days` | Un día por usuario: marca, nota, color, `imageCount`, `thumb` —el testigo de la primera imagen, no la imagen—, `reminders` —una lista, hasta diez—, `tags` | `{userId, key}` único + parcial multiclave sobre `reminders.at` |
-| `settings` | Ajustes que no son de este dispositivo: hoy, el chat de Telegram | `{userId}` único |
+| `settings` | Lo que es de la persona y no del aparato: el chat de Telegram, la paleta y el catálogo de etiquetas | `{userId}` único |
 | `allowlist` | Qué correos pueden **crearse** una cuenta. No afecta a quien ya la tiene | `{email}` único |
 | `images` | Una imagen por documento, con su posición. **Aquí no hay bytes**: solo el `publicId`, la `version` y el `etag` de lo que guarda Cloudinary | `{userId, key, index}` único |
 
 `userId` se guarda como **ObjectId**, no como cadena.
 
 Los meses plegados **no** suben: son preferencia de este dispositivo y se
-quedan en `localStorage`. La paleta —el nombre y el tono de cada categoría—
-tampoco, y esa sí duele: ver *Deuda conocida*. El **catálogo** de etiquetas está
-en el mismo caso; lo que un día lleva puesto sí sube, porque es del día.
+quedan en `localStorage`. La paleta y el **catálogo** de etiquetas sí, desde la
+tanda 11: son de la persona, no del aparato. Lo que un día lleva puesto viaja
+aparte, dentro del día, porque es del día.
 
 ### Más de una persona
 
@@ -1407,10 +1410,105 @@ movido se sigue viendo igual.
 
 ---
 
+### La paleta y las etiquetas llegan a la cuenta — tanda 11, septiembre de 2026
+
+Cómo se llama y de qué tono es cada categoría, y qué etiquetas existen, vivían
+solo en `localStorage`. El resultado era que el mismo calendario se veía
+distinto en el móvil y en el portátil: allí «Entrega» en rosa oscuro, aquí
+«Rosa». Ahora los dos viven en `settings`, la colección que existe justo para lo
+que es de la persona y no del aparato — el chat de Telegram ya estaba ahí.
+
+**Lo que no ha cambiado:** `localStorage` sigue siendo la copia local y sigue
+mandando para pintar, así que no hay destello ni espera; la cuenta es de dónde
+se traen y a dónde se llevan. Y las etiquetas que un día lleva **puestas** siguen
+viajando dentro del día, que es donde tienen que estar: son contenido, no
+configuración.
+
+#### Van juntas, con una sola marca de tiempo, y no es `updatedAt`
+
+La paleta y el catálogo comparten documento, petición y reloj. Son un puñado de
+bytes, se editan en la misma pantalla y casi nunca; partirlos en dos documentos
+y dos relojes habría sido más mecanismo del que el problema pide.
+
+El reloj es `prefsAt`, **no** el `updatedAt` que ya tenía el documento, y la
+razón es la misma que separa `sent` de `done` en un recordatorio: son dos cosas
+con dos autores. `updatedAt` lo sube también el servidor —al marcar el bot como
+bloqueado, por ejemplo—, y si fuera el árbitro, un bloqueo de Telegram haría que
+las preferencias del servidor le ganaran a una edición local sin subir,
+borrándola. Es exactamente el mismo cuidado que hace que el cron no toque
+`updatedAt` al reclamar un aviso.
+
+#### Ausente y vacío no son lo mismo
+
+`tags: []` es un catálogo vacío **a propósito** y `tags` ausente es «aquí nunca
+se eligió ninguno». La distinción ya existía en `localStorage` —es lo que impide
+que las siete de fábrica resuciten en cuanto alguien las borre todas— y había
+que llevarla intacta hasta Mongo, así que el campo se guarda como lista vacía en
+vez de omitirse.
+
+De ahí sale la diferencia más llamativa con `/api/days`: **allí un opcional
+ausente se borra y aquí se respeta**. No es un descuido. En los días el
+navegador manda siempre el día entero, así que una ausencia solo puede querer
+decir que se ha quitado; aquí un dispositivo puede tener paleta y no haber
+guardado nunca un catálogo, y borrar por eso el catálogo de la cuenta sería
+tirar lo que alguien escribió en otro sitio.
+
+#### El catálogo que se quedaba varado
+
+Apareció razonando el orden, antes de escribir el `hook`, y habría perdido
+datos de verdad. Un dispositivo sube solo la paleta —nunca tocó las etiquetas—
+mientras otro tiene un catálogo propio de antes de esta tanda. El segundo
+adopta la paleta del primero, y su catálogo se queda en local sin subir nunca…
+hasta que el primero añade una etiqueta y se lo lleva por delante.
+
+Por eso lo que falta se mira **campo a campo** y no en bloque: tras adoptar, si
+queda algo aquí que la cuenta no conoce, se le pone marca y sube encima de lo
+recién adoptado. Es media docena de líneas —`faltaEnLaCuenta` en `prefs.ts`— y
+es la diferencia entre converger y perder el trabajo de un dispositivo.
+
+#### Cómo está montado
+
+`usePrefs` **compone** `usePalette` y `useTags` en lugar de sustituirlos:
+aquellos siguen siendo quienes leen, escriben y aplican en este navegador, y
+encima se añade el viaje. Así una página que solo pinta no cambia en nada y la
+lógica de `localStorage` no se duplica.
+
+Lo que el `hook` añade es una distinción que ya conocía `useCalendarStore`:
+**adoptar no es editar**. Lo que baja se guarda sin ponerle marca nueva ni
+encolarlo de vuelta; lo que toca la persona sí. Sin esa diferencia, bajar una
+paleta la volvería a subir, y así en bucle.
+
+`useSettings` es el único punto de entrada de las cuatro páginas, así que todo
+esto cupo debajo de él sin tocar ninguna.
+
+#### Lo que se probó
+
+Diez comprobaciones con dos navegadores y un servidor de mentira, que es la
+única forma de ver converger lo que por definición ocurre en dos sitios: la
+migración de lo que ya había, un dispositivo nuevo que adopta, la ida y vuelta,
+el catálogo vacío que no resucita, el empate que gana lo local, y el caso del
+catálogo varado, que falla sin el arreglo de arriba.
+
+#### Riesgos que quedan
+
+- **La fusión es del documento entero**, no campo a campo: dos dispositivos
+  editando preferencias distintas a la vez, y gana el más reciente. Se mitiga
+  con el completado por campo del `pull`, pero solo en el arranque. Para unas
+  preferencias que se tocan una vez cada varios meses parece el trato correcto.
+- La exportación sigue llevando la paleta y el catálogo sin que el importador
+  los lea. Ya estaba anotado y sigue igual; ahora molesta menos, porque lo que
+  el importador no devuelve la cuenta sí lo conserva.
+
+---
+
 ## Tanda 10: Fusionar por `id` dentro del día
 
 **Estado: anotada, sin planificar.** Es la idea, no el plan: cuando se aborde
 hay que escribirlo entero como se hizo con la tanda 9.
+
+El número está **reservado**, no en orden: la tanda 11 se hizo antes porque era
+más pequeña y no dependía de esta. Las tandas se numeran por cuándo se nombran,
+no por cuándo se terminan.
 
 La unidad de fusión es el **día**. Entre dos versiones del mismo día gana la del
 `updatedAt` más reciente, y la otra se pierde entera — con sus avisos dentro.
@@ -1520,20 +1618,17 @@ Pendiente:
       eligió con la medida delante. Arreglar el claro es oscurecer esos tres
       tonos, pero cambia el aspecto de la aplicación y por eso no se hizo de
       paso: es una decisión de diseño, no una corrección.
-- [ ] **La paleta no llega a la cuenta.** Los nombres y los tonos viven en
-      `localStorage`, así que el mismo calendario se ve con categorías distintas
-      en el móvil y en el portátil. Era así desde que se pudieron renombrar los
-      colores; con los tonos se nota mucho más, porque ya no es un rótulo sino
-      el aspecto del año entero. Subirla es meterla en `settings`, que existe
-      justo para lo que no es de este dispositivo.
+- [x] **La paleta no llegaba a la cuenta**, así que el mismo calendario se veía
+      con categorías distintas en el móvil y en el portátil. Resuelto en la
+      tanda 11: vive en `settings`, que existe justo para lo que no es de este
+      dispositivo.
 - [ ] La exportación lleva la paleta y el catálogo de etiquetas (`palette` y
       `tags`, v6) pero el importador solo lee `days`: reimportar un archivo no
       devuelve ni los nombres, ni los tonos, ni las etiquetas que existían. Las
       que lleven los días sí vuelven, porque van dentro del día.
-- [ ] El catálogo de etiquetas tampoco llega a la cuenta, con el mismo arreglo
-      que la paleta: `settings`. Duele menos —lo que un día lleva puesto sí
-      viaja, y `labelOf` sabe escribirlo sin catálogo— pero en un dispositivo
-      nuevo salen las siete de fábrica y hay que volver a crear las propias.
+- [x] El catálogo de etiquetas tampoco llegaba, con el mismo arreglo. Resuelto
+      en la misma tanda y por la misma vía: comparten documento y marca de
+      tiempo, porque se editan en la misma pantalla.
 - [ ] **La marca sigue diciendo «Planificador 2026»**: en la barra, en el título
       de las cinco páginas, en la descripción del `<head>` y en el nombre de los
       archivos que exporta `transfer.ts`. El calendario ya cubre dos años, así

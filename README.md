@@ -75,11 +75,12 @@ MongoDB es la fuente de verdad, pero **no** el camino crítico.
   y dice «Entrega»— y se tiñe del tono que quieras desde Ajustes. Un día guarda
   la **categoría**, nunca el color, así que retocar el tono repinta al instante
   todos sus días, notas y recordatorios sin mover un solo dato. Un botón devuelve
-  la paleta de fábrica.
+  la paleta de fábrica. **La paleta es de tu cuenta**, no de este navegador: la
+  categoría que bautizas en el portátil se llama igual en el móvil.
 - **Etiquetas**: siete de fábrica —Deporte, Ejercicio, Diversión, Descanso, No
   molestar, Trabajo y Estudio—, y las que añadas. Clasifican el día por lo que es,
   al margen del color, se ponen desde la nota o el recordatorio y se buscan por su
-  nombre en la agenda.
+  nombre en la agenda. El catálogo también es de tu cuenta.
 - **Shift + clic** marca de una vez todo el tramo entre dos días.
 - Navegación **con las flechas del teclado**, meses plegables y botón *Ir a hoy*.
 - Cada cambio destructivo deja un aviso con **Deshacer**.

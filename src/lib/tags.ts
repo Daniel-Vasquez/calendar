@@ -3,8 +3,9 @@
  *
  * Son dos cosas de naturaleza distinta y por eso viven en sitios distintos:
  *
- * - **El catálogo** —qué etiquetas hay— es configuración de la aplicación, como
- *   la paleta de colores, y se queda en `localStorage`.
+ * - **El catálogo** —qué etiquetas hay— es configuración de la persona, como la
+ *   paleta de colores: se guarda en `localStorage` y desde la tanda 11 sube
+ *   además a la cuenta, por `settings`. Ver `prefs.ts`.
  * - **Lo que un día tiene puesto** es contenido del día, como la nota o el
  *   aviso, así que vive dentro del `DayEntry` y sube a la cuenta por la vía de
  *   siempre. Guardarlo aparte lo dejaría fuera de la sincronía, y un día
@@ -113,13 +114,27 @@ export function sanitizeCatalogue(raw: unknown): Tag[] {
  * vacío a propósito es una respuesta legítima y se respeta.
  */
 export function loadTags(): Tag[] {
-  if (typeof window === 'undefined') return defaultCatalogue();
+  return loadSavedTags() ?? defaultCatalogue();
+}
+
+/**
+ * El catálogo guardado, o `null` si **aquí nunca se ha guardado ninguno**.
+ *
+ * Es `loadTags` sin el respaldo de fábrica, y existe para la sincronía: lo que
+ * sube a la cuenta tiene que ser lo que alguien eligió, no las siete de fábrica
+ * que este dispositivo enseña por no tener nada. Subirlas como si fueran una
+ * decisión pisaría el catálogo de la cuenta con algo que nadie escribió.
+ *
+ * `null` y `[]` siguen siendo cosas distintas aquí también: ver `loadTags`.
+ */
+export function loadSavedTags(): Tag[] | null {
+  if (typeof window === 'undefined') return null;
   try {
     const raw = window.localStorage.getItem(TAGS_KEY);
-    if (raw === null) return defaultCatalogue();
+    if (raw === null) return null;
     return sanitizeCatalogue(JSON.parse(raw));
   } catch {
-    return defaultCatalogue();
+    return null;
   }
 }
 
@@ -138,7 +153,8 @@ export function saveTags(tags: Tag[]): void {
  *
  * **No se comprueba contra el catálogo** a propósito: un día etiquetado en el
  * portátil no puede perder su etiqueta por abrirse en un móvil que todavía no
- * conoce el catálogo, que es de este dispositivo y no de la cuenta.
+ * lo ha bajado. Desde la tanda 11 el catálogo sí llega a la cuenta, pero llega
+ * por su propia vía y puede tardar más que el día.
  */
 export function sanitizeTags(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];

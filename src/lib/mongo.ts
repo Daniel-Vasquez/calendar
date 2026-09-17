@@ -1,4 +1,6 @@
 import { MongoClient, type Collection, type Db, type ObjectId } from 'mongodb';
+import type { ColorPalette } from './palette';
+import type { Tag } from './tags';
 import type { WireDay } from './wire';
 import { MONGODB_DB, MONGODB_URI } from 'astro:env/server';
 
@@ -197,6 +199,10 @@ export type ImageDoc = {
  * de una alerta que manda el servidor: el navegador ni la manda ni tiene por
  * qué saberlo. El token del bot **no** está aquí — es de la aplicación, vive en
  * el entorno, y una filtración de la base no debe ser también una del bot.
+ *
+ * Desde la tanda 11 comparten documento la paleta y el catálogo de etiquetas,
+ * que son de la persona y no del aparato desde el que se escriben. Van con su
+ * **propia** marca de tiempo, `prefsAt`, y no con `updatedAt`: ver abajo.
  */
 export type SettingsDoc = {
   userId: ObjectId;
@@ -215,6 +221,32 @@ export type SettingsDoc = {
      */
     blockedAt?: number;
   };
+  /**
+   * Cómo llama esta persona a cada categoría y de qué tono la quiere. Solo lo
+   * retocado; lo demás sale de fábrica. Ver `palette.ts`.
+   */
+  palette?: ColorPalette;
+  /**
+   * El catálogo de etiquetas.
+   *
+   * **Ausente y `[]` no son lo mismo.** Ausente es que nadie ha elegido nunca
+   * un catálogo, y entonces manda el de fábrica; `[]` es un catálogo vacío a
+   * propósito, que es una respuesta legítima y que hay que respetar, o las
+   * siete de fábrica resucitarían en cuanto alguien las borrara todas.
+   */
+  tags?: Tag[];
+  /**
+   * Cuándo se tocaron las preferencias, por el reloj de quien las tocó. Es el
+   * árbitro de su fusión.
+   *
+   * Va aparte de `updatedAt` y no en su lugar, y la razón es la misma que
+   * separa `sent` de `done` en un recordatorio: son dos cosas con dos autores.
+   * `updatedAt` lo sube también el servidor —al marcar el bot como bloqueado,
+   * por ejemplo—, y si fuera el árbitro, un bloqueo de Telegram haría que las
+   * preferencias del servidor le ganaran a una edición local que aún no hubiera
+   * subido, borrándola.
+   */
+  prefsAt?: number;
   updatedAt: number;
 };
 

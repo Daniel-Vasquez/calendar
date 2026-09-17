@@ -1,7 +1,6 @@
 import { useCallback, useMemo, useRef, useState, type ComponentProps } from 'react';
 import type SettingsPanel from './SettingsPanel';
-import { usePalette } from './usePalette';
-import { useTags } from './useTags';
+import { usePrefs } from './usePrefs';
 import { todayKey } from '../lib/calendar';
 import { colorHex, MAX_LABEL_LENGTH, type ColorId, type ColorPalette } from '../lib/palette';
 import { addTag, removeTag, type Tag } from '../lib/tags';
@@ -48,10 +47,13 @@ type Input = {
  * en un ejemplar y la lista seguiría leyendo del otro —el evento `storage` no
  * llega a la pestaña que escribe—, así que el nombre nuevo no se vería hasta
  * recargar. Un solo ejemplar por página, y sale de aquí.
+ *
+ * Desde la tanda 11 los dos salen de `usePrefs`, que los compone y además los
+ * lleva a la cuenta. Aquí no cambia nada más: las mismas dos funciones de
+ * escritura, con el viaje al servidor debajo.
  */
 export function useSettings({ data, setData, announce }: Input): SettingsStore {
-  const { palette, update: updatePalette } = usePalette();
-  const { catalogue, update: updateTags } = useTags();
+  const { palette, catalogue, updatePalette, updateTags } = usePrefs(announce);
 
   const [open, setOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
