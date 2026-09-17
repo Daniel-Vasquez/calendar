@@ -21,7 +21,7 @@ import { hasContent, imageCount, imagesReady, type DayEntry } from '../lib/stora
 import { isDateKey } from '../lib/wire';
 import { sanitizeTags, type Tag } from '../lib/tags';
 import { TagPicker } from './TagChips';
-import type { Reminder } from '../lib/reminder';
+import { tombsFor, type Reminder } from '../lib/reminder';
 import ReminderField from './ReminderField';
 import { useDialog } from './useDialog';
 
@@ -246,17 +246,32 @@ export default function DayModal({
    * de la cuenta, que es la peor forma posible de perder datos.
    */
   function draft(): DayEntry {
+    /*
+     * Los avisos que había y ya no están dejan su lápida. Se calcula aquí
+     * porque este modal construye el día **entero** por su cuenta, sin pasar
+     * por `removeReminder`: quitar una fila del campo de recordatorios solo
+     * emite una lista más corta, y sin esto ese borrado se desharía solo en
+     * cuanto otro dispositivo volviera a subir su versión del día.
+     */
+    const removed = tombsFor(entry?.reminders, reminders, entry?.removedReminders);
+
     if (!ready) {
       // `entry` puede traer recordatorios o etiquetas que aquí se acaban de
       // quitar, así que los campos se sueltan primero y se vuelven a poner
       // solo si siguen vivos.
-      const { reminders: _previous, tags: _dropped, ...rest } = entry ?? ({} as DayEntry);
+      const {
+        reminders: _previous,
+        removedReminders: _lapidas,
+        tags: _dropped,
+        ...rest
+      } = entry ?? ({} as DayEntry);
       return {
         ...rest,
         marked,
         note: note.trim(),
         color,
         ...(reminders.length ? { reminders } : {}),
+        ...(removed.length ? { removedReminders: removed } : {}),
         ...(tags.length ? { tags: sanitizeTags(tags) } : {}),
       };
     }
@@ -272,6 +287,7 @@ export default function DayModal({
       ...(images.length ? { images, imageCount: images.length } : {}),
       ...(keepThumb ? { thumb: keepThumb } : {}),
       ...(reminders.length ? { reminders } : {}),
+      ...(removed.length ? { removedReminders: removed } : {}),
       ...(tags.length ? { tags: sanitizeTags(tags) } : {}),
     };
   }

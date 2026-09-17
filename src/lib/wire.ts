@@ -1,6 +1,6 @@
 import { DEFAULT_COLOR, isColorId, type ColorId } from './palette';
 import { isThumb } from './image';
-import { sanitizeReminders, type Reminder } from './reminder';
+import { sanitizeRemovals, sanitizeReminders, type Reminder, type RemovedReminder } from './reminder';
 import { sanitizeTags } from './tags';
 import { imageCount, type DayEntry } from './storage';
 
@@ -57,6 +57,12 @@ export type WireDay = {
    * además borra el campo viejo a conciencia.
    */
   reminders?: Reminder[];
+  /**
+   * Lápidas de avisos borrados. Viajan por lo mismo que los avisos: sin ellas,
+   * un borrado hecho aquí se desharía solo en cuanto otro dispositivo que aún
+   * tuviera el aviso volviera a subir su versión del día. Ver `reminder.ts`.
+   */
+  removedReminders?: RemovedReminder[];
   /**
    * Etiquetas del día, por su `slug`. Viajan, al revés que el catálogo: son
    * del día, y sin ellas etiquetar en el portátil no se vería en el móvil.
@@ -120,6 +126,7 @@ export function sanitizeWireDay(raw: unknown): WireDay | null {
   // Las dos formas valen: la lista de ahora y el objeto de antes de la tanda 9,
   // que es lo que sigue habiendo en los documentos aún sin migrar.
   const reminders = sanitizeReminders(value.reminders ?? value.reminder, value.key);
+  const removed = sanitizeRemovals(value.removedReminders);
   const tags = sanitizeTags(value.tags);
 
   return {
@@ -130,6 +137,7 @@ export function sanitizeWireDay(raw: unknown): WireDay | null {
     imageCount: Math.max(0, Math.min(count, 99)),
     ...(thumb ? { thumb } : {}),
     ...(reminders.length ? { reminders } : {}),
+    ...(removed.length ? { removedReminders: removed } : {}),
     ...(tags.length ? { tags } : {}),
     updatedAt,
   };
@@ -145,6 +153,7 @@ export function toWire(key: string, entry: DayEntry, updatedAt: number): WireDay
     imageCount: imageCount(entry),
     ...(entry.thumb ? { thumb: entry.thumb } : {}),
     ...(entry.reminders?.length ? { reminders: entry.reminders } : {}),
+    ...(entry.removedReminders?.length ? { removedReminders: entry.removedReminders } : {}),
     ...(entry.tags?.length ? { tags: entry.tags } : {}),
     updatedAt,
   };
@@ -172,6 +181,7 @@ export function fromWire(day: WireDay, local?: DayEntry): DayEntry {
     ...(day.imageCount ? { imageCount: day.imageCount } : {}),
     ...(day.thumb ? { thumb: day.thumb } : {}),
     ...(day.reminders?.length ? { reminders: day.reminders } : {}),
+    ...(day.removedReminders?.length ? { removedReminders: day.removedReminders } : {}),
     ...(day.tags?.length ? { tags: day.tags } : {}),
   };
 }

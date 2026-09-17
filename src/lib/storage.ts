@@ -1,6 +1,12 @@
 import { DEFAULT_COLOR, isColorId, type ColorId } from './palette';
 import { isImageDataUrl, isImageRef, isThumb, MAX_IMAGES_PER_DAY } from './image';
-import { makeReminder, sanitizeReminders, type Reminder } from './reminder';
+import {
+  makeReminder,
+  sanitizeRemovals,
+  sanitizeReminders,
+  type Reminder,
+  type RemovedReminder,
+} from './reminder';
 import { sanitizeTags } from './tags';
 
 export const STORAGE_KEY = 'calendar_2026_q4_data';
@@ -38,6 +44,15 @@ export type DayEntry = {
    * viajaría en cada subida sin decir nada. Ver `reminder.ts`.
    */
   reminders?: Reminder[];
+  /**
+   * Avisos borrados y cuándo. Sin estas lápidas, quitar un recordatorio en el
+   * móvil y abrir el portátil —que aún lo tiene— lo resucitaría en la siguiente
+   * fusión. Ver `reminder.ts`; se podan solas.
+   *
+   * **No cuentan como contenido**: un día que solo tuviera lápidas está vacío y
+   * se borra, y entonces manda la lápida del día entero, que ya existía.
+   */
+  removedReminders?: RemovedReminder[];
   /**
    * Etiquetas del día, por su `slug`. Van dentro del día y no en una lista
    * aparte porque son suyas: se mudan con él, se borran con él y suben a la
@@ -101,7 +116,9 @@ export function moveDay(
   delete next[from];
   if (!hasContent(entry)) return next;
 
-  const { reminders: previous, ...rest } = entry;
+  // Las lápidas no se mudan: son del día que se abandona, y ese desaparece
+  // entero con su propia lápida.
+  const { reminders: previous, removedReminders: _lapidas, ...rest } = entry;
   const reminders = (previous ?? []).flatMap((reminder) => {
     const moved = makeReminder(to, reminder.time, reminder.text ?? '', reminder);
     // `makeReminder` conserva `sent` y `done` solo si la hora y el texto no se
@@ -183,6 +200,7 @@ export function sanitizeData(raw: unknown): CalendarData {
     // sin ningún caso especial, la migración de lo que este navegador ya tenía
     // guardado: se lee en la forma vieja y se escribe en la nueva.
     const reminders = sanitizeReminders(entry.reminders ?? entry.reminder, key);
+    const removed = sanitizeRemovals(entry.removedReminders);
     const tags = sanitizeTags(entry.tags);
 
     // La misma regla que `hasContent`, aplicada al leer: un día que solo lleva
@@ -201,6 +219,7 @@ export function sanitizeData(raw: unknown): CalendarData {
       ...(count ? { imageCount: count } : {}),
       ...(thumb ? { thumb } : {}),
       ...(reminders.length ? { reminders } : {}),
+      ...(removed.length ? { removedReminders: removed } : {}),
       ...(tags.length ? { tags } : {}),
     };
   }

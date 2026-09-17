@@ -86,7 +86,7 @@ middleware ───────────────────────
 | Colección | Contenido | Índice |
 |---|---|---|
 | `user` `session` `account` | Las crea Better Auth. Tu nombre vive en `user` | propios |
-| `days` | Un día por usuario: marca, nota, color, `imageCount`, `thumb` —el testigo de la primera imagen, no la imagen—, `reminders` —una lista, hasta diez—, `tags` | `{userId, key}` único + parcial multiclave sobre `reminders.at` |
+| `days` | Un día por usuario: marca, nota, color, `imageCount`, `thumb` —el testigo de la primera imagen, no la imagen—, `reminders` —una lista, hasta diez—, `removedReminders` —sus lápidas—, `tags` | `{userId, key}` único + parcial multiclave sobre `reminders.at` |
 | `settings` | Lo que es de la persona y no del aparato: el chat de Telegram, la paleta y el catálogo de etiquetas | `{userId}` único |
 | `allowlist` | Qué correos pueden **crearse** una cuenta. No afecta a quien ya la tiene | `{email}` único |
 | `images` | Una imagen por documento, con su posición. **Aquí no hay bytes**: solo el `publicId`, la `version` y el `etag` de lo que guarda Cloudinary | `{userId, key, index}` único |
@@ -143,6 +143,18 @@ descartado.
 
 Un día borrado no se elimina: se marca con una **lápida**. Sin ellas, borrar un
 día en el móvil y abrir el portátil —que aún lo tiene— lo resucitaría.
+
+**Los recordatorios son la excepción, desde la tanda 10.** Se funden uno a uno
+por su `id`, cada uno con su propia marca (`editedAt`), así que dos dispositivos
+que tocan avisos distintos del mismo día conservan los dos cambios. El resto del
+día —nota, color, marca, adjuntos— se sigue arbitrando en bloque a propósito:
+son campos de una misma edición, y mezclarlos daría un día que nadie escribió.
+
+Un aviso borrado deja también su lápida (`removedReminders`), por lo mismo que
+la deja un día, y estas sí se podan: noventa días, veinte por día.
+
+La marca de un día **nunca retrocede**. Es sutil y cuesta un fallo entenderlo:
+ver *Trampas que ya nos han mordido*.
 
 ### Variables de entorno
 
@@ -1499,39 +1511,110 @@ catálogo varado, que falla sin el arreglo de arriba.
   los lea. Ya estaba anotado y sigue igual; ahora molesta menos, porque lo que
   el importador no devuelve la cuenta sí lo conserva.
 
----
+### Fusionar recordatorio a recordatorio — tanda 10, septiembre de 2026
 
-## Tanda 10: Fusionar por `id` dentro del día
+La unidad de fusión era el **día**: entre dos versiones ganaba la del
+`updatedAt` más reciente y la otra se perdía entera, con sus avisos dentro.
+Bastaba con que dos dispositivos tocaran recordatorios **distintos** de la misma
+fecha sin sincronizar en medio para que uno de los dos trabajos desapareciera.
+Ya era así antes de la tanda 9 —pasaba entre la nota y el aviso— pero un día
+tenía un recordatorio y ahora tiene hasta diez, así que la probabilidad se
+multiplicó por diez.
 
-**Estado: anotada, sin planificar.** Es la idea, no el plan: cuando se aborde
-hay que escribirlo entero como se hizo con la tanda 9.
+Ahora los avisos se funden **uno a uno**. El resto del día —la nota, el color,
+la marca, los adjuntos— se sigue arbitrando en bloque, y eso es a propósito: son
+campos sueltos de una misma edición, y mezclarlos daría un día que nadie
+escribió. Los avisos no: son una lista de cosas independientes, con identidad
+propia desde la tanda 9, y ahí sí tiene sentido combinar.
 
-El número está **reservado**, no en orden: la tanda 11 se hizo antes porque era
-más pequeña y no dependía de esta. Las tandas se numeran por cuándo se nombran,
-no por cuándo se terminan.
+#### Las dos piezas que faltaban
 
-La unidad de fusión es el **día**. Entre dos versiones del mismo día gana la del
-`updatedAt` más reciente, y la otra se pierde entera — con sus avisos dentro.
-Eso significa que dos dispositivos que editan **avisos distintos de la misma
-fecha** sin sincronizar entre medias no se combinan: uno de los dos trabajos
-desaparece.
+**Una marca por aviso.** `editedAt` en cada `Reminder`, puesta por
+`makeReminder`. Cero significa «de antes de esta tanda»: pierde contra cualquier
+edición con fecha, que es lo correcto.
 
-No es una regresión de la tanda 9. La unidad de fusión siempre fue el día, y ya
-pasaba entre la nota y el recordatorio. Lo que cambió es la **probabilidad**: un
-día tenía un aviso y ahora puede tener diez, así que hay diez veces más
-ocasiones de que dos personas —o la misma en dos dispositivos— toquen cosas
-distintas de la misma fecha.
+Tiene un detalle que parece menor y no lo es: **si no cambia nada, la marca
+tampoco**. `build()` en `ReminderField` llama a `makeReminder` en cada pintado
+para saber qué emitiría esa fila; con un `Date.now()` sin condición, cada
+repintado habría fabricado un aviso distinto, `sameReminders` habría visto un
+cambio inexistente y la cola de sincronía habría girado para siempre.
 
-El arreglo es **fusionar por `id` dentro del día**, y de ahí que sea una tanda
-propia: el `id` ya existe desde la tanda 9 y es justo lo que hace posible
-emparejar aviso con aviso, pero el mecanismo que hay hoy no da para ello. Haría
-falta al menos marca de tiempo **por aviso** en vez de una sola por día, decidir
-qué hacer cuando uno lo borra y el otro lo edita —un borrado no es un campo
-vacío, necesita su lápida— y que el servidor sepa combinar en lugar de elegir,
-que hoy no hace: `days.ts` escribe el día entero o no escribe nada.
+**Lápidas por aviso.** Sin ellas, borrar un recordatorio en el móvil y abrir el
+portátil —que aún lo tiene— lo resucitaría, porque desde el otro lado «ya no
+está» y «nunca existió» se ven igual. Es la misma pieza que ya tenían los días.
 
-Mientras no se haga, el comportamiento es el de siempre y está documentado: gana
-el más reciente.
+Viven en un campo aparte del día, `removedReminders`, y no como una marca dentro
+de la lista de avisos. Enterrar en la propia lista habría obligado a los quince
+sitios que la recorren a acordarse de filtrar, y un fantasma en la rejilla por
+un filtro olvidado es peor que el problema que resuelve. Se podan solas: noventa
+días, y veinte por día como tope.
+
+#### Dónde ocurre la fusión, y por qué no en el servidor
+
+En el navegador, dentro de `pull()`, y esa fue la decisión de diseño de la
+tanda. Lo que parecía natural era que el servidor combinara, pero `days.ts`
+escribe el día entero o no escribe nada, y hacerlo combinar exigía un
+`update` con canalización de agregación —o leer, mezclar y reintentar— para
+resolver algo que el cliente ya tiene delante.
+
+Con la fusión en `pull()` converge igual: cada dispositivo funde al arrancar,
+sube el resultado, y el servidor sigue siendo un «gana el más reciente» que no
+necesita entender de avisos. El cron tampoco cambia: `reminders` sigue siendo la
+lista de los vivos.
+
+Las reglas, por orden: se empareja por `id`; gana el `editedAt` mayor y un
+empate lo gana lo local; la lápida gana al aviso si es posterior a su última
+edición, y pierde si es anterior —eso es alguien que borró algo y lo volvió a
+crear, y lo último que hizo manda—; y `sent` se adopta aparte, sin arbitrar
+nada, porque lo escribe solo el servidor y el cron no toca `editedAt` al
+marcarlo. Esa última regla vivía suelta en `pull()` desde la tanda 9 y ahora
+está dentro de `mergeReminders`, donde le corresponde.
+
+#### La marca que iba hacia atrás
+
+Lo encontró la prueba de dos dispositivos, y es el hallazgo de la tanda.
+
+Cuando la fusión saca algo que el servidor no tiene, hay que subirlo, y para eso
+la marca del día tiene que superar la suya — `updatedAt + 1` si hace falta. Esa
+marca puede quedar **un pelo por delante del reloj**. Y entonces la edición
+siguiente, que escribía `Date.now()` a secas, nacía *por detrás* de lo que ese
+mismo navegador acababa de subir: el filtro del servidor la descartaba y el
+cambio se perdía sin decir nada.
+
+En la prueba todo ocurría dentro del mismo milisegundo, pero no hace falta ir
+tan deprisa: basta un reloj local atrasado respecto al de otro dispositivo. El
+arreglo es que la marca de un día **nunca retroceda** —`bump` en `sync.ts`—, que
+es lo que un registro de «gana el último» necesita para funcionar de verdad.
+Cierra de paso toda una familia de fallos por desajuste de reloj que estaban ahí
+desde el principio.
+
+#### Lo que se probó
+
+Cuarenta y una comprobaciones en tres bloques: dieciséis sobre el algoritmo de
+fusión —empates, lápidas en los dos sentidos, resurrección por edición
+posterior, adopción de `sent`, poda—, dieciséis de regresión sobre lo que la
+tanda 9 dejó en pie, y nueve **extremo a extremo con dos navegadores y un
+servidor de mentira**, que es la única forma de ver converger algo que por
+definición ocurre en dos sitios. Ahí está la escena exacta que describía la
+deuda: cada dispositivo edita un aviso distinto sin sincronizar, y los dos
+trabajos sobreviven.
+
+De esas nueve salió el fallo de la marca hacia atrás. Sin la prueba extremo a
+extremo no se habría visto: cada pieza por separado era correcta.
+
+#### Riesgos que quedan
+
+- **Queda una carrera estrecha.** Si un dispositivo sube entre que el otro hace
+  `pull` y hace `flush`, lo suyo se pierde: el segundo sube una fusión que no
+  incluye lo que llegó en ese hueco. Es la carrera clásica de leer-modificar-
+  escribir, y cerrarla pide que el servidor combine, que es justo lo que esta
+  tanda decidió no hacer. La ventana son los milisegundos entre dos peticiones
+  seguidas.
+- **La poda puede resucitar.** Un dispositivo que lleve más de noventa días sin
+  conectarse y traiga un aviso que alguien borró lo devolverá a la vida, porque
+  su lápida ya no existe. Es el precio de que las lápidas no crezcan sin fin,
+  que es la deuda que arrastran las de los días.
+- El resto del día sigue fundiéndose en bloque. Es deliberado, no pendiente.
 
 ---
 
@@ -1686,12 +1769,10 @@ Pendiente:
       cero en el servidor y nunca emite ese nombre. Ni un navegador con el
       paquete viejo en caché lo reintroduciría. El porqué de que existiera queda
       en el historial de la tanda 9, que es donde toca.
-- [ ] **La fusión es por día, no por aviso.** Dos dispositivos editando avisos
-      distintos del mismo día sin sincronizar, y gana el `updatedAt` más
-      reciente: el otro pierde el suyo. Ya pasaba con la nota y el recordatorio
-      —la unidad de fusión siempre fue el día—, pero desde que un día puede
-      llevar diez es mucho más fácil de encontrar. El arreglo es fusionar por
-      `id` dentro del día, y es una tanda en sí misma: ver *Tanda 10*.
+- [x] **La fusión era por día, no por aviso**, así que dos dispositivos
+      editando avisos distintos del mismo día perdían uno de los dos trabajos.
+      Resuelto en la tanda 10: los avisos se funden uno a uno por su `id`. El
+      resto del día se sigue arbitrando en bloque, y eso es deliberado.
 
 ---
 
@@ -1890,6 +1971,15 @@ dejaría `planificador/planificador/…`—; y el `display_name`, que es el nomb
 que saca el panel, sale del último tramo del `public_id`, así que sin ponerlo a
 mano todas las imágenes de una persona se llaman «0». Para saber en qué modo
 está una cuenta: `cloudinary.api.config({ settings: true })`.
+
+**Una marca de «gana el último» tiene que ser monótona, o retrocede.** La marca
+de un día se escribía con `Date.now()`, y eso basta hasta que algo la sella por
+delante del reloj — la fusión de avisos la sube a `updatedAt + 1` para poder
+ganarle al servidor. A partir de ahí, la edición siguiente nace *por detrás* de
+lo que ese mismo navegador acaba de subir, el filtro del servidor la descarta y
+el cambio se pierde **sin error, sin aviso y sin rastro**. Lo mismo ocurre, sin
+ningún sellado raro, en cuanto dos relojes van desacompasados. La marca no puede
+bajar nunca: `bump` en `sync.ts`.
 
 **Un índice parcial no se usa si la consulta no *demuestra* su filtro.** El
 índice sobre `reminders.at` es parcial (`$exists: true`), y el planificador solo

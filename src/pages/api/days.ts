@@ -31,6 +31,7 @@ function ownerOf(locals: App.Locals): ObjectId | null {
 const OPTIONAL_FIELDS: Record<OptionalWireKey, true> = {
   thumb: true,
   reminders: true,
+  removedReminders: true,
   tags: true,
   deleted: true,
 };

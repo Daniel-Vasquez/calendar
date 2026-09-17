@@ -47,14 +47,15 @@ export function parseImport(text: string): ImportResult {
  */
 export function toJson(data: CalendarData, palette: ColorPalette, tags: Tag[]): string {
   return JSON.stringify(
-    // v8: el día lleva `reminders`, una lista, donde antes llevaba `reminder`,
-    // un objeto. Antes, v7 convirtió los adjuntos en referencias, v6 metió
-    // `tags` en el día con su catálogo al lado, v5 dio tono a las categorías,
-    // v4 añadió `reminder` y v3, `imageCount` y `thumb`. El importador acepta
-    // todas las anteriores igual: solo lee `days`, pasa por `sanitizeData` —que
-    // entiende las dos formas del recordatorio— y lo que falte de un día se
-    // deduce de lo que sí venga.
-    { app: FILE_STEM, version: 8, exportedAt: new Date().toISOString(), palette, tags, days: data },
+    // v9: cada aviso lleva `editedAt` y el día puede llevar lápidas de avisos
+    // borrados, que es lo que permite fundir recordatorio a recordatorio. Antes,
+    // v8 convirtió el aviso único en una lista, v7 los adjuntos en referencias,
+    // v6 metió `tags` en el día con su catálogo al lado, v5 dio tono a las
+    // categorías, v4 añadió `reminder` y v3, `imageCount` y `thumb`. El
+    // importador acepta todas las anteriores igual: solo lee `days`, pasa por
+    // `sanitizeData` —que entiende las dos formas del recordatorio y da por
+    // antiguo lo que no traiga marca— y lo que falte se deduce de lo que venga.
+    { app: FILE_STEM, version: 9, exportedAt: new Date().toISOString(), palette, tags, days: data },
     null,
     2,
   );

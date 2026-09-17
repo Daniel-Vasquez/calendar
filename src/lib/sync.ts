@@ -1,6 +1,6 @@
 import { isImageRef, tokenOf } from './image';
 import { DEFAULT_COLOR } from './palette';
-import { sameReminders } from './reminder';
+import { mergeReminders, sameReminders } from './reminder';
 import { sameTags } from './tags';
 import { imageCount, loadData, saveData, type CalendarData, type DayEntry } from './storage';
 import { fromWire, MAX_DAYS_PER_REQUEST, sanitizeWireDay, toWire, type WireDay } from './wire';
@@ -123,6 +123,26 @@ function enqueue(meta: SyncMeta, key: string): void {
 }
 
 /**
+ * La marca de un día, que **nunca retrocede**.
+ *
+ * Lo natural sería escribir `Date.now()` y ya, y eso fue lo que hubo hasta la
+ * tanda 10. Dejó de bastar cuando la fusión de avisos empezó a sellar días con
+ * `updatedAt + 1` para poder ganarle al servidor: esa marca puede quedar un
+ * pelo por delante del reloj, y entonces la edición siguiente —que sí escribe
+ * `Date.now()`— nace **por detrás** de lo que este mismo navegador ya subió. El
+ * filtro del servidor la descarta y el cambio se pierde sin decir nada.
+ *
+ * Lo encontró una prueba en la que todo ocurría dentro del mismo milisegundo,
+ * pero no hace falta ir tan deprisa: basta un reloj local que vaya atrasado
+ * respecto al de otro dispositivo. Una marca monótona por día lo cierra: es lo
+ * que un registro de «gana el último» necesita para funcionar de verdad.
+ */
+function bump(meta: SyncMeta, key: string, now: number): number {
+  const previous = Math.max(meta.stamps[key] ?? 0, meta.deleted[key] ?? 0);
+  return Math.max(now, previous + 1);
+}
+
+/**
  * Anota qué ha cambiado entre dos versiones del calendario y lo pone en cola.
  *
  * Se llama justo después de guardar en localStorage, con el antes y el
@@ -140,7 +160,7 @@ export function recordChanges(previous: CalendarData, next: CalendarData): void 
     const changedImages = !sameImages(previous[key], next[key]);
     if (!changedDay && !changedImages) continue;
 
-    meta.stamps[key] = now;
+    meta.stamps[key] = bump(meta, key, now);
     delete meta.deleted[key];
     enqueue(meta, key);
     if (changedImages) {
@@ -153,7 +173,7 @@ export function recordChanges(previous: CalendarData, next: CalendarData): void 
 
   for (const key of Object.keys(previous)) {
     if (next[key]) continue;
-    meta.deleted[key] = now;
+    meta.deleted[key] = bump(meta, key, now);
     delete meta.stamps[key];
     enqueue(meta, key);
     // La lápida se lleva por delante los adjuntos: se borran en el servidor.
@@ -201,55 +221,81 @@ export async function pull(): Promise<PullResult> {
     if (!day) continue;
     known.add(day.key);
 
-    /*
-     * «Este aviso ya salió» se adopta siempre, incluso de un día que por fecha
-     * se va a descartar entero.
-     *
-     * `reminder.sent` lo escribe **solo** el servidor, nunca este navegador, así
-     * que no puede entrar en conflicto con nada de aquí y no necesita ganar
-     * ninguna comparación de marcas de tiempo. Y tiene que ser así: el cron no
-     * toca `updatedAt` al marcarlo —subirlo le haría ganar a una edición local
-     * sin subir, borrándola—, de modo que el día vuelve con la misma marca de
-     * siempre y el filtro de abajo lo saltaría con el `sent` dentro.
-     *
-     * Desde la tanda 9 hay que emparejar aviso con aviso, y se exigen **las dos
-     * cosas**: el `id` dice cuál es, y el `at` dice que no lo han movido de hora
-     * mientras tanto — un aviso movido es otro aviso, y el `sent` del anterior
-     * no le corresponde. Antes bastaba `at` porque solo había uno; con varios,
-     * dos avisos a la misma hora del mismo día serían indistinguibles.
-     */
     const here = merged[day.key];
-    if (here?.reminders?.length && day.reminders?.length) {
-      const remotos = new Map(day.reminders.map((reminder) => [reminder.id, reminder]));
-      let adoptado = false;
-      const fusionados = here.reminders.map((mine) => {
-        const suyo = remotos.get(mine.id);
-        if (!suyo?.sent || mine.sent || suyo.at !== mine.at) return mine;
-        adoptado = true;
-        return { ...mine, sent: suyo.sent };
-      });
-      if (adoptado) merged[day.key] = { ...here, reminders: fusionados };
+    const mine = meta.deleted[day.key] ?? meta.stamps[day.key] ?? 0;
+
+    // Una lápida de día se lo lleva todo por delante, avisos incluidos: no hay
+    // nada que fundir con un día que ya no existe.
+    if (day.deleted) {
+      if (day.updatedAt > mine) {
+        delete merged[day.key];
+        meta.deleted[day.key] = day.updatedAt;
+        delete meta.stamps[day.key];
+        meta.pending = meta.pending.filter((key) => key !== day.key);
+        fromServer++;
+      }
+      continue;
     }
 
-    // Lo de aquí manda mientras sea igual de reciente o más.
-    const mine = meta.deleted[day.key] ?? meta.stamps[day.key] ?? 0;
-    if (day.updatedAt <= mine) continue;
+    /*
+     * **Los avisos se funden siempre, gane quien gane el día.** Eso es la tanda
+     * 10, y es el único sitio donde ocurre.
+     *
+     * El resto del día —la nota, el color, la marca, los adjuntos— sigue
+     * arbitrándose en bloque por `updatedAt`, porque son campos sueltos de una
+     * misma edición y mezclarlos daría un día que nadie escribió. Los avisos no:
+     * son una lista de cosas independientes, con identidad propia desde la tanda
+     * 9, y ahí sí tiene sentido combinar. Sin esto, dos dispositivos que tocan
+     * recordatorios **distintos** de la misma fecha sin sincronizar en medio
+     * pierden uno de los dos trabajos.
+     */
+    const fusion = mergeReminders(
+      { reminders: here?.reminders, removed: here?.removedReminders },
+      { reminders: day.reminders, removed: day.removedReminders },
+    );
 
-    if (day.deleted) {
-      delete merged[day.key];
-      meta.deleted[day.key] = day.updatedAt;
-      delete meta.stamps[day.key];
-    } else {
+    /** El día ya fundido, venga su cuerpo de donde venga. */
+    const conAvisos = (base: DayEntry): DayEntry => {
+      const next: DayEntry = { ...base };
+      if (fusion.reminders.length) next.reminders = fusion.reminders;
+      else delete next.reminders;
+      if (fusion.removed.length) next.removedReminders = fusion.removed;
+      else delete next.removedReminders;
+      return next;
+    };
+
+    if (day.updatedAt > mine) {
       // `local[day.key]` va porque las imágenes no viajan: se conservan las
       // que ya hubiera en este navegador.
-      merged[day.key] = fromWire(day, local[day.key]);
+      merged[day.key] = conAvisos(fromWire(day, local[day.key]));
       meta.stamps[day.key] = day.updatedAt;
       delete meta.deleted[day.key];
+      meta.pending = meta.pending.filter((key) => key !== day.key);
+      fromServer++;
+    } else if (here) {
+      // Manda lo de aquí para el cuerpo del día, pero los avisos ya vienen
+      // fundidos y pueden traer algo del servidor que aquí no estaba.
+      merged[day.key] = conAvisos(here);
     }
 
-    // El servidor ya tiene su versión: lo que hubiera en cola sobra.
-    meta.pending = meta.pending.filter((key) => key !== day.key);
-    fromServer++;
+    /*
+     * ¿Ha salido de la fusión algo que el servidor no tiene? Entonces hay que
+     * subirlo, gane quien gane el día.
+     *
+     * La marca tiene que superar a la del servidor o el filtro de `days.ts` la
+     * descartaría sin escribir nada; `Date.now()` lo hace salvo relojes
+     * torcidos, y el `max` cubre ese caso en vez de dejar el día girando en la
+     * cola para siempre.
+     */
+    if (!sameReminders(merged[day.key]?.reminders, day.reminders)) {
+      // Tiene que superar la del servidor o el filtro de `days.ts` la
+      // descartaría sin escribir nada. `bump` mantiene además la marca
+      // monótona, que es lo que impide que la edición siguiente nazca por
+      // detrás de esta.
+      meta.stamps[day.key] = Math.max(bump(meta, day.key, Date.now()), day.updatedAt + 1);
+      delete meta.deleted[day.key];
+      enqueue(meta, day.key);
+    }
   }
 
   // Días que este navegador tenía de antes, cuando no había cuenta ni marcas

@@ -56,7 +56,38 @@ export type Reminder = {
    * Un aviso hecho no se manda: el cron lo excluye igual que a los ya enviados.
    */
   done?: number;
+  /**
+   * Cuándo se editó por última vez, por el reloj de quien lo editó.
+   *
+   * Es el árbitro de **su** fusión, y lo que hace posible la tanda 10: hasta
+   * entonces la unidad de fusión era el día entero, así que dos dispositivos
+   * que tocaban avisos distintos de la misma fecha no se combinaban — ganaba el
+   * `updatedAt` más reciente y el trabajo del otro desaparecía.
+   *
+   * Cero significa «de antes de la tanda 10»: pierde contra cualquier edición
+   * con fecha, que es lo correcto, y empata consigo mismo, que también.
+   *
+   * **No lo tocan ni `sent` ni el cron.** `sent` lo escribe el servidor y no es
+   * una edición de nadie; subirlo aquí haría que el servidor le ganara a un
+   * cambio local sin subir. Es el mismo cuidado que con `updatedAt`.
+   */
+  editedAt: number;
 };
+
+/**
+ * La lápida de un aviso borrado: quién era y cuándo se fue.
+ *
+ * Sin esto, borrar un recordatorio en el móvil y abrir el portátil —que aún lo
+ * tiene— lo resucitaría en la siguiente fusión, porque desde el otro lado un
+ * aviso ausente y un aviso que nunca existió son indistinguibles. Es la misma
+ * pieza que ya tenían los días, y por la misma razón.
+ *
+ * Vive fuera de la lista de avisos y no como una marca dentro de ellos: así
+ * `reminders` sigue siendo exactamente lo que dice ser —los vivos— y ninguno de
+ * los quince sitios que la recorren tiene que acordarse de filtrar. Un fantasma
+ * en la rejilla por un filtro olvidado sería peor que el problema que resuelve.
+ */
+export type RemovedReminder = { id: string; at: number };
 
 /**
  * Hora que se propone al encender un aviso o al crear uno desde la lista. Vive
@@ -79,6 +110,21 @@ export const MAX_REMINDER_TEXT = 200;
  * mismo día pueden vencer todos a la vez.
  */
 export const MAX_REMINDERS_PER_DAY = 10;
+
+/**
+ * Cuánto dura una lápida de aviso, y cuántas caben.
+ *
+ * Las de los días no se purgan nunca —está en la deuda— y estas no podían
+ * heredar eso: hay hasta diez avisos por día y se borran con soltura, así que
+ * sin poda crecerían dentro de cada documento para siempre.
+ *
+ * Noventa días es holgado: un dispositivo que lleve tres meses sin conectarse y
+ * traiga un aviso que alguien borró lo resucitará. A cambio, el que se conecta
+ * una vez al mes nunca lo nota. El tope por día es la red de seguridad para
+ * quien borre cincuenta avisos en una tarde.
+ */
+export const TOMB_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+export const MAX_TOMBS_PER_DAY = 20;
 
 /**
  * Cuánto se puede llegar tarde y aún así enviar.
@@ -151,6 +197,11 @@ export function sanitizeReminder(raw: unknown, key: string): Reminder | null {
   const id =
     typeof value.id === 'string' && ID_PATTERN.test(value.id) ? value.id : newReminderId();
 
+  // Cero, no «ahora»: lo guardado antes de la tanda 10 no trae marca, y darle
+  // la de este momento la haría ganar a cualquier edición legítima de otro
+  // dispositivo solo por haberse leído después.
+  const editedAt = stamp(value.editedAt) ?? 0;
+
   const at =
     typeof value.at === 'number' && Number.isFinite(value.at) ? value.at : toEpoch(key, value.time);
 
@@ -162,10 +213,59 @@ export function sanitizeReminder(raw: unknown, key: string): Reminder | null {
     id,
     time: value.time,
     at,
+    editedAt,
     ...(text ? { text } : {}),
     ...(sent ? { sent } : {}),
     ...(done ? { done } : {}),
   };
+}
+
+/**
+ * Sanea la lista de lápidas de un día, y **poda**: fuera las caducadas y, si
+ * aún sobran, se queda con las más recientes. Ver `TOMB_TTL_MS`.
+ */
+export function sanitizeRemovals(raw: unknown, now: number = Date.now()): RemovedReminder[] {
+  if (!Array.isArray(raw)) return [];
+
+  const clean: RemovedReminder[] = [];
+  const seen = new Set<string>();
+  for (const value of raw) {
+    if (!value || typeof value !== 'object') continue;
+    const { id, at } = value as Record<string, unknown>;
+    if (typeof id !== 'string' || !ID_PATTERN.test(id) || seen.has(id)) continue;
+    const when = stamp(at);
+    if (!when || now - when > TOMB_TTL_MS) continue;
+    seen.add(id);
+    clean.push({ id, at: when });
+  }
+
+  // De más reciente a más antigua, para que el recorte se lleve las viejas.
+  return clean.sort((a, b) => b.at - a.at).slice(0, MAX_TOMBS_PER_DAY);
+}
+
+/**
+ * Las lápidas que deja una edición: las que ya había, más una por cada aviso
+ * que estaba y ha dejado de estar.
+ *
+ * Lo llaman todos los sitios donde desaparece un recordatorio —el modal del
+ * día, la lista, la mudanza—, porque olvidarlo en uno solo basta para que ese
+ * borrado se deshaga solo en el siguiente arranque.
+ */
+export function tombsFor(
+  previous: Reminder[] | undefined,
+  next: Reminder[] | undefined,
+  existing: RemovedReminder[] | undefined,
+  now: number = Date.now(),
+): RemovedReminder[] {
+  const vivos = new Set((next ?? []).map((reminder) => reminder.id));
+  const nuevas = (previous ?? [])
+    .filter((reminder) => !vivos.has(reminder.id))
+    .map((reminder) => ({ id: reminder.id, at: now }));
+
+  if (nuevas.length === 0) return sanitizeRemovals(existing ?? [], now);
+
+  // Las nuevas primero: si hay que recortar, se van las viejas.
+  return sanitizeRemovals([...nuevas, ...(existing ?? [])], now);
 }
 
 /**
@@ -248,10 +348,24 @@ export function makeReminder(
     id: previous?.id ?? newReminderId(),
     time,
     at: toEpoch(key, time),
+    /*
+     * Si no ha cambiado nada, tampoco ha cambiado cuándo se cambió.
+     *
+     * No es una sutileza: `build()` en `ReminderField` llama aquí **en cada
+     * pintado** para saber qué emitiría esa fila. Con un `Date.now()` sin
+     * condición, cada repintado fabricaría un aviso distinto, `sameReminders`
+     * vería un cambio que no existe y la sincronía encolaría el día en bucle.
+     */
+    editedAt: untouched && previous ? previous.editedAt : Date.now(),
     ...(clean ? { text: clean } : {}),
     ...(untouched && previous?.sent ? { sent: previous.sent } : {}),
     ...(untouched && previous?.done ? { done: previous.done } : {}),
   };
+}
+
+/** El mismo aviso, marcado como tocado ahora. Para lo que no pasa por `makeReminder`. */
+export function touchReminder(reminder: Reminder): Reminder {
+  return { ...reminder, editedAt: Date.now() };
 }
 
 /** ¿Dicen lo mismo dos avisos sueltos? */
@@ -261,6 +375,7 @@ export function sameReminder(a?: Reminder, b?: Reminder): boolean {
     a.id === b.id &&
     a.time === b.time &&
     a.at === b.at &&
+    a.editedAt === b.editedAt &&
     (a.text ?? '') === (b.text ?? '') &&
     (a.sent ?? 0) === (b.sent ?? 0) &&
     (a.done ?? 0) === (b.done ?? 0)
@@ -280,6 +395,97 @@ export function sameReminders(a?: Reminder[], b?: Reminder[]): boolean {
   const left = a ?? [];
   const right = b ?? [];
   return left.length === right.length && left.every((item, i) => sameReminder(item, right[i]));
+}
+
+/** Un lado de la fusión: los avisos vivos de un día y sus lápidas. */
+export type ReminderSet = { reminders?: Reminder[]; removed?: RemovedReminder[] };
+
+/**
+ * Funde los avisos de un día **aviso a aviso**, en vez de quedarse con la
+ * versión entera de uno de los dos lados. Es la tanda 10 al completo.
+ *
+ * Hasta aquí la unidad de fusión era el día: entre dos versiones ganaba la del
+ * `updatedAt` más reciente y la otra se perdía con sus avisos dentro. Bastaba
+ * con que dos dispositivos tocaran recordatorios **distintos** de la misma
+ * fecha sin sincronizar en medio para que uno de los dos trabajos desapareciera.
+ *
+ * Las reglas, por orden:
+ *
+ * 1. **Por `id`.** Cada aviso se empareja con el suyo; los que solo están en un
+ *    lado entran tal cual.
+ * 2. **Gana el `editedAt` mayor**, y un empate lo gana lo local — que es lo que
+ *    la persona tiene delante. Es el mismo criterio que arbitra los días, una
+ *    planta más abajo.
+ * 3. **La lápida gana al aviso si es posterior a su última edición.** Y pierde
+ *    si es anterior: eso es alguien que borró algo y luego lo volvió a crear en
+ *    otro sitio, y lo último que hizo manda.
+ * 4. **`sent` se adopta aparte**, sin arbitrar nada. Lo escribe solo el
+ *    servidor, así que no puede chocar con nada de aquí; y como el cron no toca
+ *    `editedAt` al marcarlo, el aviso vuelve con la misma marca de siempre y
+ *    cualquier comparación lo dejaría fuera. Se exige que sea el mismo instante
+ *    (`at`): un aviso movido de hora es otro aviso, y el `sent` del anterior no
+ *    le corresponde.
+ */
+export function mergeReminders(
+  local: ReminderSet,
+  remote: ReminderSet,
+  now: number = Date.now(),
+): { reminders: Reminder[]; removed: RemovedReminder[] } {
+  /** La lápida más reciente de cada id, mire de qué lado venga. */
+  const tumbas = new Map<string, number>();
+  for (const tomb of [...(local.removed ?? []), ...(remote.removed ?? [])]) {
+    tumbas.set(tomb.id, Math.max(tumbas.get(tomb.id) ?? 0, tomb.at));
+  }
+
+  const remotos = new Map((remote.reminders ?? []).map((item) => [item.id, item]));
+  const vivos = new Map<string, Reminder>();
+
+  // Los de aquí, arbitrando contra su pareja de allí cuando la haya.
+  for (const mine of local.reminders ?? []) {
+    const suyo = remotos.get(mine.id);
+    vivos.set(mine.id, suyo ? pick(mine, suyo) : mine);
+  }
+  // Y los que solo existen allí.
+  for (const [id, suyo] of remotos) {
+    if (!vivos.has(id)) vivos.set(id, suyo);
+  }
+
+  const reminders: Reminder[] = [];
+  const removed: RemovedReminder[] = [];
+
+  for (const [id, reminder] of vivos) {
+    const enterrado = tumbas.get(id);
+    if (enterrado !== undefined && enterrado >= reminder.editedAt) {
+      // Se borró después de la última edición que conocemos: sigue borrado.
+      removed.push({ id, at: enterrado });
+      tumbas.delete(id);
+      continue;
+    }
+    // Vive. Si tenía lápida, la edición posterior lo resucitó y la lápida sobra.
+    tumbas.delete(id);
+    reminders.push(reminder);
+  }
+
+  // Las lápidas de avisos que ya no tiene nadie se conservan igual: puede haber
+  // un tercer dispositivo que todavía traiga el aviso.
+  for (const [id, at] of tumbas) removed.push({ id, at });
+
+  return {
+    reminders: reminders.sort(compareReminders),
+    removed: sanitizeRemovals(removed, now),
+  };
+}
+
+/** Quién gana entre dos versiones del mismo aviso, y qué se rescata del otro. */
+function pick(mine: Reminder, theirs: Reminder): Reminder {
+  const winner = theirs.editedAt > mine.editedAt ? theirs : mine;
+  const loser = winner === mine ? theirs : mine;
+
+  // Regla 4: «este aviso ya salió» se adopta venga del lado que venga.
+  if (!winner.sent && loser.sent && loser.at === winner.at) {
+    return { ...winner, sent: loser.sent };
+  }
+  return winner;
 }
 
 /**

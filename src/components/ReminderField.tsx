@@ -8,6 +8,7 @@ import {
   MAX_REMINDER_TEXT,
   MAX_REMINDERS_PER_DAY,
   reminderState,
+  touchReminder,
   type Reminder,
 } from '../lib/reminder';
 
@@ -208,7 +209,9 @@ export default function ReminderField({ dateKey, note, value, onChange }: Props)
       drafts.map((draft) => {
         if (draft.source.id !== id) return draft;
         const { done: _previo, ...rest } = draft.source;
-        return { ...draft, source: done ? { ...rest, done: Date.now() } : rest };
+        // Marcado como tocado: es una edición, y sin avanzar la marca la fusión
+        // por `id` no se enteraría de que esto ha pasado.
+        return { ...draft, source: touchReminder(done ? { ...rest, done: Date.now() } : rest) };
       }),
     );
   }

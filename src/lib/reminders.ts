@@ -3,6 +3,8 @@ import {
   compareReminders,
   MAX_REMINDERS_PER_DAY,
   reminderState,
+  tombsFor,
+  touchReminder,
   type Reminder,
   type ReminderState,
 } from './reminder';
@@ -187,23 +189,44 @@ export function upsertReminder(
       : current.map((item, i) => (i === index ? reminder : item)).sort(compareReminders);
 
   const base: DayEntry = entry ?? { marked: false, note: '', color: DEFAULT_COLOR };
-  return { ...data, [key]: { ...base, reminders } };
+  // Si este aviso tenía lápida, acaba de resucitar y la lápida sobra. La fusión
+  // llegaría a lo mismo por la fecha, pero dejarla aquí sería mandar al servidor
+  // un aviso y su esquela en el mismo documento.
+  const removed = (base.removedReminders ?? []).filter((tomb) => tomb.id !== reminder.id);
+
+  const next: DayEntry = { ...base, reminders };
+  if (removed.length) next.removedReminders = removed;
+  else delete next.removedReminders;
+
+  return { ...data, [key]: next };
 }
 
 /**
- * Quita un aviso de un día.
+ * Quita un aviso de un día **y deja su lápida**.
+ *
+ * La lápida no es opcional: sin ella, el dispositivo que todavía tenga el aviso
+ * lo resucitaría en la siguiente fusión, porque desde el otro lado «este aviso
+ * ya no está» y «este aviso nunca existió» se ven igual. Ver `reminder.ts`.
  *
  * Si era el último y el día se queda sin nada más, **el día desaparece**: un día
- * vacío no se guarda, igual que hace `handleSave` en el calendario. Mientras
- * queden otros avisos el día se queda donde está, con uno menos.
+ * vacío no se guarda, igual que hace `handleSave` en el calendario. Y entonces
+ * la lápida se va con él, que es lo correcto — de no resucitarlo se encarga la
+ * del día entero, que ya existía. Mientras queden otros avisos, o nota, o
+ * imágenes, el día se queda donde está con uno menos y su esquela dentro.
  */
 export function removeReminder(data: CalendarData, key: string, id: string): CalendarData {
   const entry = data[key];
   if (!entry?.reminders?.some((item) => item.id === id)) return data;
 
   const reminders = entry.reminders.filter((item) => item.id !== id);
-  const { reminders: _quitados, ...rest } = entry;
-  const next: DayEntry = reminders.length ? { ...rest, reminders } : rest;
+  const removed = tombsFor(entry.reminders, reminders, entry.removedReminders);
+
+  const { reminders: _quitados, removedReminders: _lapidas, ...rest } = entry;
+  const next: DayEntry = {
+    ...rest,
+    ...(reminders.length ? { reminders } : {}),
+    ...(removed.length ? { removedReminders: removed } : {}),
+  };
 
   const result = { ...data };
   if (hasContent(next)) result[key] = next;
@@ -248,5 +271,8 @@ export function withDone(
   if (Boolean(reminder.done) === done) return data;
 
   const { done: _previo, ...rest } = reminder;
-  return upsertReminder(data, key, done ? { ...rest, done: Date.now() } : rest);
+  // `touchReminder` y no `makeReminder`: ese recalcula el instante y suelta
+  // `sent`, y dar algo por hecho no mueve ninguna de las dos cosas. Pero sí es
+  // una edición, así que la marca tiene que avanzar o la fusión no la vería.
+  return upsertReminder(data, key, touchReminder(done ? { ...rest, done: Date.now() } : rest));
 }
