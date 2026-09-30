@@ -60,6 +60,7 @@ middleware ───────────────────────
 | `src/lib/prefs.ts` | Lleva la paleta y el catálogo a la cuenta, y decide quién manda |
 | `src/components/usePalette.ts` | Lee, guarda, aplica y vigila la paleta; lo usa toda página que pinte |
 | `src/components/usePrefs.ts` | Compone la paleta y el catálogo, y los sincroniza con la cuenta |
+| `src/components/Loading.astro` | La pantalla de carga entre páginas, atada al enrutador |
 | `src/components/useSettings.ts` | Los ajustes enteros —paleta, etiquetas, entrada y salida— para la barra |
 | `src/components/NoticeBar.tsx` | El aviso del pie y su deshacer, uno para las cuatro páginas |
 | `src/components/ThemeToggle.tsx` | El sol y la luna de la barra |
@@ -1618,6 +1619,34 @@ extremo no se habría visto: cada pieza por separado era correcta.
 
 ---
 
+### Navegación sin recargas, y una pantalla de carga — septiembre de 2026
+
+El sitio navegaba con recargas completas del navegador. Ahora lleva
+`<ClientRouter />`, y con él una pantalla de carga propia: al quitar la recarga
+se quita también la barra de progreso del navegador, y entre pulsar un enlace y
+ver la página nueva quedaba un hueco que no llenaba nadie.
+
+**La pantalla tarda 220 ms en aparecer, a propósito.** Casi todas las
+navegaciones terminan antes —las páginas son ligeras y el enrutador precarga al
+pasar por encima del enlace—, y enseñarla en esas convertiría una transición
+limpia en un parpadeo. Solo se ve cuando de verdad hay una espera.
+
+Nada gira: es el calendario de la aplicación, respirando, con sus tres casillas
+encendiéndose por turnos. Un giro promete un progreso que aquí nadie está
+midiendo.
+
+Lleva `transition:persist` **con nombre explícito**. El enrutador hace
+`oldBody.replaceWith(newBody)`, así que sin eso el nodo se destruiría justo
+mientras está en pantalla; y el emparejamiento es por el valor del atributo, de
+modo que con un identificador generado bastaría que dos páginas lo numeraran
+distinto para que la pantalla se quedara a medias.
+
+Lo caro de la tanda no fue la pantalla sino lo que destapó: **el enrutador borra
+todos los atributos de `<html>`**, que es donde viven el tema y la paleta. Está
+en *Trampas que ya nos han mordido*, con la comprobación que lo demostró.
+
+---
+
 ## Lo que falta
 
 ### Despliegue
@@ -1972,6 +2001,20 @@ que saca el panel, sale del último tramo del `public_id`, así que sin ponerlo 
 mano todas las imágenes de una persona se llaman «0». Para saber en qué modo
 está una cuenta: `cloudinary.api.config({ settings: true })`.
 
+**El enrutador de cliente borra todos los atributos de `<html>`.** No unos
+cuantos: `swapRootAttributes` los quita **todos** y pone los del documento que
+llega. Y del `<html>` de este proyecto cuelgan dos cosas que el servidor no
+conoce porque viven en `localStorage`: la clase `dark` del tema y los tonos
+retocados de la paleta, que son propiedades personalizadas en un `style` en
+línea. Sin devolverlas en `astro:after-swap`, cada navegación apagaba el tema
+oscuro y reseteaba los colores del año. Se comprobó ejecutando la función del
+propio Astro contra un DOM de juguete, que es la única forma de no discutirlo.
+
+De la misma familia: un `is:inline` que ya se ejecutó **no vuelve a ejecutarse**
+(`deselectScripts` lo marca), así que un guion del `<head>` que arregle algo al
+cargar solo lo arregla la primera vez. O se le pone `data-astro-rerun`, o
+escucha `astro:after-swap` — que es lo que hacen los dos de aquí.
+
 **Una marca de «gana el último» tiene que ser monótona, o retrocede.** La marca
 de un día se escribía con `Date.now()`, y eso basta hasta que algo la sella por
 delante del reloj — la fusión de avisos la sube a `updatedAt + 1` para poder
@@ -2132,5 +2175,3 @@ rm astro.config.node.mjs   # al terminar
 Hay que sustituir también el `import`, no solo la llamada. Y la variable va
 **delante** del comando: `--env-file` no pisa lo que ya venga del shell, que es
 justo lo que aquí interesa.
-
-claude --resume fc11cb31-643a-473d-a8ab-6088e0fe5180

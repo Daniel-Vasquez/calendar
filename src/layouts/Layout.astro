@@ -1,5 +1,7 @@
 ---
+import { ClientRouter } from 'astro:transitions';
 import '../styles/global.css';
+import Loading from '../components/Loading.astro';
 import { DARK_CLASS, THEME_KEY } from '../lib/theme';
 import { PALETTE_KEY } from '../lib/palette';
 
@@ -34,15 +36,28 @@ const { title, description = 'Dashboard de planificación para 2026 y 2027.' } =
         `=== null` para que un valor estropeado caiga también del lado del
         sistema en vez de forzar el modo claro. */}
     <script is:inline define:vars={{ key: THEME_KEY, cls: DARK_CLASS }}>
-      try {
-        var saved = localStorage.getItem(key);
-        var dark =
-          saved === 'dark' ||
-          (saved !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-        if (dark) document.documentElement.classList.add(cls);
-      } catch (error) {
-        /* Sin almacenamiento no hay preferencia guardada: se queda el claro. */
-      }
+      (function () {
+        function apply() {
+          try {
+            var saved = localStorage.getItem(key);
+            var dark =
+              saved === 'dark' ||
+              (saved !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+            document.documentElement.classList.toggle(cls, dark);
+          } catch (error) {
+            /* Sin almacenamiento no hay preferencia guardada: se queda el claro. */
+          }
+        }
+
+        apply();
+
+        /* Y otra vez después de cada navegación.
+           El enrutador copia los atributos del `<html>` que llega sobre el que
+           hay, y el que llega viene del servidor — que no sabe nada de esta
+           preferencia, porque vive en `localStorage`. Sin esto, ir de la agenda
+           al calendario devolvería el tema claro de golpe. */
+        document.addEventListener('astro:after-swap', apply);
+      })();
     </script>
 
     {/* Los colores retocados, por el mismo motivo y en el mismo momento que el
@@ -56,22 +71,37 @@ const { title, description = 'Dashboard de planificación para 2026 y 2027.' } =
         tal cual allí donde se use, así que un texto cualquiera podría colar
         más CSS del que aparenta. */}
     <script is:inline define:vars={{ key: PALETTE_KEY }}>
-      try {
-        var saved = JSON.parse(localStorage.getItem(key) || '{}');
-        for (var id in saved) {
-          var tone = saved[id] && saved[id].hex;
-          if (/^[a-z]+$/.test(id) && /^#[0-9a-f]{6}$/i.test(tone)) {
-            document.documentElement.style.setProperty('--day-' + id, tone);
+      (function () {
+        function apply() {
+          try {
+            var saved = JSON.parse(localStorage.getItem(key) || '{}');
+            for (var id in saved) {
+              var tone = saved[id] && saved[id].hex;
+              if (/^[a-z]+$/.test(id) && /^#[0-9a-f]{6}$/i.test(tone)) {
+                document.documentElement.style.setProperty('--day-' + id, tone);
+              }
+            }
+          } catch (error) {
+            /* Sin almacenamiento o con algo estropeado: paleta de fábrica. */
           }
         }
-      } catch (error) {
-        /* Sin almacenamiento o con algo estropeado dentro: paleta de fábrica. */
-      }
+
+        apply();
+        /* Lo mismo que el tema: estos tonos son un `style` en línea del
+           `<html>`, y el enrutador lo sustituye entero en cada navegación. */
+        document.addEventListener('astro:after-swap', apply);
+      })();
     </script>
+
+    {/* El enrutador de cliente. Sin él la navegación es una recarga completa
+        del navegador, y entonces no existe ningún hueco que llenar —ni los
+        eventos `astro:*` con los que `Loading` se entera de que lo hay. */}
+    <ClientRouter />
 
     <slot name="head" />
   </head>
   <body class="min-h-screen bg-canvas text-ink antialiased">
+    <Loading />
     <slot />
   </body>
 </html>

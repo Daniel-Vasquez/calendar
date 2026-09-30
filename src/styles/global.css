@@ -144,6 +144,41 @@ html {
   .animate-pop-in { animation: none; }
 }
 
+/* ── La pantalla de carga entre páginas ──────────────────────────────
+   Ver `Loading.astro`. Nada gira: el calendario respira y sus tres casillas se
+   encienden por turnos, que dice «esto está pasando» sin fingir un progreso
+   que nadie está midiendo. */
+@keyframes route-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.9; }
+  50% { transform: scale(1.06); opacity: 1; }
+}
+
+@keyframes route-cell {
+  0%, 70%, 100% { opacity: 0.15; }
+  35% { opacity: 1; }
+}
+
+.route-loading-icon {
+  animation: route-breathe 2s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+
+/* El desfase es lo único que hace que se lean como una secuencia y no como un
+   parpadeo a tres voces; el ciclo dura lo mismo que el del respiro para que
+   las dos animaciones no se vayan separando con el tiempo. */
+.route-loading-cells rect {
+  animation: route-cell 2s ease-in-out infinite;
+}
+.route-loading-cells rect:nth-child(2) { animation-delay: 0.22s; }
+.route-loading-cells rect:nth-child(3) { animation-delay: 0.44s; }
+
+/* Sin movimiento: el icono se queda quieto y entero. La pantalla sigue
+   apareciendo —hace falta saber que algo está pasando—, pero sin fundido. */
+@media (prefers-reduced-motion: reduce) {
+  .route-loading-icon,
+  .route-loading-cells rect { animation: none; }
+  .route-loading-cells rect { opacity: 0.45; }
+}
+
 /* ── Acordeones ──────────────────────────────────────────────────────
    Dos sitios pliegan lo mismo de la misma manera: los meses de la rejilla
    (MonthCard, con `.month-body`) y las secciones de los ajustes (Fold, con

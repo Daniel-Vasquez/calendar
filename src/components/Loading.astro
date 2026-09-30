@@ -1,0 +1,134 @@
+---
+/**
+ * La pantalla de carga entre páginas.
+ *
+ * Existe porque desde que hay enrutador de cliente (`ClientRouter`) la
+ * navegación ya no la dibuja el navegador: entre pulsar un enlace y ver la
+ * página nueva hay un hueco que antes llenaba la barra de progreso del propio
+ * navegador y ahora no llena nadie. Esto es lo que va ahí.
+ *
+ * Tres decisiones que no se ven en el resultado:
+ *
+ * 1. **Tarda en aparecer a propósito.** Ver `DELAY_MS`. Una pantalla de carga
+ *    que parpadea en cada navegación de sesenta milisegundos es peor que no
+ *    tener ninguna: convierte algo instantáneo en algo que se nota.
+ * 2. **`transition:persist`**, o no sobreviviría a lo que anuncia. El enrutador
+ *    hace `oldBody.replaceWith(newBody)`, así que sin esto el nodo se
+ *    destruiría justo mientras está en pantalla. Lleva nombre explícito porque
+ *    el emparejamiento es por el valor del atributo: con uno generado, basta
+ *    que dos páginas lo numeren distinto para que la pantalla se quede a medias.
+ * 3. **Nada de girar.** El icono es el calendario de la propia aplicación y sus
+ *    casillas se encienden por turnos, que dice «esto está pasando» sin
+ *    prometer un progreso que nadie está midiendo.
+ */
+---
+
+<div
+  id="route-loading"
+  transition:persist="route-loading"
+  data-state="idle"
+  role="status"
+  aria-live="polite"
+  class="pointer-events-none invisible fixed inset-0 z-[999] grid place-items-center bg-canvas opacity-0 transition-opacity duration-200 ease-out data-[state=busy]:visible data-[state=busy]:opacity-100 motion-reduce:transition-none"
+>
+  <div class="flex flex-col items-center gap-4">
+    <svg
+      width="56"
+      height="56"
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+      class="route-loading-icon text-ink"
+    >
+      {/* El cuerpo del calendario y sus dos anillas, del mismo trazo que el
+          resto de iconos del proyecto. */}
+      <rect
+        x="3"
+        y="5"
+        width="18"
+        height="16"
+        rx="3"
+        stroke="currentColor"
+        stroke-width="1.6"
+      />
+      <path
+        d="M3 10h18M8 3v4M16 3v4"
+        stroke="currentColor"
+        stroke-width="1.6"
+        stroke-linecap="round"
+      />
+      {/* Las casillas que se encienden por turnos. El orden del marcado es el
+          de lectura, y el retardo de cada una lo pone `global.css`. */}
+      <g class="route-loading-cells" fill="currentColor">
+        <rect x="6.75" y="13" width="3" height="3" rx="1" />
+        <rect x="10.5" y="13" width="3" height="3" rx="1" />
+        <rect x="14.25" y="13" width="3" height="3" rx="1" />
+      </g>
+    </svg>
+
+    {/* Se lee en voz alta al aparecer, y no se ve: el icono ya lo dice para
+        quien mira, y un «Cargando…» escrito debajo envejece mal en una
+        navegación que casi siempre dura un suspiro. */}
+    <span class="sr-only">Cargando la página</span>
+  </div>
+</div>
+
+{/*
+  El guion vive aquí y no en un componente de React por lo mismo que el del
+  tema en `Layout.astro`: tiene que estar escuchando antes de que se hidrate
+  nada, y no necesita ni una línea de framework.
+
+  El guardia de `window` no es adorno. Con enrutador de cliente, un `is:inline`
+  del cuerpo vuelve a ejecutarse en cada navegación, y sin él cada página
+  añadiría otro juego de escuchas sobre el mismo `document`.
+*/}
+<script is:inline>
+  (function () {
+    if (window.__routeLoading) return;
+    window.__routeLoading = true;
+
+    /**
+     * Cuánto se espera antes de enseñar nada.
+     *
+     * Casi todas las navegaciones de esta aplicación terminan antes: las
+     * páginas son ligeras y el enrutador precarga al pasar por encima del
+     * enlace. Enseñar la pantalla en esas convertiría una transición limpia en
+     * un parpadeo. Solo se ve cuando de verdad hay una espera.
+     */
+    var DELAY_MS = 220;
+    var timer = 0;
+
+    /* Se busca cada vez en lugar de guardarlo: `transition:persist` conserva el
+       nodo, pero confiar en una referencia que tiene que sobrevivir a que el
+       enrutador sustituya el cuerpo entero es pedirle demasiado. */
+    function panel() {
+      return document.getElementById('route-loading');
+    }
+
+    function show() {
+      var el = panel();
+      if (el) el.dataset.state = 'busy';
+    }
+
+    function hide() {
+      window.clearTimeout(timer);
+      var el = panel();
+      if (el) el.dataset.state = 'idle';
+    }
+
+    document.addEventListener('astro:before-preparation', function () {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(show, DELAY_MS);
+    });
+
+    /* `astro:page-load` cierra el ciclo y llega también en la carga inicial, así
+       que de paso apaga cualquier resto que hubiera quedado encendido. */
+    document.addEventListener('astro:page-load', hide);
+
+    /* Y si la navegación se queda a medias —un enlace cancelado, una descarga,
+       un fallo de red— nadie dispararía `page-load` y la pantalla se quedaría
+       puesta para siempre. Estos dos son la red de seguridad. */
+    document.addEventListener('astro:after-swap', hide);
+    window.addEventListener('pageshow', hide);
+  })();
+</script>
