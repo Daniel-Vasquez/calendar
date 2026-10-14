@@ -3,6 +3,7 @@ import type { DayTimeState } from '../lib/calendar';
 import { imageCount, type DayEntry } from '../lib/storage';
 import { previewSrc } from '../lib/gallery';
 import { BellIcon } from './ReminderChip';
+import RepeatIcon from './RepeatIcon';
 
 type Props = {
   day: number;
@@ -150,6 +151,8 @@ export default function DayCell({
   // único cuya hora cabe en una casilla de 40 píxeles.
   const reminders = entry?.reminders ?? [];
   const next = reminders[0];
+  /** ¿Pertenece a una serie? Es lo que distingue una copia de un día suelto. */
+  const repeats = Boolean(entry?.series);
   // Una imagen sin texto también es una nota, y una hora sola también:
   // cualquiera de las tres enciende el punto y el popover.
   const hasNote = Boolean(note || total || reminders.length);
@@ -200,6 +203,7 @@ export default function DayCell({
             `aria-label` lo pone MonthCard y no sabe nada de los recordatorios.
             Ahí sí van todas las horas — en el texto oculto no hay sitio que
             ahorrar. */}
+        {repeats && <span className="sr-only">, se repite</span>}
         {next && (
           <span className="sr-only">
             {reminders.length === 1
@@ -237,6 +241,23 @@ export default function DayCell({
           </span>
         )}
 
+        {/* La marca de repetición va abajo a la izquierda, en la esquina que
+            quedaba libre: arriba a la derecha está la campana y abajo en medio
+            el punto de la nota. Se apaga un poco —`opacity`— porque en una
+            serie diaria sale en trescientas casillas seguidas y a plena tinta
+            convertiría el mes en un enrejado. */}
+        {repeats && (
+          <span
+            aria-hidden="true"
+            className={
+              'absolute bottom-1 left-1 ' +
+              (solid ? 'text-white/80' : 'text-ink-muted/80')
+            }
+          >
+            <RepeatIcon size={8} strokeWidth={2} />
+          </span>
+        )}
+
         {hasNote && (
           <span
             aria-hidden="true"
@@ -267,8 +288,14 @@ export default function DayCell({
             className={`${REVEAL} absolute bottom-full z-30 mb-2 w-56 max-w-[calc(100vw-2rem)] ${popoverAlign(weekday)}`}
           >
             <div className="space-y-2 rounded-xl border border-edge bg-raised p-3 text-left shadow-lg">
-              <p className="text-[11px] font-semibold tracking-wide text-ink-muted uppercase">
+              <p className="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-ink-muted uppercase">
                 {dateLabel}
+                {repeats && (
+                  <span className="flex items-center gap-1 normal-case">
+                    <RepeatIcon size={9} />
+                    Se repite
+                  </span>
+                )}
               </p>
 
               {/* Los avisos van primero: tienen hora, y lo que tiene hora es lo

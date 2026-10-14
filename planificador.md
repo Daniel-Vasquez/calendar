@@ -64,6 +64,7 @@ middleware ───────────────────────
 | `src/components/Loading.astro` | La pantalla de carga entre páginas, atada al enrutador |
 | `src/components/RepeatField.tsx` | El desplegable de repetición y su panel personalizado |
 | `src/components/SeriesDeleteDialog.tsx` | Las tres formas de borrar un día que se repite |
+| `src/components/RepeatIcon.tsx` | Las flechas en ciclo; las pintan la rejilla, la agenda y el popover |
 | `src/components/useSettings.ts` | Los ajustes enteros —paleta, etiquetas, entrada y salida— para la barra |
 | `src/components/NoticeBar.tsx` | El aviso del pie y su deshacer, uno para las cuatro páginas |
 | `src/components/ThemeToggle.tsx` | El sol y la luna de la barra |
@@ -1803,6 +1804,29 @@ recorren la ruta de guardado real, que son las que cazaron el fallo del origen.
 
 ---
 
+### Se nota que un día se repite, y el scroll vuelve — octubre de 2026
+
+Dos cosas pequeñas sobre la tanda 13.
+
+**El indicador.** Un día de una serie lo enseña ahora en los tres sitios donde
+se le ve: las flechas en ciclo abajo a la izquierda de la casilla —la esquina
+que quedaba libre, con la campana arriba a la derecha y el punto de la nota
+abajo en medio—, una chapa «Se repite» en la fila de la agenda, donde sí cabe
+una palabra, y una línea en el popover. El icono de la rejilla va **apagado al
+ochenta por ciento**: en una serie diaria sale en trescientas casillas seguidas
+y a plena tinta convertía el mes en un enrejado.
+
+**El scroll que no volvía.** Borrar una serie dejaba la página sin scroll
+vertical hasta recargar. La sospecha razonable era una limpieza que no corría;
+resultó ser lo contrario — **dos limpiezas peleándose**. Está contado entero en
+*Trampas que ya nos han mordido*, porque la lección no es de este proyecto: es
+de cualquier bloqueo de scroll que se guarde y se restaure en vez de contarse.
+
+Se reprodujo el fallo con el código viejo y se comprobó el nuevo en los dos
+órdenes de desmontaje, extrayendo `lockScroll` del archivo real.
+
+---
+
 ## Lo que falta
 
 ### Despliegue
@@ -2170,6 +2194,22 @@ De la misma familia: un `is:inline` que ya se ejecutó **no vuelve a ejecutarse*
 (`deselectScripts` lo marca), así que un guion del `<head>` que arregle algo al
 cargar solo lo arregla la primera vez. O se le pone `data-astro-rerun`, o
 escucha `astro:after-swap` — que es lo que hacen los dos de aquí.
+
+**Dos modales anidados no pueden bloquear el scroll guardando y
+restaurando.** `useDialog` guardaba el `overflow` anterior del `body` y lo
+reponía al cerrarse. Con un modal dentro de otro, el de dentro guarda el
+`hidden` que acaba de poner el de fuera; al desmontarse los dos a la vez, el
+fondo se queda **sin scroll hasta recargar**.
+
+Y no se arregla cambiando el orden, porque el orden no se elige: React recorre
+el subárbol que borra **de padre a hijo**
+(`commitPassiveUnmountEffectsInsideOfDeletedTree_begin` desciende llamando a
+cada destroy), así que la limpieza del de dentro es siempre la última en
+hablar. Lo correcto es **contar**: el último en soltar repone, sea quien sea.
+
+Apareció al borrar una serie desde el modal del día —el primer modal dentro de
+otro del proyecto— y no se ve en ninguna prueba de componente, porque hace
+falta montar los dos y desmontarlos juntos.
 
 **Una marca de «gana el último» tiene que ser monótona, o retrocede.** La marca
 de un día se escribía con `Date.now()`, y eso basta hasta que algo la sella por

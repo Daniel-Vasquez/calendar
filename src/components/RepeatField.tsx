@@ -1,5 +1,6 @@
 import { useId, useMemo } from 'react';
 import { WEEKDAYS, WEEKDAY_LABELS, YEARS_LABEL } from '../lib/calendar';
+import RepeatIcon from './RepeatIcon';
 import {
   describeRule,
   repeatKeys,
@@ -62,22 +63,7 @@ export default function RepeatField({ dateKey, value, onChange, hasImages }: Pro
         htmlFor={selectId}
         className="flex items-center gap-2 text-sm font-medium text-ink-soft"
       >
-        {/* Dos flechas en ciclo, del mismo trazo que el resto de iconos. */}
-        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <path
-            d="M2.5 8a5.5 5.5 0 019.4-3.9M13.5 8a5.5 5.5 0 01-9.4 3.9"
-            stroke="currentColor"
-            strokeWidth="1.4"
-            strokeLinecap="round"
-          />
-          <path
-            d="M11.5 1.8v2.7h-2.7M4.5 14.2v-2.7h2.7"
-            stroke="currentColor"
-            strokeWidth="1.4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+        <RepeatIcon size={15} strokeWidth={1.4} />
         Repetir este día
       </label>
 

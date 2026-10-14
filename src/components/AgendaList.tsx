@@ -10,6 +10,7 @@ import {
   type ColorPalette,
 } from '../lib/palette';
 import ReminderChip from './ReminderChip';
+import RepeatIcon from './RepeatIcon';
 import { TagBadges } from './TagChips';
 import { labelOf, type Tag } from '../lib/tags';
 import {
@@ -386,6 +387,18 @@ export default function AgendaList({ data, palette, catalogue, today, onSelect }
                           rejilla: hasta tres chips en línea, que envuelven solos
                           porque el contenedor ya es `flex-wrap`, y el resto
                           contado. Cuatro horas seguidas dejarían de leerse. */}
+                      {/* Aquí sí cabe una palabra: la fila es ancha y «se
+                          repite» se lee de un vistazo, mientras que en la
+                          rejilla solo cabía el icono. */}
+                      {entry.series && (
+                        <span
+                          title="Forma parte de una serie de días repetidos"
+                          className="inline-flex items-center gap-1 rounded-full bg-edge px-2 py-0.5 text-[11px] font-semibold text-ink-muted"
+                        >
+                          <RepeatIcon />
+                          Se repite
+                        </span>
+                      )}
                       {entry.reminders?.slice(0, 3).map((reminder) => (
                         <ReminderChip key={reminder.id} reminder={reminder} now={now} />
                       ))}
