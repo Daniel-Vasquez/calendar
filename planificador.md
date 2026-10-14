@@ -58,9 +58,11 @@ middleware ───────────────────────
 | `src/lib/palette.ts` | Los ocho colores, la paleta propia de cada persona y su variable CSS |
 | `src/lib/tags.ts` | El catálogo de etiquetas, el `slug` y lo que lleva puesto un día |
 | `src/lib/prefs.ts` | Lleva la paleta y el catálogo a la cuenta, y decide quién manda |
+| `src/lib/repeat.ts` | Repetir un día: la regla, las fechas que produce y qué se copia |
 | `src/components/usePalette.ts` | Lee, guarda, aplica y vigila la paleta; lo usa toda página que pinte |
 | `src/components/usePrefs.ts` | Compone la paleta y el catálogo, y los sincroniza con la cuenta |
 | `src/components/Loading.astro` | La pantalla de carga entre páginas, atada al enrutador |
+| `src/components/RepeatField.tsx` | El desplegable de repetición y su panel personalizado |
 | `src/components/useSettings.ts` | Los ajustes enteros —paleta, etiquetas, entrada y salida— para la barra |
 | `src/components/NoticeBar.tsx` | El aviso del pie y su deshacer, uno para las cuatro páginas |
 | `src/components/ThemeToggle.tsx` | El sol y la luna de la barra |
@@ -1644,6 +1646,89 @@ distinto para que la pantalla se quedara a medias.
 Lo caro de la tanda no fue la pantalla sino lo que destapó: **el enrutador borra
 todos los atributos de `<html>`**, que es donde viven el tema y la paleta. Está
 en *Trampas que ya nos han mordido*, con la comprobación que lo demostró.
+
+---
+
+### Repetir un día — tanda 12, octubre de 2026
+
+Un día se puede repetir: cada día, cada semana, cada mes, cada año, o a medida
+—días de la semana y días del mes—. Las instancias heredan la marca, el color,
+la nota, las etiquetas y los recordatorios.
+
+#### Se materializan, no se guardan como regla
+
+Es la decisión de fondo. En este proyecto un día **es** un documento con su
+clave, y de eso viven la rejilla, la agenda, la búsqueda, la galería, la
+sincronía y el cron. Una regla guardada obligaría a los seis a saber
+expandirla — y al cron a expandirla en el servidor, cada cinco minutos, para
+todo el mundo. Copiar los días deja todo eso intacto y da algo que una regla no
+da: cada instancia se edita y se borra por su cuenta, que es lo que hace falta
+el día que una de las copias cambia de hora.
+
+El precio, y hay que tenerlo escrito: **no hay «editar la serie»**. Son días
+independientes desde que nacen. Repetir «cada día» dos años y querer cambiarlos
+todos después significa abrirlos uno a uno.
+
+#### Las imágenes no se copian, y no es un olvido
+
+Lo pedía la especificación y no se puede hacer honestamente. Un adjunto vive en
+Cloudinary bajo la clave de **su** día (`uploads/users/{userId}/{key}/{index}`),
+así que copiarlo de verdad es volver a subirlo una vez por instancia: «cada día»
+durante dos años con seis adjuntos son más de cuatro mil subidas de un solo
+clic, en un plan que va por créditos.
+
+Y arrastrar solo la referencia sería **peor que no copiar nada**: el servidor
+resuelve una referencia que llega a otro día con un `rename` —ver la tanda 8—,
+o sea moviendo el archivo, de modo que la primera subida de la cola dejaría al
+día original sin su imagen. Tampoco vale copiar `imageCount` y `thumb` sin los
+bytes: cada copia diría tener imágenes que nadie puede servir y el proxy
+contestaría 404.
+
+Así que se copia todo lo demás y la interfaz lo dice en cuanto el día tiene
+adjuntos. Si algún día hace falta de verdad, el camino es una acción de copia en
+`/api/images` que suba de nuevo, con su cuenta de créditos delante.
+
+#### Lo que no se pisa
+
+**Un día que ya tiene algo se salta.** «Cada día» durante dos años pasa por
+encima de 729 fechas, y entre ellas están los cumpleaños, las vacaciones y las
+notas de todo el año. Se cuentan los saltados y se dicen en el aviso del pie,
+que además ofrece deshacer la tanda entera.
+
+#### Dos detalles de calendario que no se deben «arreglar»
+
+- **El día 31 salta los meses que no lo tienen**, en vez de caer en el 28 o el
+  30. Recolocarlo cambiaría la fecha que alguien eligió sin decírselo, y saltar
+  es lo que hace el estándar (`BYMONTHDAY`, RFC 5545).
+- **El 29 de febrero salta los años no bisiestos**, por lo mismo.
+
+En lo personalizado, semana y mes se combinan con **unión** y no con
+intersección: son dos controles independientes, y «los lunes que además sean día
+1» no encajaría casi nunca.
+
+#### Decisiones de interfaz
+
+El campo enseña **cuántos días va a crear antes de crearlos**. Con «cada día»
+son cientos, y un número en pantalla es la diferencia entre elegir eso a
+sabiendas y descubrirlo después.
+
+La regla **no se guarda en el día**: es una instrucción de ese guardado y nace
+apagada cada vez que se abre el modal. Si quedara puesta, volver a guardar una
+nota corregida dispararía otras setecientas copias sin que nadie lo pidiera.
+
+Y no se ofrece con la fecha tocada: mudarse y repetirse a la vez no tiene una
+lectura única —¿desde la fecha vieja o desde la nueva?—, así que la mudanza
+manda.
+
+Las casillas de la semana usan `WEEKDAYS` del proyecto, con **X** para el
+miércoles: es lo que encabeza la rejilla, y dos «M» seguidas no se distinguirían.
+
+#### Lo que se probó
+
+Veintidós comprobaciones sobre la aritmética —los seis rótulos con la fecha
+dentro, el tope del calendario, el 31 saltando los meses cortos, los bisiestos,
+la unión de lo personalizado, qué se hereda y qué no, y que un día con contenido
+no se pisa— más el renderizado en servidor del campo en nueve estados.
 
 ---
 

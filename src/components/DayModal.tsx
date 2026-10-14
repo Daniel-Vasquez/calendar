@@ -22,6 +22,8 @@ import { isDateKey } from '../lib/wire';
 import { sanitizeTags, type Tag } from '../lib/tags';
 import { TagPicker } from './TagChips';
 import { tombsFor, type Reminder } from '../lib/reminder';
+import { dropsImages, NO_REPEAT, repeats, type RepeatRule } from '../lib/repeat';
+import RepeatField from './RepeatField';
 import ReminderField from './ReminderField';
 import { useDialog } from './useDialog';
 
@@ -32,7 +34,12 @@ type Props = {
   palette: ColorPalette;
   /** Las etiquetas que existen. Se administran en Ajustes; ver `tags.ts`. */
   catalogue: Tag[];
-  onSave: (key: string, entry: DayEntry) => void;
+  /**
+   * Guarda el día. `repeat` llega solo cuando se ha pedido repetirlo, y quien
+   * lo recibe es responsable de expandirlo: el modal no escribe en el
+   * calendario, solo dice qué se ha pedido. Ver `applyRepeat` en `repeat.ts`.
+   */
+  onSave: (key: string, entry: DayEntry, repeat?: RepeatRule) => void;
   onClear: (key: string) => void;
   onClose: () => void;
   /**
@@ -105,6 +112,14 @@ export default function DayModal({
   const [images, setImages] = useState<string[]>(entry?.images ?? []);
   const [reminders, setReminders] = useState<Reminder[]>(entry?.reminders ?? []);
   const [tags, setTags] = useState<string[]>(entry?.tags ?? []);
+  /**
+   * La repetición **no se guarda en el día**: es una instrucción de este
+   * guardado, no una propiedad de la fecha. Nace apagada cada vez que el modal
+   * se abre, porque repetir es algo que se pide, no un estado que se hereda —y
+   * si quedara puesta, volver a guardar una nota corregida dispararía otras
+   * setecientas copias sin que nadie lo haya pedido.
+   */
+  const [repeat, setRepeat] = useState<RepeatRule>(NO_REPEAT);
   /** Fecha elegida. Mientras nadie la toque es la del día que se abrió. */
   const [day, setDay] = useState(dateKey);
   const [imageError, setImageError] = useState('');
@@ -133,6 +148,7 @@ export default function DayModal({
     setImages(entry?.images ?? []);
     setReminders(entry?.reminders ?? []);
     setTags(entry?.tags ?? []);
+    setRepeat(NO_REPEAT);
     setDay(dateKey);
     setImageError('');
   }, [
@@ -194,6 +210,17 @@ export default function DayModal({
    */
   const totalBytes = images.reduce((sum, image) => sum + dataUrlBytes(image), 0);
   const unsaved = !sameImages(images, entry?.images ?? []);
+
+  /**
+   * El día tal y como quedaría si se guardara ahora mismo.
+   *
+   * Lo mira el campo de repetición, que no tiene sentido en un día vacío y
+   * tiene que aparecer en cuanto se escribe algo — no solo cuando el día ya
+   * estaba guardado. `draft` es una declaración de función, así que está
+   * disponible aquí aunque se lea más abajo.
+   */
+  const pending = draft();
+  const hasDraftContent = hasContent(pending);
 
   /** ¿Se puede mudar el día de fecha? Solo si quien abrió el modal sabe moverlo. */
   const movable = Boolean(onMove);
@@ -299,8 +326,11 @@ export default function DayModal({
    */
   function save() {
     const next = draft();
+    // Mudarse y repetir a la vez no tiene una lectura única —¿se repite desde
+    // la fecha vieja o desde la nueva?—, así que la mudanza manda y la
+    // repetición se queda fuera. El campo no se ofrece con la fecha tocada.
     if (moves) onMove?.(dateKey, day, next);
-    else onSave(dateKey, next);
+    else onSave(dateKey, next, repeats(repeat) ? repeat : undefined);
   }
 
   function removeImage(index: number) {
@@ -499,6 +529,22 @@ export default function DayModal({
         </div>
 
         <ReminderField dateKey={dateKey} note={note} value={reminders} onChange={setReminders} />
+
+        {/* Repetir va **después** de los recordatorios porque copia lo de
+            arriba: primero se compone el día y luego se dice en cuántos más
+            tiene que aparecer.
+
+            No se ofrece con la fecha tocada: mudarse y repetirse a la vez no
+            tiene una lectura única, y el botón de guardar ya está haciendo otra
+            cosa. Tampoco en un día vacío, que no tendría nada que copiar. */}
+        {!moves && hasDraftContent && (
+          <RepeatField
+            dateKey={dateKey}
+            value={repeat}
+            onChange={setRepeat}
+            hasImages={dropsImages(pending)}
+          />
+        )}
 
         <div className="mt-4">
           <div className="mb-2 flex items-baseline justify-between">

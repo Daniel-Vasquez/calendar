@@ -81,6 +81,11 @@ MongoDB es la fuente de verdad, pero **no** el camino crítico.
   molestar, Trabajo y Estudio—, y las que añadas. Clasifican el día por lo que es,
   al margen del color, se ponen desde la nota o el recordatorio y se buscan por su
   nombre en la agenda. El catálogo también es de tu cuenta.
+- **Repetir un día**: cada día, cada semana, cada mes, cada año o a medida
+  —días de la semana y días del mes—. Las copias heredan el color, las
+  etiquetas, la nota y los recordatorios; las fechas que ya tengan algo se
+  quedan como están, y el campo dice cuántos días va a crear antes de crearlos.
+  Las imágenes no se copian: cada adjunto está guardado bajo la fecha de su día.
 - **Shift + clic** marca de una vez todo el tramo entre dos días.
 - Navegación **con las flechas del teclado**, meses plegables y botón *Ir a hoy*.
 - Cada cambio destructivo deja un aviso con **Deshacer**.

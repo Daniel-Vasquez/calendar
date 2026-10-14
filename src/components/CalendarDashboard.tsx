@@ -35,6 +35,7 @@ import {
 } from '../lib/collapse';
 import { DEFAULT_COLOR, labelFor, type ColorId } from '../lib/palette';
 import { fetchImages, storeImages } from '../lib/sync';
+import { applyRepeat, type RepeatRule } from '../lib/repeat';
 import { hasContent, type DayEntry } from '../lib/storage';
 
 type Props = {
@@ -126,13 +127,26 @@ export default function CalendarDashboard({ user, initialYear }: Props) {
   }, []);
 
   const handleSave = useCallback(
-    (key: string, entry: DayEntry) => {
+    (key: string, entry: DayEntry, repeat?: RepeatRule) => {
       // Un día sin marca, nota ni imagen no se guarda: mantiene el almacenamiento limpio.
       const removes = !hasContent(entry);
       const snapshot = data;
 
+      /**
+       * Lo que la repetición va a crear, calculado **una vez y aquí**.
+       *
+       * Se resuelve fuera del `setData` a propósito: hace falta saber cuántos
+       * días se han creado y cuántos se han saltado para poder contarlo, y un
+       * actualizador que además informara tendría que hacerlo desde dentro de
+       * un render. Con el calendario ya en la mano no hay nada que esperar.
+       */
+      const expansion =
+        repeat && !removes ? applyRepeat(data, key, entry, repeat) : null;
+
       setData((current) => {
-        const next = { ...current };
+        // Se parte de la expansión si la hubo: ya trae el calendario entero con
+        // las copias dentro.
+        const next = { ...(expansion?.data ?? current) };
         if (removes) {
           delete next[key];
         } else {
@@ -146,7 +160,22 @@ export default function CalendarDashboard({ user, initialYear }: Props) {
 
       // Vaciar el formulario borra igual que el botón de eliminar; cualquier
       // otro guardado invalida el aviso pendiente, que ya hablaría de otro día.
-      if (removes && snapshot[key]) {
+      if (expansion && expansion.created.length > 0) {
+        const cuantos = expansion.created.length;
+        const saltados = expansion.skipped.length;
+        announce(
+          `Se repitió ${formatLongDate(key)} en ${cuantos} ${cuantos === 1 ? 'día' : 'días'}` +
+            (saltados
+              ? `; ${saltados} ya ${saltados === 1 ? 'tenía' : 'tenían'} contenido y no se ${saltados === 1 ? 'tocó' : 'tocaron'}.`
+              : '.'),
+          () => setData(snapshot),
+        );
+      } else if (expansion && expansion.skipped.length > 0) {
+        const saltados = expansion.skipped.length;
+        announce(
+          `No se creó ningún día: ${saltados === 1 ? 'la única fecha que encajaba ya tenía' : `las ${saltados} fechas que encajaban ya tenían`} contenido.`,
+        );
+      } else if (removes && snapshot[key]) {
         announce(`Se borró ${formatLongDate(key)}.`, () => setData(snapshot));
       } else {
         dismiss();

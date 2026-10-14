@@ -6,6 +6,7 @@ import NoticeBar, { useNotice } from './NoticeBar';
 import SyncBadge from './SyncBadge';
 import { useCalendarStore } from './useCalendarStore';
 import { useSettings } from './useSettings';
+import { applyRepeat, type RepeatRule } from '../lib/repeat';
 import { formatLongDate, msUntilNextMidnight, todayKey } from '../lib/calendar';
 import { fetchImages, storeImages } from '../lib/sync';
 import { hasContent, hasImages, moveDay, type DayEntry } from '../lib/storage';
@@ -77,18 +78,37 @@ export default function AgendaView({ user }: { user: NavUser }) {
    * hace falta poder deshacer.
    */
   const handleSave = useCallback(
-    (key: string, entry: DayEntry) => {
+    (key: string, entry: DayEntry, repeat?: RepeatRule) => {
       const removes = !hasContent(entry);
       const snapshot = data;
 
+      // Igual que en la rejilla: se expande aquí, con el calendario en la mano,
+      // porque hay que poder contar lo creado y lo saltado.
+      const expansion = repeat && !removes ? applyRepeat(data, key, entry, repeat) : null;
+
       setData((current) => {
-        const next = { ...current };
+        const next = { ...(expansion?.data ?? current) };
         if (removes) delete next[key];
         else next[key] = entry;
         return next;
       });
 
-      if (removes && snapshot[key]) {
+      if (expansion && expansion.created.length > 0) {
+        const cuantos = expansion.created.length;
+        const saltados = expansion.skipped.length;
+        announce(
+          `Se repitió ${formatLongDate(key)} en ${cuantos} ${cuantos === 1 ? 'día' : 'días'}` +
+            (saltados
+              ? `; ${saltados} ya ${saltados === 1 ? 'tenía' : 'tenían'} contenido y no se ${saltados === 1 ? 'tocó' : 'tocaron'}.`
+              : '.'),
+          () => setData(snapshot),
+        );
+      } else if (expansion && expansion.skipped.length > 0) {
+        const saltados = expansion.skipped.length;
+        announce(
+          `No se creó ningún día: ${saltados === 1 ? 'la única fecha que encajaba ya tenía' : `las ${saltados} fechas que encajaban ya tenían`} contenido.`,
+        );
+      } else if (removes && snapshot[key]) {
         announce(`Se borró ${formatLongDate(key)}.`, () => setData(snapshot));
       } else {
         dismiss();
