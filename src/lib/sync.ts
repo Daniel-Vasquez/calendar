@@ -104,7 +104,10 @@ function sameDay(a: DayEntry | undefined, b: DayEntry | undefined): boolean {
     sameReminders(a.reminders, b.reminders) &&
     // Lo mismo con las etiquetas: son el único cambio que puede llevar un día
     // cuya nota, color y adjuntos no se han tocado.
-    sameTags(a.tags, b.tags)
+    sameTags(a.tags, b.tags) &&
+    // Y con la serie: repetir un día que ya existía no le cambia nada más que
+    // esto, y sin compararlo el origen se quedaría sin subir su pertenencia.
+    (a.series ?? '') === (b.series ?? '')
   );
 }
 

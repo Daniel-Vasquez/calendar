@@ -35,8 +35,8 @@ import {
 } from '../lib/collapse';
 import { DEFAULT_COLOR, labelFor, type ColorId } from '../lib/palette';
 import { fetchImages, storeImages } from '../lib/sync';
-import { applyRepeat, type RepeatRule } from '../lib/repeat';
-import { hasContent, type DayEntry } from '../lib/storage';
+import { applyRepeat, removeSeries, scopeKeys, type DeleteScope, type RepeatRule } from '../lib/repeat';
+import { hasContent, type CalendarData, type DayEntry } from '../lib/storage';
 
 type Props = {
   user: NavUser;
@@ -150,7 +150,14 @@ export default function CalendarDashboard({ user, initialYear }: Props) {
         if (removes) {
           delete next[key];
         } else {
-          next[key] = entry;
+          /*
+           * **El día de origen entra en la serie aquí.** `applyRepeat` sella
+           * las copias y devuelve el identificador, pero el origen lo escribe
+           * este guardado, y si se escribiera a secas se quedaría fuera de su
+           * propia serie: «todos los eventos» dejaría en pie precisamente el
+           * día que estaba abierto cuando se pidió borrarlos todos.
+           */
+          next[key] = expansion?.series ? { ...entry, series: expansion.series } : entry;
         }
         return next;
       });
@@ -186,18 +193,45 @@ export default function CalendarDashboard({ user, initialYear }: Props) {
   );
 
   const handleClear = useCallback(
-    (key: string) => {
+    (key: string, scope?: DeleteScope) => {
       const snapshot = data;
-      setData((current) => {
-        const next = { ...current };
-        delete next[key];
-        return next;
-      });
-      if (snapshot[key]) announce(`Se borró ${formatLongDate(key)}.`, () => setData(snapshot));
+
+      // Sin alcance es el borrado de siempre: este día y nada más. Con alcance
+      // viene del diálogo de serie, y puede llevarse muchos.
+      const { data: next, removed } = scope
+        ? removeSeries(data, key, scope)
+        : { data: borrarUno(data, key), removed: data[key] ? [key] : [] };
+
+      if (removed.length === 0) {
+        setSelectedKey(null);
+        return;
+      }
+
+      setData(next);
+      announce(
+        removed.length === 1
+          ? `Se borró ${formatLongDate(key)}.`
+          : `Se borraron ${removed.length} días de la serie.`,
+        () => setData(snapshot),
+      );
       setSelectedKey(null);
     },
     [data, setData, announce],
   );
+
+  /**
+   * Cuántos días alcanzaría cada opción del diálogo de serie. Se resuelve aquí
+   * porque hace falta el calendario entero para saber quiénes son hermanos.
+   */
+  const seriesCounts = useCallback(
+    (key: string) => ({
+      one: scopeKeys(data, key, 'one').length,
+      forward: scopeKeys(data, key, 'forward').length,
+      all: scopeKeys(data, key, 'all').length,
+    }),
+    [data],
+  );
+
 
   /**
    * Pide los adjuntos de un día al servidor. Lo llama el modal cuando se abre
@@ -520,6 +554,7 @@ export default function CalendarDashboard({ user, initialYear }: Props) {
           catalogue={catalogue}
           onNeedImages={loadImages}
           onSave={handleSave}
+          seriesCounts={seriesCounts}
           onClear={handleClear}
           onClose={() => setSelectedKey(null)}
         />
@@ -608,4 +643,11 @@ function ChevronsIcon({ direction }: { direction: 'up' | 'down' }) {
       <path d="M7 6l5 5 5-5M7 13l5 5 5-5" />
     </svg>
   );
+}
+
+/** El calendario sin un día. Un borrado de uno solo, escrito una vez. */
+function borrarUno(data: CalendarData, key: string): CalendarData {
+  const next = { ...data };
+  delete next[key];
+  return next;
 }

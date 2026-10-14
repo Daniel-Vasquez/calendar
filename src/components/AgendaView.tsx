@@ -6,10 +6,10 @@ import NoticeBar, { useNotice } from './NoticeBar';
 import SyncBadge from './SyncBadge';
 import { useCalendarStore } from './useCalendarStore';
 import { useSettings } from './useSettings';
-import { applyRepeat, type RepeatRule } from '../lib/repeat';
+import { applyRepeat, removeSeries, scopeKeys, type DeleteScope, type RepeatRule } from '../lib/repeat';
 import { formatLongDate, msUntilNextMidnight, todayKey } from '../lib/calendar';
 import { fetchImages, storeImages } from '../lib/sync';
-import { hasContent, hasImages, moveDay, type DayEntry } from '../lib/storage';
+import { hasContent, hasImages, moveDay, type CalendarData, type DayEntry } from '../lib/storage';
 
 /**
  * La agenda del año, con las cuentas del calendario encima.
@@ -89,7 +89,8 @@ export default function AgendaView({ user }: { user: NavUser }) {
       setData((current) => {
         const next = { ...(expansion?.data ?? current) };
         if (removes) delete next[key];
-        else next[key] = entry;
+        // El origen entra en su propia serie; ver la nota en `CalendarDashboard`.
+        else next[key] = expansion?.series ? { ...entry, series: expansion.series } : entry;
         return next;
       });
 
@@ -119,17 +120,40 @@ export default function AgendaView({ user }: { user: NavUser }) {
   );
 
   const handleClear = useCallback(
-    (key: string) => {
+    (key: string, scope?: DeleteScope) => {
       const snapshot = data;
-      setData((current) => {
-        const next = { ...current };
-        delete next[key];
-        return next;
-      });
-      if (snapshot[key]) announce(`Se borró ${formatLongDate(key)}.`, () => setData(snapshot));
+
+      // Igual que en la rejilla: sin alcance se borra este día; con alcance
+      // viene del diálogo de serie y puede llevarse muchos.
+      const { data: next, removed } = scope
+        ? removeSeries(data, key, scope)
+        : { data: sinElDia(data, key), removed: data[key] ? [key] : [] };
+
+      if (removed.length === 0) {
+        setSelectedKey(null);
+        return;
+      }
+
+      setData(next);
+      announce(
+        removed.length === 1
+          ? `Se borró ${formatLongDate(key)}.`
+          : `Se borraron ${removed.length} días de la serie.`,
+        () => setData(snapshot),
+      );
       setSelectedKey(null);
     },
     [data, setData, announce],
+  );
+
+  /** Cuántos días se lleva cada opción del diálogo. Ver `CalendarDashboard`. */
+  const seriesCounts = useCallback(
+    (key: string) => ({
+      one: scopeKeys(data, key, 'one').length,
+      forward: scopeKeys(data, key, 'forward').length,
+      all: scopeKeys(data, key, 'all').length,
+    }),
+    [data],
   );
 
   /**
@@ -268,6 +292,7 @@ export default function AgendaView({ user }: { user: NavUser }) {
           catalogue={catalogue}
           onNeedImages={loadImages}
           onSave={handleSave}
+          seriesCounts={seriesCounts}
           onClear={handleClear}
           onMove={handleMove}
           hasDay={hasDay}
@@ -345,4 +370,11 @@ function NoteIcon() {
       <path d="M6 6h4M6 9h4" />
     </svg>
   );
+}
+
+/** El calendario sin un día. Un borrado de uno solo, escrito una vez. */
+function sinElDia(data: CalendarData, key: string): CalendarData {
+  const next = { ...data };
+  delete next[key];
+  return next;
 }

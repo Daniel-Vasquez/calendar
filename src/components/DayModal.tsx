@@ -22,7 +22,14 @@ import { isDateKey } from '../lib/wire';
 import { sanitizeTags, type Tag } from '../lib/tags';
 import { TagPicker } from './TagChips';
 import { tombsFor, type Reminder } from '../lib/reminder';
-import { dropsImages, NO_REPEAT, repeats, type RepeatRule } from '../lib/repeat';
+import {
+  dropsImages,
+  NO_REPEAT,
+  repeats,
+  type DeleteScope,
+  type RepeatRule,
+} from '../lib/repeat';
+import SeriesDeleteDialog from './SeriesDeleteDialog';
 import RepeatField from './RepeatField';
 import ReminderField from './ReminderField';
 import { useDialog } from './useDialog';
@@ -40,7 +47,19 @@ type Props = {
    * calendario, solo dice qué se ha pedido. Ver `applyRepeat` en `repeat.ts`.
    */
   onSave: (key: string, entry: DayEntry, repeat?: RepeatRule) => void;
-  onClear: (key: string) => void;
+  /**
+   * Borra el día. `scope` solo llega cuando pertenece a una serie, y dice
+   * cuánto de ella se lleva por delante. Sin serie no hay pregunta que hacer.
+   */
+  onClear: (key: string, scope?: DeleteScope) => void;
+  /**
+   * Cuántos días se llevaría cada opción del diálogo de serie. Lo resuelve
+   * quien tiene el calendario, que es quien sabe cuáles son hermanos.
+   *
+   * Ausente —o devolviendo una serie de uno— significa «este día no se repite»,
+   * y entonces el borrado va directo y sin preguntar.
+   */
+  seriesCounts?: (key: string) => Record<DeleteScope, number>;
   onClose: () => void;
   /**
    * Pide al servidor los adjuntos de este día. Hace falta porque las imágenes
@@ -98,6 +117,7 @@ export default function DayModal({
   catalogue,
   onSave,
   onClear,
+  seriesCounts,
   onClose,
   onNeedImages,
   onMove,
@@ -120,6 +140,8 @@ export default function DayModal({
    * setecientas copias sin que nadie lo haya pedido.
    */
   const [repeat, setRepeat] = useState<RepeatRule>(NO_REPEAT);
+  /** El diálogo de las tres opciones, abierto solo al borrar un día de serie. */
+  const [asking, setAsking] = useState(false);
   /** Fecha elegida. Mientras nadie la toque es la del día que se abrió. */
   const [day, setDay] = useState(dateKey);
   const [imageError, setImageError] = useState('');
@@ -149,6 +171,7 @@ export default function DayModal({
     setReminders(entry?.reminders ?? []);
     setTags(entry?.tags ?? []);
     setRepeat(NO_REPEAT);
+    setAsking(false);
     setDay(dateKey);
     setImageError('');
   }, [
@@ -221,6 +244,17 @@ export default function DayModal({
    */
   const pending = draft();
   const hasDraftContent = hasContent(pending);
+
+  /**
+   * Cuántos días alcanzaría cada opción de borrado, y si hay serie siquiera.
+   *
+   * Un día cuya serie es él solo **no pregunta nada**: la serie existe en los
+   * datos —porque se repitió y luego se borraron las copias— pero las tres
+   * opciones harían exactamente lo mismo, y un diálogo que ofrece tres caminos
+   * al mismo sitio es ruido.
+   */
+  const counts = seriesCounts?.(dateKey);
+  const inSeries = Boolean(hasStoredData && counts && counts.all > 1);
 
   /** ¿Se puede mudar el día de fecha? Solo si quien abrió el modal sabe moverlo. */
   const movable = Boolean(onMove);
@@ -680,7 +714,7 @@ export default function DayModal({
           </button>
           <button
             type="button"
-            onClick={() => onClear(dateKey)}
+            onClick={() => (inSeries ? setAsking(true) : onClear(dateKey))}
             disabled={!hasStoredData}
             className="flex-1 rounded-xl border border-highlight/40 bg-highlight-soft px-4 py-2.5 text-sm font-semibold text-highlight transition-colors hover:bg-highlight hover:text-white disabled:cursor-not-allowed disabled:border-edge disabled:bg-surface disabled:text-ink-muted disabled:hover:bg-surface disabled:hover:text-ink-muted focus-visible:ring-2 focus-visible:ring-highlight focus-visible:ring-offset-2 focus-visible:outline-none"
           >
@@ -710,6 +744,18 @@ export default function DayModal({
           </p>
         )}
       </div>
+
+      {asking && counts && (
+        <SeriesDeleteDialog
+          dateKey={dateKey}
+          counts={counts}
+          onPick={(scope) => {
+            setAsking(false);
+            onClear(dateKey, scope);
+          }}
+          onClose={() => setAsking(false)}
+        />
+      )}
     </div>
   );
 }

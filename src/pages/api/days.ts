@@ -32,6 +32,7 @@ const OPTIONAL_FIELDS: Record<OptionalWireKey, true> = {
   thumb: true,
   reminders: true,
   removedReminders: true,
+  series: true,
   tags: true,
   deleted: true,
 };

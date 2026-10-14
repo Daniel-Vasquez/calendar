@@ -63,6 +63,7 @@ middleware ───────────────────────
 | `src/components/usePrefs.ts` | Compone la paleta y el catálogo, y los sincroniza con la cuenta |
 | `src/components/Loading.astro` | La pantalla de carga entre páginas, atada al enrutador |
 | `src/components/RepeatField.tsx` | El desplegable de repetición y su panel personalizado |
+| `src/components/SeriesDeleteDialog.tsx` | Las tres formas de borrar un día que se repite |
 | `src/components/useSettings.ts` | Los ajustes enteros —paleta, etiquetas, entrada y salida— para la barra |
 | `src/components/NoticeBar.tsx` | El aviso del pie y su deshacer, uno para las cuatro páginas |
 | `src/components/ThemeToggle.tsx` | El sol y la luna de la barra |
@@ -89,7 +90,7 @@ middleware ───────────────────────
 | Colección | Contenido | Índice |
 |---|---|---|
 | `user` `session` `account` | Las crea Better Auth. Tu nombre vive en `user` | propios |
-| `days` | Un día por usuario: marca, nota, color, `imageCount`, `thumb` —el testigo de la primera imagen, no la imagen—, `reminders` —una lista, hasta diez—, `removedReminders` —sus lápidas—, `tags` | `{userId, key}` único + parcial multiclave sobre `reminders.at` |
+| `days` | Un día por usuario: marca, nota, color, `imageCount`, `thumb` —el testigo de la primera imagen, no la imagen—, `reminders` —una lista, hasta diez—, `removedReminders` —sus lápidas—, `series`, `tags` | `{userId, key}` único + parcial multiclave sobre `reminders.at` |
 | `settings` | Lo que es de la persona y no del aparato: el chat de Telegram, la paleta y el catálogo de etiquetas | `{userId}` único |
 | `allowlist` | Qué correos pueden **crearse** una cuenta. No afecta a quien ya la tiene | `{email}` único |
 | `images` | Una imagen por documento, con su posición. **Aquí no hay bytes**: solo el `publicId`, la `version` y el `etag` de lo que guarda Cloudinary | `{userId, key, index}` único |
@@ -1667,7 +1668,8 @@ el día que una de las copias cambia de hora.
 
 El precio, y hay que tenerlo escrito: **no hay «editar la serie»**. Son días
 independientes desde que nacen. Repetir «cada día» dos años y querer cambiarlos
-todos después significa abrirlos uno a uno.
+todos después significa abrirlos uno a uno. *Borrarlos* sí se puede en bloque
+desde la tanda 13, que es cuando los días aprendieron a qué serie pertenecen.
 
 #### Las imágenes no se copian, y no es un olvido
 
@@ -1729,6 +1731,75 @@ Veintidós comprobaciones sobre la aritmética —los seis rótulos con la fecha
 dentro, el tope del calendario, el 31 saltando los meses cortos, los bisiestos,
 la unión de lo personalizado, qué se hereda y qué no, y que un día con contenido
 no se pisa— más el renderizado en servidor del campo en nueve estados.
+
+---
+
+### Borrar una serie entera — tanda 13, octubre de 2026
+
+La tanda 12 dejó las repeticiones como días independientes **sin nada que los
+enlazara**: era la decisión correcta para editar y la equivocada para borrar.
+Quitar una serie semanal significaba abrir sesenta y tres días uno a uno.
+
+Ahora un día sabe a qué serie pertenece —un `series` que comparten el origen y
+todas sus copias— y el botón de eliminar, en un día que se repite, pregunta
+antes: **solo este**, **este y los siguientes**, o **todos**.
+
+#### Lo mínimo que hacía falta
+
+`series` es un identificador y nada más. **No describe la regla**: mirando un
+día no hay forma de saber si la serie era semanal o a medida. Y es a propósito
+— lo único que hay que poder contestar es «¿cuáles son sus hermanos?», y para
+eso basta un nombre común. Guardar la regla habría devuelto al calendario al
+motor de reglas que la tanda 12 decidió no construir.
+
+No cuenta como contenido: un día que se quedara solo con su `series` está vacío
+y se borra, igual que uno que solo tuviera lápidas.
+
+#### El fallo que destapó la prueba
+
+Al escribir el test hubo que sellar el día de origen **a mano** para que la
+serie cuadrara, y eso era la señal: `applyRepeat` sella las copias y devuelve el
+identificador, pero el origen lo escribe el guardado, que lo hacía a secas. El
+día de origen se quedaba fuera de su propia serie, así que «todos los eventos»
+habría dejado en pie precisamente el día que estaba abierto cuando se pidió
+borrarlos todos — el resultado más desconcertante posible.
+
+Se arregla en el guardado de las dos vistas, y hay una prueba que recorre esa
+ruta tal y como la ejecutan.
+
+#### Decisiones del diálogo
+
+**Cada opción lleva su número** —«y los siguientes (52)»—. Es lo que convierte
+la pregunta en una decisión: sin él habría que contar casillas en la rejilla
+para saber qué se está aceptando.
+
+**El foco entra en «Cancelar»**, que es lo único que no rompe nada, y no hay
+opción predeterminada. Las tres borran de verdad; el aviso del pie ofrece
+deshacer la tanda entera, igual que el resto de borrados del proyecto.
+
+**Un día cuya serie es él solo no pregunta nada.** Puede pasar —se repitió y
+luego se borraron las copias—, y entonces las tres opciones harían lo mismo. Un
+diálogo con tres caminos al mismo sitio es ruido.
+
+**Se borra el día entero**, no solo lo que la repetición puso. Una copia que
+luego se editó a mano sigue siendo esa copia, y dejar su nota suelta porque no
+venía del molde sería inventarse una distinción que nadie pidió.
+
+#### Qué cambió en el servidor: nada
+
+Merece decirse porque la petición pedía «ajustar el backend». No hizo falta
+ningún extremo nuevo: borrar sesenta y cuatro días es subir sesenta y cuatro
+lápidas por la vía de siempre, y el lote de `days.ts` ya reparte en tandas de
+quinientos. Lo único que el servidor aprendió es a **llevar y sanear el campo**
+`series`, y a borrarlo cuando deja de venir — la lista de opcionales de siempre.
+
+#### Lo que se probó
+
+Veintiuna comprobaciones: dieciséis sobre los tres alcances —que «solo este»
+deja la serie en pie, que «los futuros» no toca ni un día anterior, que «todos»
+alcanza al origen, que una serie no pisa a otra, que repetir dos veces el mismo
+día amplía en vez de duplicar, y que el campo viaja y se sanea— y cinco que
+recorren la ruta de guardado real, que son las que cazaron el fallo del origen.
 
 ---
 

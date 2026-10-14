@@ -10,7 +10,7 @@ import {
   WEEKDAY_LABELS,
   yearOf,
 } from './calendar';
-import { makeReminder, type Reminder } from './reminder';
+import { makeReminder, newReminderId, type Reminder } from './reminder';
 import { hasContent, type CalendarData, type DayEntry } from './storage';
 
 /**
@@ -25,8 +25,11 @@ import { hasContent, type CalendarData, type DayEntry } from './storage';
  * que una regla no da: cada instancia se puede editar o borrar por su cuenta,
  * que es lo que la gente quiere el día que una de las copias cambia de hora.
  *
- * El precio es que no hay «editar la serie»: son días independientes desde el
- * momento en que nacen. Está escrito en el planificador.
+ * Los días siguen siendo independientes para **editar** —cambiar uno no toca a
+ * los demás, que es justo lo que se quería—, pero desde la tanda 13 sí saben a
+ * qué serie pertenecen: llevan un `series`, y de él vive el borrado en bloque.
+ * Es lo mínimo que hacía falta para poder decir «y los siguientes» sin volver a
+ * convertir el calendario en un motor de reglas.
  *
  * Este archivo es aritmética de fechas y nada más: no toca `window`, no sabe de
  * React y no habla con el servidor.
@@ -53,6 +56,21 @@ export const NO_REPEAT: RepeatRule = { mode: 'none', weekdays: [], monthdays: []
  * documentos antes de que nadie lo note.
  */
 export const MAX_REPEAT = 800;
+
+/**
+ * Identidad de una serie de repeticiones.
+ *
+ * La comparte el día de origen con todas sus copias, y es lo único que las
+ * enlaza. No describe la regla —no hay forma de saber, mirando un día, si la
+ * serie era semanal o a medida— y es a propósito: lo único que hay que poder
+ * contestar es «¿cuáles son sus hermanos?», y para eso basta un nombre común.
+ *
+ * Con la forma de un `id` de recordatorio, y por la misma razón: doce
+ * caracteres bastan para distinguir, y viaja dentro de consultas y de claves.
+ */
+export function newSeriesId(): string {
+  return newReminderId();
+}
 
 /** ¿Pide esta regla crear algo? */
 export function repeats(rule: RepeatRule): boolean {
@@ -196,7 +214,7 @@ export function describeRule(rule: RepeatRule): string {
  * avisos distintos en días distintos, no el mismo aviso visto dos veces, así
  * que no heredan ni el `id` ni el `sent` ni el `done`.
  */
-export function instanceOf(entry: DayEntry, key: string): DayEntry {
+export function instanceOf(entry: DayEntry, key: string, series?: string): DayEntry {
   const reminders = (entry.reminders ?? []).flatMap((reminder) => {
     const copia = makeReminder(key, reminder.time, reminder.text ?? '');
     return copia ? [copia] : [];
@@ -208,6 +226,7 @@ export function instanceOf(entry: DayEntry, key: string): DayEntry {
     color: entry.color,
     ...(reminders.length ? { reminders } : {}),
     ...(entry.tags?.length ? { tags: entry.tags } : {}),
+    ...(series ? { series } : {}),
   };
 }
 
@@ -217,6 +236,8 @@ export type RepeatResult = {
   created: string[];
   /** Días que ya tenían algo y se han dejado en paz. */
   skipped: string[];
+  /** La serie a la que pertenecen el origen y las copias, si se creó alguna. */
+  series?: string;
 };
 
 /**
@@ -236,6 +257,17 @@ export function applyRepeat(
 ): RepeatResult {
   if (!repeats(rule) || !hasContent(entry)) return { data, created: [], skipped: [] };
 
+  /*
+   * El día de origen entra en la serie como uno más.
+   *
+   * Si se quedara fuera, «todos los eventos» dejaría en pie precisamente el que
+   * la persona tenía abierto cuando pidió borrarlos todos, que es el resultado
+   * más desconcertante posible. Si ya pertenecía a una serie, conserva la suya
+   * en vez de estrenar otra: repetir dos veces el mismo día amplía la serie, no
+   * crea una paralela que luego nadie podría borrar junta.
+   */
+  const series = entry.series ?? newSeriesId();
+
   const next = { ...data };
   const created: string[] = [];
   const skipped: string[] = [];
@@ -246,11 +278,72 @@ export function applyRepeat(
       skipped.push(key);
       continue;
     }
-    next[key] = instanceOf(entry, key);
+    next[key] = instanceOf(entry, key, series);
     created.push(key);
   }
 
-  return { data: created.length ? next : data, created, skipped };
+  if (created.length === 0) return { data, created, skipped };
+  return { data: next, created, skipped, series };
+}
+
+/* ------------------------------------------------------------------ *
+ * Borrar una serie
+ * ------------------------------------------------------------------ */
+
+/**
+ * Qué parte de la serie se borra. Los tres nombres son los que se leen en el
+ * cuadro de diálogo, y viven aquí para que la interfaz y la lógica no puedan
+ * dejar de coincidir.
+ */
+export type DeleteScope = 'one' | 'forward' | 'all';
+
+/** Los días de una serie, en orden. Vacío si el día no pertenece a ninguna. */
+export function seriesKeys(data: CalendarData, series: string | undefined): string[] {
+  if (!series) return [];
+  return Object.keys(data)
+    .filter((key) => data[key]?.series === series)
+    .sort();
+}
+
+/**
+ * Qué días se llevaría por delante cada opción, sin borrar nada todavía.
+ *
+ * Lo usa el diálogo para poner el número al lado de cada botón: «y los
+ * siguientes (14)» responde la pregunta que si no habría que contestar
+ * contando casillas en la rejilla.
+ */
+export function scopeKeys(
+  data: CalendarData,
+  key: string,
+  scope: DeleteScope,
+): string[] {
+  if (scope === 'one') return data[key] ? [key] : [];
+
+  const todos = seriesKeys(data, data[key]?.series);
+  if (todos.length === 0) return data[key] ? [key] : [];
+
+  return scope === 'all' ? todos : todos.filter((item) => item >= key);
+}
+
+/**
+ * Borra la parte de la serie que diga `scope`.
+ *
+ * Borra **el día entero**, no solo lo que la repetición puso: una copia que
+ * luego se editó a mano sigue siendo esa copia, y dejar su nota suelta porque
+ * no venía del molde sería inventarse una distinción que nadie pidió. Quien
+ * quiera conservar un día concreto usa «solo este evento» en el resto.
+ */
+export function removeSeries(
+  data: CalendarData,
+  key: string,
+  scope: DeleteScope,
+): { data: CalendarData; removed: string[] } {
+  const removed = scopeKeys(data, key, scope);
+  if (removed.length === 0) return { data, removed };
+
+  const next = { ...data };
+  for (const item of removed) delete next[item];
+  return { data: next, removed };
 }
 
 /** ¿Lleva este día imágenes que no van a viajar a las copias? Lo avisa la interfaz. */

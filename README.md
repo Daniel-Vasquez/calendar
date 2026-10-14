@@ -86,6 +86,9 @@ MongoDB es la fuente de verdad, pero **no** el camino crítico.
   etiquetas, la nota y los recordatorios; las fechas que ya tengan algo se
   quedan como están, y el campo dice cuántos días va a crear antes de crearlos.
   Las imágenes no se copian: cada adjunto está guardado bajo la fecha de su día.
+  Al borrar un día que se repite, se pregunta qué parte de la serie quitar:
+  **solo ese día**, **ese y los siguientes** o **todos**, con el número de días
+  que se lleva cada opción y un Deshacer para la tanda entera.
 - **Shift + clic** marca de una vez todo el tramo entre dos días.
 - Navegación **con las flechas del teclado**, meses plegables y botón *Ir a hoy*.
 - Cada cambio destructivo deja un aviso con **Deshacer**.

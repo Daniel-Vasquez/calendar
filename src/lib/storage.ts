@@ -54,6 +54,17 @@ export type DayEntry = {
    */
   removedReminders?: RemovedReminder[];
   /**
+   * A qué serie de repeticiones pertenece este día, si pertenece a alguna.
+   *
+   * La comparten el día de origen y todas sus copias, y es lo único que las
+   * enlaza: **no describe la regla**, solo dice quiénes son hermanos. De eso
+   * vive el borrado en bloque («este y los siguientes», «todos»).
+   *
+   * No cuenta como contenido: un día que solo llevara esto está vacío y se
+   * borra. Ver `hasContent`.
+   */
+  series?: string;
+  /**
    * Etiquetas del día, por su `slug`. Van dentro del día y no en una lista
    * aparte porque son suyas: se mudan con él, se borran con él y suben a la
    * cuenta con él. El catálogo —qué etiquetas existen— sí es de este
@@ -74,6 +85,9 @@ export type DayEntry = {
  * día vacío, guardar y ver que no ha pasado nada, sin que nada lo explique.
  */
 export function hasContent(entry: DayEntry): boolean {
+  // `series` no entra en la cuenta a propósito: es una pertenencia, no
+  // contenido, y un día que se quedara solo con ella sería un fantasma que la
+  // rejilla no pinta pero el borrado de la serie seguiría encontrando.
   return (
     entry.marked ||
     Boolean(entry.note) ||
@@ -81,6 +95,15 @@ export function hasContent(entry: DayEntry): boolean {
     Boolean(entry.reminders?.length) ||
     Boolean(entry.tags?.length)
   );
+}
+
+/**
+ * Forma de un identificador de serie: la misma que la de un aviso, y estrecha
+ * por lo mismo — viaja dentro de consultas y de claves de React, y no hay razón
+ * para aceptar ahí una cadena cualquiera venida de un archivo importado.
+ */
+export function isSeriesId(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(value);
 }
 
 /**
@@ -117,7 +140,9 @@ export function moveDay(
   if (!hasContent(entry)) return next;
 
   // Las lápidas no se mudan: son del día que se abandona, y ese desaparece
-  // entero con su propia lápida.
+  // entero con su propia lápida. La serie **sí** viaja: mover una copia a otra
+  // fecha la saca del patrón pero no de la serie, y «borrar todos» tiene que
+  // seguir alcanzándola.
   const { reminders: previous, removedReminders: _lapidas, ...rest } = entry;
   const reminders = (previous ?? []).flatMap((reminder) => {
     const moved = makeReminder(to, reminder.time, reminder.text ?? '', reminder);
@@ -201,6 +226,7 @@ export function sanitizeData(raw: unknown): CalendarData {
     // guardado: se lee en la forma vieja y se escribe en la nueva.
     const reminders = sanitizeReminders(entry.reminders ?? entry.reminder, key);
     const removed = sanitizeRemovals(entry.removedReminders);
+    const series = isSeriesId(entry.series) ? entry.series : undefined;
     const tags = sanitizeTags(entry.tags);
 
     // La misma regla que `hasContent`, aplicada al leer: un día que solo lleva
@@ -220,6 +246,7 @@ export function sanitizeData(raw: unknown): CalendarData {
       ...(thumb ? { thumb } : {}),
       ...(reminders.length ? { reminders } : {}),
       ...(removed.length ? { removedReminders: removed } : {}),
+      ...(series ? { series } : {}),
       ...(tags.length ? { tags } : {}),
     };
   }
